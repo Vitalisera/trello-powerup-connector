@@ -408,7 +408,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
-  sec.className = 'vz-panel vz-panel--below';
+  // Matriserna har många kolumner → markeras 'wide' så de spänner hela
+  // below-griddet (egen rad), medan smala paneler (HF, checklista) delar rad.
+  sec.className = 'vz-panel vz-panel--below vz-panel--wide';
   var head = '<div class="vz-panel-title">' + esc(opts.title || 'Matris') + '</div>';
   if (!leaders.length) {
     sec.innerHTML = head + '<div class="vz-panel-empty">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
