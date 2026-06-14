@@ -158,6 +158,56 @@ function renderStaffPanel(groups) {
   host.appendChild(sec);
 }
 
+/* ---------- Kursnivå-checklista (#3) — persistent via Power-Up pluginData ---------- */
+function courseKey(name) { return 'vz_chk_' + norm(name).replace(/[^a-z0-9]+/g, '_'); }
+var DEFAULT_TODOS = ['Ordna kock', 'Inköp inför kurs', 'Tilldela livsberättelser till gruppledare', 'Full assistentgrupp'];
+function loadCourseChecklist(courseName) {
+  var key = courseKey(courseName);
+  t.get('board', 'shared', key).then(function (items) {
+    if (!Array.isArray(items)) { items = DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }); }
+    renderChecklistPanel(key, items);
+  }).catch(function () {
+    renderChecklistPanel(key, DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }));
+  });
+}
+function persistChecklist(key, items) { try { t.set('board', 'shared', key, items).catch(function () {}); } catch (e) {} }
+function renderChecklistPanel(key, items) {
+  var host = document.querySelector('.vz-course') || ROOT();
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.style.cssText = 'max-width:1400px;margin:6px auto 34px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  function paint() {
+    var done = items.filter(function (i) { return i.done; }).length;
+    var rows = items.map(function (it, idx) {
+      return '<label data-i="' + idx + '" class="vzchk-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef3f4;cursor:pointer">'
+        + '<input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' style="width:17px;height:17px;accent-color:#1f7a53;flex:none">'
+        + '<span style="flex:1 1 auto;font-size:14px;' + (it.done ? 'text-decoration:line-through;color:#8aa3ac' : '') + '">' + esc(it.text) + '</span>'
+        + '<button data-del="' + idx + '" title="Ta bort" style="border:none;background:none;cursor:pointer;color:#b23a2e;font-size:15px;padding:2px 6px">✕</button>'
+        + '</label>';
+    }).join('');
+    sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px">'
+      + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Kurschecklista</div>'
+      + '<div style="font-size:12.5px;color:#5d7c87">' + done + '/' + items.length + ' klara · sparas automatiskt</div></div>'
+      + rows
+      + '<div style="display:flex;gap:8px;margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px">'
+      + '<input id="vzchk-new" placeholder="Lägg till uppgift på kursnivå…" style="flex:1 1 auto;font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid #cfe0e2;border-radius:8px">'
+      + '<button id="vzchk-add" style="border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:13.5px;padding:8px 14px;border-radius:8px;font-family:inherit">Lägg till</button></div>';
+    // events
+    Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
+      cb.addEventListener('change', function () { items[+cb.getAttribute('data-i')].done = cb.checked; persistChecklist(key, items); paint(); });
+    });
+    Array.prototype.forEach.call(sec.querySelectorAll('button[data-del]'), function (b) {
+      b.addEventListener('click', function (e) { e.preventDefault(); items.splice(+b.getAttribute('data-del'), 1); persistChecklist(key, items); paint(); });
+    });
+    var add = sec.querySelector('#vzchk-add'), inp = sec.querySelector('#vzchk-new');
+    function addItem() { var v = (inp.value || '').trim(); if (!v) { return; } items.push({ text: v, done: false }); persistChecklist(key, items); paint(); }
+    add.addEventListener('click', addItem);
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
+  }
+  paint();
+  host.appendChild(sec);
+}
+
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
@@ -172,6 +222,7 @@ function loadCourse(listId, listName) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
     loadStaff(res[0]);
+    loadCourseChecklist(res[0]);
   }).catch(function (err) {
     var diag;
     if (err.message === 'no-token') {
