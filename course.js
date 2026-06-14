@@ -96,10 +96,13 @@ function restGet(token, path) {
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   t.getRestApi().getToken().then(function (token) {
-    var q = 'lists/' + listId + '/cards?fields=name,desc,labels,idList,url&checklists=all&checklist_fields=name&checkItem_fields=name,state';
-    return restGet(token, q);
-  }).then(function (cards) {
-    var model = buildCourseModel(listName, cards || []);
+    // Listnamn via REST om vi inte redan har det (kort-entry slipper t.lists).
+    var nameP = listName ? Promise.resolve(listName)
+      : restGet(token, 'lists/' + listId + '?fields=name').then(function (l) { return l.name; });
+    var cardsP = restGet(token, 'lists/' + listId + '/cards?fields=name,desc,labels,idList,url&checklists=all&checklist_fields=name&checkItem_fields=name,state');
+    return Promise.all([nameP, cardsP]);
+  }).then(function (res) {
+    var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
   }).catch(function (err) {
     ROOT().innerHTML = msg('⚠️ Kunde inte hämta kursdata: ' + esc(err.message)
@@ -125,24 +128,24 @@ function showAuth(reason) {
 
 /* ---------- Lista-väljare (board-entry utan specifik lista) ---------- */
 function pickAndLoad() {
-  // listId kan komma som modal-arg (entry från kort) — annars välj via t.lists.
   var argList = null;
   try { argList = t.arg('listId'); } catch (e) { argList = null; }
 
-  t.lists('all', 'id', 'name').then(function (lists) {
+  // Kort-entry: vi har listId → ren REST, rör inte t.lists (som saknas/strular i modal).
+  if (argList) { loadCourse(argList); return; }
+
+  // Board-entry: räkna upp listor för väljare (fält-form 'id','name').
+  t.lists('id', 'name').then(function (lists) {
     lists = lists || [];
-    // kurslistor = datum-namngivna; faller tillbaka till alla med kort.
     var courses = lists.filter(function (l) { return daysToStart(l.name) !== null; });
     if (!courses.length) { courses = lists; }
-    var target = argList && lists.filter(function (l) { return l.id === argList; })[0];
-    var chosen = target || courses[0];
+    var chosen = courses[0];
     if (!chosen) { ROOT().innerHTML = msg('Inga kurslistor hittades på boarden.'); return; }
-
-    // Väljare bara om vi inte kom från ett specifikt kort och det finns flera.
-    if (!target && courses.length > 1) { renderSwitcher(courses, chosen); }
+    if (courses.length > 1) { renderSwitcher(courses, chosen); }
     loadCourse(chosen.id, chosen.name);
   }).catch(function (err) {
-    ROOT().innerHTML = msg('⚠️ Kunde inte läsa listor: ' + esc(err.message));
+    ROOT().innerHTML = msg('⚠️ Kunde inte läsa listor: ' + esc(err.message)
+      + '<br><span style="font-size:12.5px;color:#5d7c87">Öppna kursöversikten från ett deltagarkort istället.</span>');
   });
 }
 
