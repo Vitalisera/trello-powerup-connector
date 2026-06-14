@@ -11,12 +11,16 @@
   --shadow:0 6px 20px rgba(8,68,92,.12);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-html,body{margin:0;}
+html,body{margin:0;height:100%;}
 body{
   font-family:Calibri,"Segoe UI",Candara,system-ui,-apple-system,sans-serif;
   background:var(--mint); color:var(--ink);
   -webkit-font-smoothing:antialiased;
 }
+/* Fullskärms-modal: iframen är modalhög → innehållet scrollar internt. */
+body.full{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+/* Kompakt strip: iframen huggs till innehållet via t.sizeTo → ingen scroll. */
+body.compact{height:auto;overflow:visible;}
 
 /* ---------- Header ---------- */
 .hero{

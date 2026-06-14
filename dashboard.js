@@ -15,6 +15,11 @@
 var t = TrelloPowerUp.iframe();
 var COMPACT = new URLSearchParams(location.search).get('compact') === '1';
 
+// I kompakt-läge (card-back-section) ska iframen hugga innehållet → sizeTo.
+// I fullskärms-modal ska iframen behålla modalhöjden och scrolla internt →
+// sizeTo skulle tvinga iframen till innehållshöjd och få modalen att klippa.
+function fit() { if (COMPACT) { t.sizeTo('body').catch(function () {}); } }
+
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
 // Plocka deltagarfält ur kortets description ("Namn:", "Epost:", ...).
@@ -79,6 +84,7 @@ function ringSvg(pct) {
 }
 
 function renderFull(card, model) {
+  document.body.className = 'full';
   var d = parseDesc(card.desc);
   var name = (card.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''); // strippa "1774… - "
   var kurs = d['önskad kursvecka'] || d['onskad kursvecka'] || '';
@@ -128,10 +134,11 @@ function renderFull(card, model) {
       });
     });
   });
-  t.sizeTo('body').catch(function () {});
+  fit();
 }
 
 function renderCompact(model) {
+  document.body.className = 'compact';
   var nextTxt = model.next ? 'Nästa: ' + esc(model.next.step.title) : 'Allt klart 🎉';
   document.getElementById('root').innerHTML =
     '<div class="strip">'
@@ -147,7 +154,7 @@ function renderCompact(model) {
       accentColor: '#08445c',
     });
   });
-  t.sizeTo('body').catch(function () {});
+  fit();
 }
 
 function boot() {
@@ -157,7 +164,7 @@ function boot() {
   }).catch(function (err) {
     document.getElementById('root').innerHTML =
       '<div class="wrap"><div class="nextline">⚠️ Kunde inte läsa kortet: ' + esc(err.message) + '</div></div>';
-    t.sizeTo('body').catch(function () {});
+    fit();
   });
 }
 
