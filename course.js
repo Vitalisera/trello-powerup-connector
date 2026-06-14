@@ -416,6 +416,9 @@ function renderHfPanel(rows) {
   //    ersätt koderna med riktiga namn lokalt i svaret.
   var allergiBtn = sec.querySelector('#vz-allergi-btn');
   var allergiOut = sec.querySelector('#vz-allergi');
+  // Rutan växer med innehållet.
+  function fitAllergi() { if (allergiOut) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
+  if (allergiOut) { allergiOut.addEventListener('input', fitAllergi); }
   if (allergiBtn) {
     allergiBtn.addEventListener('click', function () {
       var withHf = rows.filter(function (r) { return r.link; });
@@ -445,7 +448,7 @@ function renderHfPanel(rows) {
         allergiOut.value = text || '(tomt svar)';
       }).catch(function (err) {
         allergiOut.value = '⚠️ ' + err.message;
-      }).then(function () { allergiBtn.disabled = false; });
+      }).then(function () { allergiBtn.disabled = false; fitAllergi(); });
     });
   }
 
