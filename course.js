@@ -218,7 +218,7 @@ function loadStaff(courseName) {
       });
       return Promise.all(jobs);
     });
-  }).then(function (groups) { if (groups) { renderStaffPanel(groups); } }).catch(function () { /* tyst */ });
+  }).then(function (groups) { if (groups) { renderStaffPanel(groups, courseName); } }).catch(function () { /* tyst */ });
 }
 /* ---------- Layout-regioner: placera paneler i rätt del av vyn ----------
  * CourseView bygger namngivna regioner (.vz-region-aside / .vz-region-below).
@@ -232,7 +232,8 @@ function vzRegion(name) {
   return document.querySelector('.vz-course') || ROOT();
 }
 
-function renderStaffPanel(groups) {
+function renderStaffPanel(groups, courseName) {
+  var emailsKey = 'vz_emails_' + courseSlug(courseName);
   var host = vzRegion('aside');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -266,7 +267,11 @@ function renderStaffPanel(groups) {
   // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
   var emBtn = sec.querySelector('#vz-asst-emails');
   var emOut = sec.querySelector('#vz-asst-emails-out');
-  if (emBtn) {
+  if (emBtn && emOut) {
+    // Visa tidigare sparad lista direkt (överlever stäng/öppna).
+    t.get('board', 'shared', emailsKey).then(function (saved) {
+      if (saved && !emOut.value) { emOut.style.display = ''; emOut.value = String(saved); }
+    }).catch(function () {});
     emBtn.addEventListener('click', function () {
       var listId = emBtn.getAttribute('data-listid');
       emBtn.disabled = true;
@@ -280,6 +285,7 @@ function renderStaffPanel(groups) {
         var seen = {}, uniq = [];
         emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
         emOut.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i assistentkortens beskrivningar.';
+        if (uniq.length) { persistText(emailsKey, emOut.value); }   // spara så det överlever stäng/öppna
       }).catch(function (err) {
         emOut.value = '⚠️ ' + err.message;
       }).then(function () { emBtn.disabled = false; });
@@ -295,6 +301,10 @@ function courseKey(name) {
   var steg = m ? norm(m[1]) : 'global';
   return 'vz_chk_steg_' + steg;
 }
+// Per-kursinstans-slug (olika omgångar = olika nyckel) — för cachade textfält.
+function courseSlug(name) { return norm(name).replace(/[^a-z0-9]+/g, '_'); }
+// Liten persist-helper för enkla textfält (board-shared pluginData).
+function persistText(key, value) { try { t.set('board', 'shared', key, value).catch(function () {}); } catch (e) {} }
 var DEFAULT_TODOS = ['Ordna kock', 'Inköp inför kurs', 'Tilldela livsberättelser till gruppledare', 'Full assistentgrupp'];
 function loadCourseChecklist(courseName) {
   var key = courseKey(courseName);
@@ -383,7 +393,7 @@ function hfDoneForCard(card) {
   });
   return { exists: exists, done: done };
 }
-function loadHfPanel(cards) {
+function loadHfPanel(cards, courseName) {
   var rows = (cards || []).map(function (c, i) {
     var hf = hfDoneForCard(c);
     return {
@@ -393,9 +403,10 @@ function loadHfPanel(cards) {
       link: commentLink(c, HF_LINK_RES), // HF-dokumentlänk ur kommentar om den finns
     };
   });
-  renderHfPanel(rows);
+  renderHfPanel(rows, courseName);
 }
-function renderHfPanel(rows) {
+function renderHfPanel(rows, courseName) {
+  var allergiKey = 'vz_allergi_' + courseSlug(courseName);
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -437,7 +448,13 @@ function renderHfPanel(rows) {
   var allergiOut = sec.querySelector('#vz-allergi');
   // Rutan växer med innehållet.
   function fitAllergi() { if (allergiOut) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
-  if (allergiOut) { allergiOut.addEventListener('input', fitAllergi); }
+  if (allergiOut) {
+    allergiOut.addEventListener('input', fitAllergi);
+    // Visa tidigare sparad sammanställning direkt (överlever stäng/öppna).
+    t.get('board', 'shared', allergiKey).then(function (saved) {
+      if (saved && !allergiOut.value) { allergiOut.value = String(saved); fitAllergi(); }
+    }).catch(function () {});
+  }
   if (allergiBtn) {
     allergiBtn.addEventListener('click', function () {
       // Deltagare → kod Pn + HF-doklänk. Assistenter (egen lista) → kod An + anonymiserad desc.
@@ -489,6 +506,7 @@ function renderHfPanel(rows) {
             text = text.replace(new RegExp('\\b' + code + '\\b', 'g'), codeToName[code]);
           });
           allergiOut.value = text || '(tomt svar)';
+          if (text) { persistText(allergiKey, allergiOut.value); }   // överlever stäng/öppna
         });
       }).catch(function (err) {
         allergiOut.value = '⚠️ ' + err.message;
@@ -672,7 +690,7 @@ function loadCourse(listId, listName) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
     loadStaff(res[0]);
-    loadHfPanel(res[1] || []);
+    loadHfPanel(res[1] || [], res[0]);
     loadStoryMatrix(res[0], model.participants, res[1] || []);
     loadCourseChecklist(res[0]);
   }).catch(function (err) {
