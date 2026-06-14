@@ -33,6 +33,19 @@ function parseDesc(desc) {
   return out;
 }
 
+// Logisk slutledning: om ett steg är 'done' promotas dess implies-steg till 'done'
+// (Malin: "antagen ⇒ intervju har undantagslöst skett"). Markeras inferred.
+function applyImplications(flow) {
+  var byKey = {};
+  flow.forEach(function (f) { byKey[f.key] = f; });
+  (window.NYA_ZAPIER_FLOW || []).forEach(function (s) {
+    if (!s.implies || !byKey[s.key] || byKey[s.key].status !== 'done') { return; }
+    s.implies.forEach(function (k) {
+      if (byKey[k] && byKey[k].status !== 'done') { byKey[k].status = 'done'; byKey[k].inferred = true; }
+    });
+  });
+}
+
 // Bygg DashboardView-model ur ett Trello-kortobjekt.
 function buildModel(card) {
   card = card || {};
@@ -69,6 +82,8 @@ function buildModel(card) {
       checkItemName: s.checkItem || null, phase: s.phase || 'Steg', events: [],
     };
   });
+
+  applyImplications(flow);
 
   var order = [], map = {};
   flow.forEach(function (s) {

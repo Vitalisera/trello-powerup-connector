@@ -39,16 +39,21 @@ function statusForCard(card) {
     if (checked[n]) { return true; }
     return Object.keys(checked).some(function (k) { return k.indexOf(n) !== -1 || n.indexOf(k) !== -1; });
   }
-  var status = {}, done = 0, gaps = 0;
+  var status = {};
   var flow = window.NYA_ZAPIER_FLOW || [];
   flow.forEach(function (s) {
     var checklistDone = isChecked(s.checkItem);
     var labelSet = s.triggerLabel ? !!labels[norm(s.triggerLabel)] : false;
-    var st = s.always ? 'done' : checklistDone ? 'done' : (s.triggerLabel ? (labelSet ? 'gap' : 'wait') : 'manual');
-    status[s.key] = st;
-    if (st === 'done') { done++; }
-    if (st === 'gap') { gaps++; }
+    status[s.key] = s.always ? 'done' : checklistDone ? 'done' : (s.triggerLabel ? (labelSet ? 'gap' : 'wait') : 'manual');
   });
+  // Logisk slutledning (Malin): done-steg promotar sina implies-steg → done.
+  flow.forEach(function (s) {
+    if (s.implies && status[s.key] === 'done') {
+      s.implies.forEach(function (k) { if (status[k] && status[k] !== 'done') { status[k] = 'done'; } });
+    }
+  });
+  var done = 0, gaps = 0;
+  flow.forEach(function (s) { if (status[s.key] === 'done') { done++; } else if (status[s.key] === 'gap') { gaps++; } });
   return { status: status, progress: { done: done, total: flow.length, pct: flow.length ? Math.round(done / flow.length * 100) : 0 }, gapCount: gaps };
 }
 
