@@ -18,8 +18,10 @@ window.NYA_ZAPIER_CONFIG = {
   APP_NAME: 'Vitalisera',
   BUTTON_TEXT: 'Vitalisera Kommandon',
 
-  // Vitalisera-logga (grafiska manualen, delas med brandade mejl)
+  // Full Vitalisera-logga (emblem + ordmärke) — för ytor med gott om plats.
   LOGO_URL: 'https://mcusercontent.com/415e930e2acb057a5ad12bd07/images/937b7fc2-3389-49b4-8e98-43c261ce33a0.png',
+  // Bara emblemet (utan ordmärke) — skarpt i pyttesmå ytor som Trellos knappikon.
+  MARK_URL: './icons/vitalisera-mark.png',
 };
 
 /*

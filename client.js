@@ -12,7 +12,8 @@
  */
 'use strict';
 
-var LOGO = window.NYA_ZAPIER_CONFIG.LOGO_URL;
+// Knappikon = bara emblemet (skarpt vid ~20px; full logga blir oläslig så liten).
+var MARK = window.NYA_ZAPIER_CONFIG.MARK_URL;
 var BTN_TEXT = window.NYA_ZAPIER_CONFIG.BUTTON_TEXT;
 
 // Öppnar command-paletten som iframe-popup (url-form av t.popup).
@@ -29,7 +30,7 @@ TrelloPowerUp.initialize({
   'card-buttons': function (t, opts) {
     return [
       {
-        icon: LOGO,
+        icon: MARK,
         text: BTN_TEXT,
         callback: openPalette,
         condition: 'edit',
@@ -38,11 +39,11 @@ TrelloPowerUp.initialize({
   },
 
   // Board-knapp: icon är ett objekt {dark, light} för ljus/mörk bakgrund.
-  // Logo:n är fullfärg → samma bild på båda bakgrunderna.
+  // Emblemet är teal → samma bild på båda bakgrunderna.
   'board-buttons': function (t, opts) {
     return [
       {
-        icon: { dark: LOGO, light: LOGO },
+        icon: { dark: MARK, light: MARK },
         text: BTN_TEXT,
         callback: openPalette,
         condition: 'edit',

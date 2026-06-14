@@ -146,9 +146,8 @@ function buildRow(cmd) {
 // Rendera paletten.
 function render() {
   var logo = document.getElementById('brandLogo');
-  if (logo && window.NYA_ZAPIER_CONFIG.LOGO_URL) {
-    logo.src = window.NYA_ZAPIER_CONFIG.LOGO_URL;
-  }
+  var mark = window.NYA_ZAPIER_CONFIG.MARK_URL || window.NYA_ZAPIER_CONFIG.LOGO_URL;
+  if (logo && mark) { logo.src = mark; }
   var ul = document.getElementById('cmds');
   (window.NYA_ZAPIER_COMMANDS || []).forEach(function (cmd) {
     ul.appendChild(buildRow(cmd));
