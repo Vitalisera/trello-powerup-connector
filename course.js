@@ -523,34 +523,22 @@ function renderHfPanel(rows, courseName) {
   var docOut = sec.querySelector('#vz-hf-doctor-out');
   if (docBtn) {
     docBtn.addEventListener('click', function () {
-      // Urval = SAMMA logik som nya-zapiers Actions_CopyHealthFormToDoctor:
-      // skicka bara de som HAR en HF-länk och INTE redan är ikryssade ("Delat
-      // Hälsoformulär till läkare/kursledare" complete = redan kopierad till mappen).
-      var candidates = rows.filter(function (r) { return r.link && !r.done; });
-      var alreadySent = rows.filter(function (r) { return r.done; }).length;
+      // Modell (ur nya-zapiers Actions_CopyHealthFormToDoctor): när checklistpunkten
+      // "Delat Hälsoformulär till läkare/kursledare" är IKRYSSAD finns redan en anonymiserad
+      // kopia i mappen "HF till läkare - Kursnamn". DE IKRYSSADE är alltså de som ska till
+      // läkaren. (Urkryssad = kopian borttagen.)
+      var ready = rows.filter(function (r) { return r.done; });
+      var notYet = rows.filter(function (r) { return r.link && !r.done; }).length;
       var noForm = rows.filter(function (r) { return !r.link; }).length;
-      if (!candidates.length) {
-        docOut.style.display = '';
-        docOut.textContent = 'Inget nytt att skicka: ' + alreadySent + ' redan skickade, '
-          + noForm + ' saknar hälsoformulär-länk.';
+      docOut.style.display = '';
+      if (!ready.length) {
+        docOut.textContent = 'Inga ikryssade deltagare än → ingen anonymiserad kopia finns att skicka. '
+          + notYet + ' har hälsoformulär men är inte ikryssade än, ' + noForm + ' saknar HF-länk.';
         return;
       }
-      var items = candidates.map(function (r) { return { name: r.name, url: r.link }; });
-      docBtn.disabled = true;
-      docOut.style.display = ''; docOut.textContent = '⏳ Förhandsvisar…';
-      postToGas('sendHealthFormsToDoctor', { dryRun: true, items: items }).then(function (data) {
-        if (!data || data.ok !== true) {
-          docOut.textContent = '⚠️ ' + ((data && data.error) || 'okänt fel');
-          return;
-        }
-        var okN = (data.preview || []).filter(function (p) { return p.resolved; }).length;
-        var bad = items.length - okN;
-        docOut.textContent = 'Skulle kopiera ' + okN + ' nytt/nya hälsoformulär (anonymiserat) till mappen '
-          + '"HF till läkare". ' + alreadySent + ' redan skickade, ' + noForm + ' saknar länk'
-          + (bad ? ', ' + bad + ' länk(ar) gick ej att läsa' : '') + '. Inget gjordes — bekräfta-steg kommer.';
-      }).catch(function (err) {
-        docOut.textContent = '⚠️ ' + err.message;
-      }).then(function () { docBtn.disabled = false; });
+      docOut.textContent = ready.length + ' anonymiserade hälsoformulär (de ikryssade) ligger i mappen '
+        + '"HF till läkare" och är de som ska till läkaren. ' + notYet + ' har HF men är inte ikryssade än, '
+        + noForm + ' saknar HF-länk. Skarp delning till läkaren kopplas härnäst.';
     });
   }
 }
