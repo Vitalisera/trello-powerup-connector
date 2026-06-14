@@ -208,6 +208,91 @@ function renderChecklistPanel(key, items) {
   host.appendChild(sec);
 }
 
+/* ---------- HF-urval (#3): vilka hälsoformulär skickas till läkaren ---------- */
+function loadHfPanel(courseName, participants) {
+  var key = 'vz_hf_' + norm(courseName).replace(/[^a-z0-9]+/g, '_');
+  t.get('board', 'shared', key).then(function (sel) {
+    renderHfPanel(key, participants || [], (sel && typeof sel === 'object') ? sel : {});
+  }).catch(function () { renderHfPanel(key, participants || [], {}); });
+}
+function renderHfPanel(key, participants, sel) {
+  var host = document.querySelector('.vz-course') || ROOT();
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.style.cssText = 'max-width:1400px;margin:6px auto 30px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  function paint() {
+    var n = Object.keys(sel).filter(function (k) { return sel[k]; }).length;
+    var rows = participants.map(function (p) {
+      return '<label style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #eef3f4;cursor:pointer">'
+        + '<input type="checkbox" data-k="' + esc(p.key) + '"' + (sel[p.key] ? ' checked' : '') + ' style="width:17px;height:17px;accent-color:#357087;flex:none">'
+        + '<span style="font-size:14px">' + esc(p.name) + '</span></label>';
+    }).join('') || '<div style="font-size:13px;color:#8aa3ac">Inga deltagare.</div>';
+    sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px">'
+      + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Hälsoformulär till läkare</div>'
+      + '<div style="font-size:12.5px;color:#5d7c87">' + n + ' valda · sparas automatiskt</div></div>'
+      + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:4px">Bocka för vilka deltagares HF som ska skickas för läkarbedömning.</div>'
+      + rows;
+    Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
+      cb.addEventListener('change', function () { sel[cb.getAttribute('data-k')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} paint(); });
+    });
+  }
+  paint();
+  host.appendChild(sec);
+}
+
+/* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
+function loadStoryMatrix(courseName, participants) {
+  var key = 'vz_story_' + norm(courseName).replace(/[^a-z0-9]+/g, '_');
+  t.getRestApi().getToken().then(function (token) {
+    if (!token) { return null; }
+    return Promise.all([
+      restGet(token, 'members/me/boards?fields=name&filter=open'),
+      t.get('board', 'shared', key).catch(function () { return {}; }),
+    ]).then(function (r) {
+      var boards = r[0] || [], sel = (r[1] && typeof r[1] === 'object') ? r[1] : {};
+      var b = boards.filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
+      if (!b) { return { leaders: [], sel: sel }; }
+      return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
+        var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
+        if (!list) { return { leaders: [], sel: sel }; }
+        return restGet(token, 'lists/' + list.id + '/cards?fields=name').then(function (cards) {
+          return { leaders: (cards || []).map(function (c) { return cleanStaffName(c.name); }).filter(Boolean), sel: sel };
+        });
+      });
+    });
+  }).then(function (d) { if (d) { renderStoryMatrix(key, participants || [], d.leaders, d.sel); } }).catch(function () {});
+}
+function renderStoryMatrix(key, participants, leaders, sel) {
+  var host = document.querySelector('.vz-course') || ROOT();
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.style.cssText = 'max-width:1400px;margin:6px auto 34px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142;overflow-x:auto';
+  var head = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c;margin-bottom:6px">Livsberättelser → gruppledare</div>';
+  if (!leaders.length) {
+    sec.innerHTML = head + '<div style="font-size:13px;color:#8aa3ac">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
+    host.appendChild(sec); return;
+  }
+  function cellKey(pk, ld) { return pk + '||' + ld; }
+  function paint() {
+    var ths = leaders.map(function (l) { return '<th style="font-size:11.5px;font-weight:700;color:#357087;padding:6px 8px;white-space:nowrap;writing-mode:vertical-rl;transform:rotate(180deg);max-height:120px">' + esc(l) + '</th>'; }).join('');
+    var trs = participants.map(function (p) {
+      var cells = leaders.map(function (l) {
+        var ck = cellKey(p.key, l);
+        return '<td style="text-align:center;padding:4px 8px;border-top:1px solid #eef3f4"><input type="checkbox" data-ck="' + esc(ck) + '"' + (sel[ck] ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:#1f7a53"></td>';
+      }).join('');
+      return '<tr><td style="font-size:13.5px;padding:4px 10px 4px 0;white-space:nowrap;border-top:1px solid #eef3f4">' + esc(p.name) + '</td>' + cells + '</tr>';
+    }).join('');
+    sec.innerHTML = head
+      + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:8px">Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.</div>'
+      + '<table style="border-collapse:collapse"><thead><tr><th></th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table>';
+    Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
+      cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
+    });
+  }
+  paint();
+  host.appendChild(sec);
+}
+
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
@@ -222,6 +307,8 @@ function loadCourse(listId, listName) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
     loadStaff(res[0]);
+    loadHfPanel(res[0], model.participants);
+    loadStoryMatrix(res[0], model.participants);
     loadCourseChecklist(res[0]);
   }).catch(function (err) {
     var diag;
