@@ -480,9 +480,9 @@ function renderHfPanel(rows, courseName) {
           if (['assistenter', 'intresserad', 'status'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
           var nm = cleanStaffName(c.name);
           var blob = stripStaffDescForAI(c.desc, nm);
-          if (!blob) { return; }
           var code = 'A' + (i + 1);
-          items.push({ code: code, allergy: blob });
+          // Hoppa INTE över tom beskrivning → alla assistenter räknas; tom = platshållare (flaggas oklar).
+          items.push({ code: code, allergy: blob || '(inget angivet i kortet)' });
           codeToName[code] = nm;
         });
         if (!items.length) {
