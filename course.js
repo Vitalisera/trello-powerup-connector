@@ -496,7 +496,11 @@ function renderHfPanel(rows, courseName) {
             if (data && data.error === 'anthropic_key_missing') {
               allergiOut.value = '⚠️ Kan inte sammanställa: AI-nyckeln (ANTHROPIC_API_KEY) saknas i serverns inställningar.';
             } else {
-              allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel');
+              var detail = (data && data.detail) ? ' (' + data.detail + ')' : '';
+              // 404/400 från Anthropic = modellen utfasad/okänd → tydlig vink, inte tyst fel.
+              var hint = (data && /anthropic_http_(404|400)/.test(data.detail || ''))
+                ? ' — AI-modellen verkar vara utfasad eller okänd; modell-ID:t behöver uppdateras i servern (Code.gs).' : '';
+              allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel') + detail + hint;
             }
             return;
           }
