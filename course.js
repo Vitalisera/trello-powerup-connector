@@ -100,6 +100,64 @@ function restGet(token, path) {
   return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
 
+/* ---------- Personal (gruppledare/assistenter/kockar = egna boards) ---------- */
+// Tolerant matchning på board-namn (vet ej exakta namnen → nyckelord).
+var STAFF_ROLES = [
+  { key: 'gruppledare', label: 'Gruppledare', re: /gruppled|ledare/i },
+  { key: 'assistenter', label: 'Assistenter', re: /assistent/i },
+  { key: 'kockar', label: 'Kockar', re: /kock/i },
+];
+// Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
+function sameCourse(a, b) {
+  if (norm(a) === norm(b)) { return true; }
+  var da = daysToStart(a), db = daysToStart(b);
+  return da !== null && db !== null && da === db;
+}
+// Kort-namn ofta "Roll - Namn" → visa namnet.
+function cleanStaffName(n) {
+  var s = String(n || '').trim();
+  var parts = s.split(' - ');
+  return (parts.length > 1 ? parts.slice(1).join(' - ') : s).trim();
+}
+function loadStaff(courseName) {
+  t.getRestApi().getToken().then(function (token) {
+    if (!token) { return null; }
+    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+      boards = boards || [];
+      var jobs = STAFF_ROLES.map(function (role) {
+        var b = boards.filter(function (bd) { return role.re.test(bd.name || ''); })[0];
+        if (!b) { return Promise.resolve({ role: role, found: false, people: [] }); }
+        return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
+          var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
+          if (!list) { return { role: role, found: true, list: null, people: [] }; }
+          return restGet(token, 'lists/' + list.id + '/cards?fields=name').then(function (cards) {
+            return { role: role, found: true, list: list.name, people: (cards || []).map(function (c) { return cleanStaffName(c.name); }).filter(Boolean) };
+          });
+        }).catch(function () { return { role: role, found: true, people: [] }; });
+      });
+      return Promise.all(jobs);
+    });
+  }).then(function (groups) { if (groups) { renderStaffPanel(groups); } }).catch(function () { /* tyst */ });
+}
+function renderStaffPanel(groups) {
+  var host = document.querySelector('.vz-course') || ROOT();
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.style.cssText = 'max-width:1400px;margin:6px auto 30px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  var cols = groups.map(function (g) {
+    var body;
+    if (!g.found) { body = '<div style="font-size:12.5px;color:#8aa3ac">Ingen board hittad</div>'; }
+    else if (!g.people.length) { body = '<div style="font-size:12.5px;color:#8aa3ac">' + (g.list ? 'Inga tilldelade än' : 'Ingen kurslista hittad') + '</div>'; }
+    else { body = g.people.map(function (p) { return '<div style="font-size:13.5px;padding:3px 0;border-top:1px solid #eef3f4">' + esc(p) + '</div>'; }).join(''); }
+    return '<div style="flex:1 1 0;min-width:170px;background:#fff;border:1px solid #cfe0e2;border-radius:12px;padding:12px 14px;box-shadow:0 4px 14px rgba(8,68,92,.08)">'
+      + '<div style="font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#357087;margin-bottom:6px">' + esc(g.role.label) + (g.people.length ? ' · ' + g.people.length : '') + '</div>'
+      + body + '</div>';
+  }).join('');
+  sec.innerHTML = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;margin-bottom:10px;color:#08445c">Personal på kursen</div>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap">' + cols + '</div>';
+  host.appendChild(sec);
+}
+
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
@@ -113,6 +171,7 @@ function loadCourse(listId, listName) {
   }).then(function (res) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
+    loadStaff(res[0]);
   }).catch(function (err) {
     var diag;
     if (err.message === 'no-token') {
