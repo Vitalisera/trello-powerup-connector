@@ -523,24 +523,31 @@ function renderHfPanel(rows, courseName) {
   var docOut = sec.querySelector('#vz-hf-doctor-out');
   if (docBtn) {
     docBtn.addEventListener('click', function () {
-      var withHf = rows.filter(function (r) { return r.link; });
-      if (!withHf.length) {
-        docOut.style.display = ''; docOut.textContent = 'Inga deltagare har en hälsoformulär-länk att skicka än.';
+      // Urval = SAMMA logik som nya-zapiers Actions_CopyHealthFormToDoctor:
+      // skicka bara de som HAR en HF-länk och INTE redan är ikryssade ("Delat
+      // Hälsoformulär till läkare/kursledare" complete = redan kopierad till mappen).
+      var candidates = rows.filter(function (r) { return r.link && !r.done; });
+      var alreadySent = rows.filter(function (r) { return r.done; }).length;
+      var noForm = rows.filter(function (r) { return !r.link; }).length;
+      if (!candidates.length) {
+        docOut.style.display = '';
+        docOut.textContent = 'Inget nytt att skicka: ' + alreadySent + ' redan skickade, '
+          + noForm + ' saknar hälsoformulär-länk.';
         return;
       }
-      var doctorEmail = '';
-      try { doctorEmail = (window.prompt('Läkarens e-postadress (lämna tom för att bara förhandsvisa):', '') || '').trim(); } catch (e) { doctorEmail = ''; }
-      var items = withHf.map(function (r) { return { name: r.name, url: r.link }; });
+      var items = candidates.map(function (r) { return { name: r.name, url: r.link }; });
       docBtn.disabled = true;
       docOut.style.display = ''; docOut.textContent = '⏳ Förhandsvisar…';
-      postToGas('sendHealthFormsToDoctor', { dryRun: true, doctorEmail: doctorEmail, items: items }).then(function (data) {
+      postToGas('sendHealthFormsToDoctor', { dryRun: true, items: items }).then(function (data) {
         if (!data || data.ok !== true) {
           docOut.textContent = '⚠️ ' + ((data && data.error) || 'okänt fel');
           return;
         }
         var okN = (data.preview || []).filter(function (p) { return p.resolved; }).length;
-        docOut.textContent = 'Skulle skicka ' + okN + '/' + items.length + ' hälsoformulär till '
-          + (data.doctorEmail || '(ingen läkare angiven)') + '. Inget skickades — bekräfta-steg kommer.';
+        var bad = items.length - okN;
+        docOut.textContent = 'Skulle kopiera ' + okN + ' nytt/nya hälsoformulär (anonymiserat) till mappen '
+          + '"HF till läkare". ' + alreadySent + ' redan skickade, ' + noForm + ' saknar länk'
+          + (bad ? ', ' + bad + ' länk(ar) gick ej att läsa' : '') + '. Inget gjordes — bekräfta-steg kommer.';
       }).catch(function (err) {
         docOut.textContent = '⚠️ ' + err.message;
       }).then(function () { docBtn.disabled = false; });
