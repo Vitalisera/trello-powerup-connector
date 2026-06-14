@@ -27,7 +27,7 @@ window.NYA_ZAPIER_CONFIG = {
   //   Genereras i https://trello.com/power-ups/admin → din Power-Up → fliken
   //   "API Key" → "Generate a new API Key". Nyckeln är PUBLIK (klient-app-nyckel,
   //   ej hemlig token) → ok att ligga här. Token hämtas per-användare via authorize().
-  APP_KEY: 'REPLACE_WITH_TRELLO_APP_KEY',
+  APP_KEY: 'cdc7127c27c4442723c2ef5108ee9388',
   APP_AUTHOR: 'Vitalisera',
 };
 
