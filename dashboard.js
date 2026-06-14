@@ -8,13 +8,14 @@
  *   - status: checklistan = hård klar-markör; labels = triggers (label satt men
  *     ej bockad = 'gap' = luckan Malin glömmer). Se window.NYA_ZAPIER_FLOW.
  *
- * Kommentarer (mänskliga vs metadata) kräver Trello REST (ej via t.card) och
- * kopplas i nästa inkrement via GAS. "Kör/Bocka"-knappar är stubbar tills skarp
- * server-side-körning är på plats.
+ * Kommentarer (mänskliga vs metadata) hämtas via Trello REST (t.getRestApi) och
+ * visas i en panel under dashboarden (filtrerar bort faktura-/betalnings-brus).
+ * "Kör/Bocka"-knappar är stubbar tills skarp körning är på plats.
  */
 'use strict';
 
-var t = TrelloPowerUp.iframe();
+var CFG = window.NYA_ZAPIER_CONFIG;
+var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var COMPACT = new URLSearchParams(location.search).get('compact') === '1';
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
@@ -140,10 +141,48 @@ function bootFull() {
   t.card('id', 'name', 'desc', 'labels', 'checklists').then(function (card) {
     var model = buildModel(card || {});
     window.DashboardView.render(document.getElementById('root'), model, handlers);
+    if (card && card.id) { loadComments(card.id); }
   }).catch(function (err) {
     document.getElementById('root').innerHTML =
       '<div style="padding:28px;font-family:Calibri,sans-serif;color:#b23a2e">⚠️ Kunde inte läsa kortet: ' + esc(err.message) + '</div>';
   });
+}
+
+/* ---------- Kommentarspanel (mänskliga kommentarer, ej metadata) ---------- */
+function restGet(token, path) {
+  var sep = path.indexOf('?') === -1 ? '?' : '&';
+  return fetch('https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token))
+    .then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+}
+// Metadata-brus att gömma (faktura/betalning) → fram med mänskliga noteringar.
+var META_RE = /faktura|betal[dt]|\bfakt\b|\d{3,}\s*kr|\bkr\b/i;
+function loadComments(cardId) {
+  t.getRestApi().getToken().then(function (token) {
+    if (!token) { return null; }
+    return restGet(token, 'cards/' + cardId + '/actions?filter=commentCard&limit=40');
+  }).then(function (actions) {
+    if (!actions) { return; }
+    var all = actions.map(function (a) {
+      return { text: (a.data && a.data.text) || '', who: (a.memberCreator && a.memberCreator.fullName) || '', date: String(a.date || '').slice(0, 10) };
+    }).filter(function (c) { return c.text; });
+    var human = all.filter(function (c) { return !META_RE.test(c.text); });
+    renderCommentsPanel(human, all.length - human.length);
+  }).catch(function () { /* tyst — panel utelämnas om token saknas/fel */ });
+}
+function renderCommentsPanel(comments, metaCount) {
+  var host = document.querySelector('.vz-cockpit');
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.style.cssText = 'background:#fff;border-top:1px solid #cfe0e2;padding:18px 26px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  var rows = comments.length ? comments.map(function (c) {
+    return '<div style="padding:10px 0;border-top:1px solid #eef3f4">'
+      + '<div style="font-size:12px;color:#5d7c87;margin-bottom:2px">' + esc(c.who) + (c.date ? ' · ' + esc(c.date) : '') + '</div>'
+      + '<div style="font-size:14px;line-height:1.45;white-space:pre-wrap">' + esc(c.text) + '</div></div>';
+  }).join('') : '<div style="font-size:13px;color:#5d7c87;padding:6px 0">Inga handskrivna kommentarer om deltagaren ännu.</div>';
+  sec.innerHTML = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600">Kommentarer om deltagaren</div>'
+    + '<div style="font-size:12px;color:#5d7c87;margin:3px 0 6px">Mänskliga noteringar' + (metaCount ? ' · ' + metaCount + ' faktura-/betalningsnotis(er) dolda' : '') + '</div>'
+    + rows;
+  host.appendChild(sec);
 }
 
 // Kompakt strip för card-back-section (egen minimal stil, ej .vz-dash).
