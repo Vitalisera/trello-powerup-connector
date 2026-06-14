@@ -88,9 +88,11 @@ var handlers = {
 };
 
 /* ---------- REST ---------- */
+// Trello REST autentiseras med key+token i query (kanoniskt), ej Bearer-header.
 function restGet(token, path) {
-  return fetch('https://api.trello.com/1/' + path, { headers: { Authorization: 'Bearer ' + token } })
-    .then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+  var sep = path.indexOf('?') === -1 ? '?' : '&';
+  var url = 'https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
+  return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
 
 function loadCourse(listId, listName) {
