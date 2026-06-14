@@ -52,8 +52,12 @@ TrelloPowerUp.initialize({
     ];
   },
 
+  // Inline-badges på kortet (under labels): båda vyerna nås direkt här också.
   'card-detail-badges': function (t, opts) {
-    return [{ title: CFG.APP_NAME, text: 'Status', color: 'blue', callback: openDashboard }];
+    return [
+      { title: CFG.APP_NAME, text: 'Deltagarstatus', color: 'blue', callback: openDashboard },
+      { title: CFG.APP_NAME, text: 'Kursöversikt', color: 'sky', callback: openCourseFromCard },
+    ];
   },
 
   // Board-knapp: icon {dark,light}. Board-brett → kursöversikt med list-väljare.
