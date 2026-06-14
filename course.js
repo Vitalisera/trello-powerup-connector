@@ -128,15 +128,25 @@ function showAuth(reason) {
 
 /* ---------- Lista-väljare (board-entry utan specifik lista) ---------- */
 function pickAndLoad() {
+  // t.getContext() ger board/card/list-id även i modal — robustare än t.lists.
+  var ctx = {};
+  try { ctx = t.getContext() || {}; } catch (e) { ctx = {}; }
   var argList = null;
   try { argList = t.arg('listId'); } catch (e) { argList = null; }
+  argList = argList || ctx.list || null;
 
-  // Kort-entry: vi har listId → ren REST, rör inte t.lists (som saknas/strular i modal).
+  // Kort-entry: vi har listId → ren REST, rör aldrig t.lists.
   if (argList) { loadCourse(argList); return; }
 
-  // Board-entry: räkna upp listor för väljare (fält-form 'id','name').
-  t.lists('id', 'name').then(function (lists) {
-    lists = lists || [];
+  // Board-entry: räkna upp listor via REST (boards/{id}/lists), ej t.lists.
+  if (!ctx.board) {
+    ROOT().innerHTML = msg('Öppna kursöversikten från ett deltagarkort (board-läget kunde inte avgöra kursen).');
+    return;
+  }
+  t.getRestApi().getToken().then(function (token) {
+    return restGet(token, 'boards/' + ctx.board + '/lists?fields=name');
+  }).then(function (lists) {
+    lists = (lists || []).filter(function (l) { return l && l.name; });
     var courses = lists.filter(function (l) { return daysToStart(l.name) !== null; });
     if (!courses.length) { courses = lists; }
     var chosen = courses[0];
