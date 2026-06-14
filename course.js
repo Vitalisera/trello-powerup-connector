@@ -23,6 +23,18 @@ function esc(s) {
   });
 }
 
+/* E-post ur ett kort-desc. Föredrar markdown-mönstret "**Epost:** [x](mailto:x)"
+ * eller "**Epost:** x", faller tillbaka till första rena adressen. Ren funktion. */
+var STAFF_EMAIL_RE = /\*\*Epost:\*\*\s*(?:\[(.*?)\]\(mailto:[^)]+\)|([\w.\-+]+@[\w.\-+]+\.\w+))/i;
+var ANY_EMAIL_RE = /[\w.\-+]+@[\w.\-]+\.\w+/;
+function extractStaffEmail(desc) {
+  var s = String(desc || '');
+  var m = s.match(STAFF_EMAIL_RE);
+  if (m) { return (m[1] || m[2] || '').trim(); }
+  var f = s.match(ANY_EMAIL_RE);
+  return f ? f[0].trim() : '';
+}
+
 /* ---------- Status-härledning per kort (samma logik som Vy1) ---------- */
 function statusForCard(card) {
   var checked = {};
@@ -92,6 +104,29 @@ var handlers = {
   onSelectCell: function () {},
 };
 
+/* ---------- GAS-anrop (CORS-säkert, samma mönster som popup.js) ----------
+ * text/plain → "simple request" → ingen OPTIONS-preflight. Body = JSON-sträng.
+ * GAS svarar alltid HTTP 200; fel signaleras i kroppens ok-fält. Klienten
+ * skickar all Trello-data hit; GAS gör bara Google-sidan (Doc/Claude/Gmail).
+ */
+function postToGas(action, payload) {
+  var url = CFG.GAS_URL;
+  if (!url || url.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
+    return Promise.reject(new Error('GAS_URL är inte ifylld i config.js'));
+  }
+  var body = JSON.stringify({ action: action, payload: payload || {} });
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: body,
+  }).then(function (res) {
+    return res.text().then(function (text) {
+      if (!res.ok) { throw new Error('GAS HTTP ' + res.status + ': ' + text.slice(0, 200)); }
+      try { return JSON.parse(text); } catch (e) { throw new Error('Ogiltigt JSON-svar från GAS: ' + text.slice(0, 200)); }
+    });
+  });
+}
+
 /* ---------- REST ---------- */
 // Trello REST autentiseras med key+token i query (kanoniskt), ej Bearer-header.
 function restGet(token, path) {
@@ -158,7 +193,8 @@ function loadStaff(courseName) {
             var people = (cards || []).map(function (c) { return staffPerson(c, cfg); }).filter(Boolean);
             // Specialregel: översta assistenten är alltid Assistentledare.
             if (cfg.key === 'assistenter' && people.length) { people[0].role = 'Assistentledare'; }
-            return { cfg: cfg, found: true, list: list.name, people: people };
+            // Stash:a assistent-listans id så "Alla emailadresser" kan hämta desc skarpt.
+            return { cfg: cfg, found: true, list: list.name, listId: list.id, people: people };
           });
         }).catch(function () { return { cfg: cfg, found: true, people: [] }; });
       });
@@ -194,8 +230,11 @@ function renderStaffPanel(groups) {
       }).join('');
       body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
-    var extra = (g.cfg.key === 'assistenter' && g.people.length)
-      ? stubBtn('Alla emailadresser', 'Skulle samla och visa alla assistenters e-postadresser för kursen. Kopplas senare.')
+    var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
+      ? '<div class="vz-stub-row">'
+        + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
+        + '<span class="vz-stub-note">läser korten skarpt (read-only)</span></div>'
+        + '<textarea id="vz-asst-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>'
       : '';
     return '<div class="vz-staff-group">'
       + '<div class="vz-staff-grouphead">' + esc(g.cfg.label) + (g.people.length ? '<span class="vz-staff-badge">' + g.people.length + '</span>' : '') + '</div>'
@@ -203,7 +242,30 @@ function renderStaffPanel(groups) {
   }).join('');
   sec.innerHTML = '<div class="vz-panel-title">Personal på kursen</div>' + cards;
   host.appendChild(sec);
-  wireStubs(sec);
+
+  // "Alla emailadresser": hämta assistent-listans kort med desc skarpt via REST,
+  // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
+  var emBtn = sec.querySelector('#vz-asst-emails');
+  var emOut = sec.querySelector('#vz-asst-emails-out');
+  if (emBtn) {
+    emBtn.addEventListener('click', function () {
+      var listId = emBtn.getAttribute('data-listid');
+      emBtn.disabled = true;
+      emOut.style.display = ''; emOut.value = '⏳ Hämtar e-postadresser…';
+      t.getRestApi().getToken().then(function (token) {
+        if (!token) { throw new Error('Ingen Trello-token.'); }
+        return restGet(token, 'lists/' + listId + '/cards?fields=name,desc');
+      }).then(function (cards) {
+        var emails = (cards || []).map(function (c) { return extractStaffEmail(c.desc); }).filter(Boolean);
+        // Dedupa, behåll ordning.
+        var seen = {}, uniq = [];
+        emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
+        emOut.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i assistentkortens beskrivningar.';
+      }).catch(function (err) {
+        emOut.value = '⚠️ ' + err.message;
+      }).then(function () { emBtn.disabled = false; });
+    });
+  }
 }
 
 /* ---------- Kursnivå-checklista (#3) — GLOBAL per kurssteg (Malins beslut) ----------
@@ -303,9 +365,10 @@ function hfDoneForCard(card) {
   return { exists: exists, done: done };
 }
 function loadHfPanel(cards) {
-  var rows = (cards || []).map(function (c) {
+  var rows = (cards || []).map(function (c, i) {
     var hf = hfDoneForCard(c);
     return {
+      code: 'P' + (i + 1), // anonym deltagarkod (skickas till GAS istället för namn)
       name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
       exists: hf.exists, done: hf.done,
       link: commentLink(c, HF_LINK_RES), // HF-dokumentlänk ur kommentar om den finns
@@ -332,19 +395,88 @@ function renderHfPanel(rows) {
     ? '<table class="vz-tbl vz-tbl--hf"><colgroup><col class="vz-col-name"><col class="vz-col-status"></colgroup>'
       + '<tbody>' + bodyRows + '</tbody></table>'
     : '<div class="vz-panel-empty">Inga deltagare.</div>';
+  var withLink = rows.filter(function (r) { return r.link; }).length;
   sec.innerHTML = '<div class="vz-panel-head">'
     + '<div class="vz-panel-title">Hälsoformulär till läkare</div>'
     + '<div class="vz-panel-meta">' + done + '/' + rows.length + ' skickade</div></div>'
     + '<div class="vz-panel-note">Namn med ↗ länkar till hälsoformuläret. Status speglar checklistpunkten "Delat Hälsoformulär till läkare/kursledare".</div>'
     + table
-    + stubBtn('Skicka till läkare', 'Skulle skicka ' + done + ' hälsoformulär till läkaren för bedömning. Kopplas server-side (med bekräftelse) senare.')
+    + '<div class="vz-stub-row">'
+    + '<button class="vz-btn" id="vz-hf-doctor">Skicka till läkare</button>'
+    + '<span class="vz-stub-note">förhandsvisning (dry-run) — inget skickas</span></div>'
+    + '<div id="vz-hf-doctor-out" class="vz-panel-note" style="display:none"></div>'
     + '<div class="vz-allergi-box">'
     + '<div class="vz-allergi-title">Matallergier</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
-    + '<div class="vz-allergi-actions"><button class="vz-stub vz-btn" data-msg="Skulle läsa alla hälsoformulär och sammanställa angivna matallergier här. Kopplas senare (kräver läsning av HF-dokumenten).">Matallergier</button>'
-    + '<span class="vz-stub-note">stub — hämtar ur HF senare</span></div></div>';
+    + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Matallergier</button>'
+    + '<span class="vz-stub-note">läser hälsoformulären anonymiserat (koder, ej namn)</span></div></div>';
   host.appendChild(sec);
-  wireStubs(sec);
+
+  // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
+  //    ersätt koderna med riktiga namn lokalt i svaret.
+  var allergiBtn = sec.querySelector('#vz-allergi-btn');
+  var allergiOut = sec.querySelector('#vz-allergi');
+  if (allergiBtn) {
+    allergiBtn.addEventListener('click', function () {
+      var withHf = rows.filter(function (r) { return r.link; });
+      if (!withHf.length) {
+        allergiOut.value = 'Inga deltagare har en hälsoformulär-länk i kortkommentarerna än.';
+        return;
+      }
+      var items = withHf.map(function (r) { return { code: r.code, url: r.link }; });
+      var codeToName = {};
+      withHf.forEach(function (r) { codeToName[r.code] = r.name; });
+      allergiBtn.disabled = true;
+      allergiOut.value = '⏳ Läser ' + items.length + ' hälsoformulär och sammanställer…';
+      postToGas('courseAllergies', { items: items }).then(function (data) {
+        if (!data || data.ok !== true) {
+          if (data && data.error === 'anthropic_key_missing') {
+            allergiOut.value = '⚠️ Kan inte sammanställa: AI-nyckeln (ANTHROPIC_API_KEY) saknas i serverns inställningar.';
+          } else {
+            allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel');
+          }
+          return;
+        }
+        // Avanonymisera: byt varje kod (Pn) mot deltagarens namn, lokalt.
+        var text = String(data.summary || '');
+        Object.keys(codeToName).forEach(function (code) {
+          text = text.replace(new RegExp('\\b' + code + '\\b', 'g'), codeToName[code]);
+        });
+        allergiOut.value = text || '(tomt svar)';
+      }).catch(function (err) {
+        allergiOut.value = '⚠️ ' + err.message;
+      }).then(function () { allergiBtn.disabled = false; });
+    });
+  }
+
+  // ── Skicka till läkare: dry-run förhandsvisning (inget skickas skarpt).
+  var docBtn = sec.querySelector('#vz-hf-doctor');
+  var docOut = sec.querySelector('#vz-hf-doctor-out');
+  if (docBtn) {
+    docBtn.addEventListener('click', function () {
+      var withHf = rows.filter(function (r) { return r.link; });
+      if (!withHf.length) {
+        docOut.style.display = ''; docOut.textContent = 'Inga deltagare har en hälsoformulär-länk att skicka än.';
+        return;
+      }
+      var doctorEmail = '';
+      try { doctorEmail = (window.prompt('Läkarens e-postadress (lämna tom för att bara förhandsvisa):', '') || '').trim(); } catch (e) { doctorEmail = ''; }
+      var items = withHf.map(function (r) { return { name: r.name, url: r.link }; });
+      docBtn.disabled = true;
+      docOut.style.display = ''; docOut.textContent = '⏳ Förhandsvisar…';
+      postToGas('sendHealthFormsToDoctor', { dryRun: true, doctorEmail: doctorEmail, items: items }).then(function (data) {
+        if (!data || data.ok !== true) {
+          docOut.textContent = '⚠️ ' + ((data && data.error) || 'okänt fel');
+          return;
+        }
+        var okN = (data.preview || []).filter(function (p) { return p.resolved; }).length;
+        docOut.textContent = 'Skulle skicka ' + okN + '/' + items.length + ' hälsoformulär till '
+          + (data.doctorEmail || '(ingen läkare angiven)') + '. Inget skickades — bekräfta-steg kommer.';
+      }).catch(function (err) {
+        docOut.textContent = '⚠️ ' + err.message;
+      }).then(function () { docBtn.disabled = false; });
+    });
+  }
 }
 
 // Åtgärdsknapp-stub: visar vad den SKULLE göra (mejl/sidoeffekter kopplas server-side).
@@ -391,17 +523,32 @@ function loadStoryMatrix(courseName, participants, cards) {
   }).then(function (d) {
     if (!d) { return; }
     renderStoryMatrix(key, participants || [], d.leaders, d.selStory, {
-      title: 'Livsberättelser → gruppledare', storyLinks: storyLinks,
+      title: 'Livsberättelser → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse',
       note: 'Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.',
-      stubMsg: 'Skulle mejla varje gruppledare vilka livsberättelser hen ska läsa. Kopplas server-side (med bekräftelse) senare.',
     });
     renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
-      title: 'Uppföljningssamtal → gruppledare', storyLinks: {},
+      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning',
       note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
-      stubMsg: 'Skulle mejla varje gruppledare vilka uppföljningssamtal hen ska hålla. Kopplas server-side (med bekräftelse) senare.',
     });
   }).catch(function () {});
 }
+/* Bygger gruppledar-tilldelningar ur urvalskartan (cellKey 'pKey||leader'=true).
+ * Ren funktion (testbar): returnerar [{leaderName, leaderEmail:'', participants:[namn,...]}]
+ * med bara gruppledare som har minst en bockad deltagare. leaderEmail lämnas
+ * tom — gruppledar-mejl finns inte i kursvyns data än (TODO-källa). */
+function buildLeaderAssignments(sel, participants, leaders) {
+  sel = sel || {}; participants = participants || []; leaders = leaders || [];
+  var nameByKey = {};
+  participants.forEach(function (p) { nameByKey[p.key] = p.name; });
+  return leaders.map(function (ld) {
+    var names = [];
+    participants.forEach(function (p) {
+      if (sel[p.key + '||' + ld]) { names.push(nameByKey[p.key]); }
+    });
+    return { leaderName: ld, leaderEmail: '', participants: names };
+  }).filter(function (a) { return a.participants.length; });
+}
+
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
   opts = opts || {}; sel = sel || {};
   var storyLinks = opts.storyLinks || {};
@@ -431,11 +578,35 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     sec.innerHTML = head
       + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
       + '<div class="vz-story-scroll"><table class="vz-tbl vz-story-tbl"><thead><tr><th class="vz-story-corner">Deltagare</th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div>'
-      + stubBtn('Skicka mail', opts.stubMsg || 'Kopplas senare.');
+      + '<div class="vz-stub-row">'
+      + '<button class="vz-btn" id="vz-mail-btn">Skicka mail</button>'
+      + '<span class="vz-stub-note">förhandsvisning (dry-run) — inget skickas</span></div>'
+      + '<div id="vz-mail-out" class="vz-panel-note" style="display:none;white-space:pre-line"></div>';
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
-    wireStubs(sec);
+    var mailBtn = sec.querySelector('#vz-mail-btn');
+    var mailOut = sec.querySelector('#vz-mail-out');
+    if (mailBtn) {
+      mailBtn.addEventListener('click', function () {
+        var assignments = buildLeaderAssignments(sel, participants, leaders);
+        if (!assignments.length) {
+          mailOut.style.display = ''; mailOut.textContent = 'Bocka minst en deltagare per gruppledare först.';
+          return;
+        }
+        mailBtn.disabled = true;
+        mailOut.style.display = ''; mailOut.textContent = '⏳ Förhandsvisar…';
+        postToGas('sendGroupLeaderMail', { dryRun: true, kind: opts.kind || '', assignments: assignments }).then(function (data) {
+          if (!data || data.ok !== true) { mailOut.textContent = '⚠️ ' + ((data && data.error) || 'okänt fel'); return; }
+          var lines = (data.preview || []).map(function (p) {
+            return '• ' + p.leaderName + ' (' + (p.leaderEmail || 'mejl saknas') + '): ' + p.count + ' st';
+          });
+          mailOut.textContent = 'Skulle mejla ' + lines.length + ' gruppledare. Inget skickades — bekräfta-steg kommer.\n' + lines.join('\n');
+        }).catch(function (err) {
+          mailOut.textContent = '⚠️ ' + err.message;
+        }).then(function () { mailBtn.disabled = false; });
+      });
+    }
   }
   paint();
   host.appendChild(sec);
