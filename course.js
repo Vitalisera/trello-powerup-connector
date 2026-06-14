@@ -97,8 +97,10 @@ function restGet(token, path) {
 
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
+  var tokLen = 0;
   t.getRestApi().getToken().then(function (token) {
-    // Listnamn via REST om vi inte redan har det (kort-entry slipper t.lists).
+    tokLen = token ? String(token).length : 0;
+    if (!token) { throw new Error('no-token'); }
     var nameP = listName ? Promise.resolve(listName)
       : restGet(token, 'lists/' + listId + '?fields=name').then(function (l) { return l.name; });
     var cardsP = restGet(token, 'lists/' + listId + '/cards?fields=name,desc,labels,idList,url&checklists=all&checklist_fields=name&checkItem_fields=name,state');
@@ -107,9 +109,21 @@ function loadCourse(listId, listName) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
   }).catch(function (err) {
-    ROOT().innerHTML = msg('⚠️ Kunde inte hämta kursdata: ' + esc(err.message)
-      + '<br><button class="vzbtn" id="retry">Försök igen</button>');
-    var b = document.getElementById('retry'); if (b) { b.addEventListener('click', function () { loadCourse(listId, listName); }); }
+    var diag;
+    if (err.message === 'no-token') {
+      diag = 'Ingen Trello-token kunde läsas (token-längd 0). Vanlig orsak: Chrome "Third Party Storage Partitioning" — popupens token når inte modalen.';
+    } else if (/401/.test(err.message)) {
+      diag = 'Token avvisades (401). Token-längd: ' + tokLen + '. (Längd 0 = lagrings­problem; >0 = nyckel/scope.)';
+    } else {
+      diag = 'Kunde inte hämta kursdata: ' + esc(err.message);
+    }
+    ROOT().innerHTML = msg('⚠️ ' + diag
+      + '<br><button class="vzbtn" id="reauth">Anslut om</button> &nbsp; <button class="vzbtn" id="retry">Försök igen</button>');
+    var rb = document.getElementById('retry'); if (rb) { rb.addEventListener('click', function () { loadCourse(listId, listName); }); }
+    var ab = document.getElementById('reauth'); if (ab) { ab.addEventListener('click', function () {
+      try { t.getRestApi().clearToken(); } catch (e) {}
+      t.popup({ title: 'Anslut Trello', url: './authorize.html', height: 220 });
+    }); }
   });
 }
 
