@@ -12,15 +12,15 @@
  */
 'use strict';
 
-var GRAY_ICON = './icons/bolt-gray.svg';
-var WHITE_ICON = './icons/bolt-white.svg';
+var LOGO = window.NYA_ZAPIER_CONFIG.LOGO_URL;
+var BTN_TEXT = window.NYA_ZAPIER_CONFIG.BUTTON_TEXT;
 
 // Öppnar command-paletten som iframe-popup (url-form av t.popup).
 function openPalette(t) {
   return t.popup({
-    title: window.NYA_ZAPIER_CONFIG.APP_NAME + ' – kommandon',
+    title: window.NYA_ZAPIER_CONFIG.APP_NAME + ' – Kommandon',
     url: './popup.html',
-    height: 240, // initial höjd; popup.js kallar t.sizeTo() vid behov
+    height: 220, // initial höjd; popup.js kallar t.sizeTo() vid behov
   });
 }
 
@@ -29,8 +29,8 @@ TrelloPowerUp.initialize({
   'card-buttons': function (t, opts) {
     return [
       {
-        icon: GRAY_ICON,
-        text: window.NYA_ZAPIER_CONFIG.APP_NAME,
+        icon: LOGO,
+        text: BTN_TEXT,
         callback: openPalette,
         condition: 'edit',
       },
@@ -38,11 +38,12 @@ TrelloPowerUp.initialize({
   },
 
   // Board-knapp: icon är ett objekt {dark, light} för ljus/mörk bakgrund.
+  // Logo:n är fullfärg → samma bild på båda bakgrunderna.
   'board-buttons': function (t, opts) {
     return [
       {
-        icon: { dark: WHITE_ICON, light: GRAY_ICON },
-        text: window.NYA_ZAPIER_CONFIG.APP_NAME,
+        icon: { dark: LOGO, light: LOGO },
+        text: BTN_TEXT,
         callback: openPalette,
         condition: 'edit',
       },

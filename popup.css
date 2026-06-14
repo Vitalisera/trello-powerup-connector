@@ -1,0 +1,125 @@
+/*
+ * Vitalisera-brand (grafiska manualen):
+ *   mint-bg #cce2e3 · mörk text #08445c · sekundär/accent #357087
+ *   vita ytor · Calibri-typsnitt. Status: success/röd brand-harmoniserade.
+ */
+:root {
+  --mint:    #cce2e3;
+  --mint-2:  #bcd9db;
+  --ink:     #08445c;
+  --ink-2:   #4d7c8e;  /* muted text */
+  --accent:  #357087;
+  --surface: #ffffff;
+  --line:    #b9d4d6;
+  --ok:      #1f7a53;
+  --ok-bg:   #e3f5ec;
+  --err:     #b23a2e;
+  --err-bg:  #fbe9e7;
+  --shadow:  0 4px 16px rgba(8, 68, 92, 0.13);
+  --radius:  13px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  font-family: Calibri, "Segoe UI", Candara, system-ui, -apple-system, sans-serif;
+  background: var(--mint);
+  color: var(--ink);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+#app { padding: 12px 12px 14px; }
+
+/* Brand-header */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 2px 12px;
+}
+.brand img { width: 30px; height: 30px; display: block; border-radius: 7px; }
+.brand .titles { line-height: 1.15; }
+.brand .titles b { font-size: 15px; font-weight: 700; letter-spacing: .2px; }
+.brand .titles span { display: block; font-size: 11px; color: var(--ink-2); font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+
+/* Kommandolista */
+ul#cmds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+li.cmd {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  opacity: 0;
+  transform: translateY(6px);
+  animation: rise .32s ease forwards;
+}
+li.cmd:nth-child(1) { animation-delay: .03s; }
+li.cmd:nth-child(2) { animation-delay: .09s; }
+li.cmd:nth-child(3) { animation-delay: .15s; }
+li.cmd:nth-child(4) { animation-delay: .21s; }
+@keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+li.cmd:hover, li.cmd:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+li.cmd:active { transform: scale(.985); }
+
+.tile {
+  flex: 0 0 auto;
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px;
+  background: var(--mint);
+  transition: background .16s ease;
+}
+li.cmd:hover .tile { background: var(--mint-2); }
+.body { flex: 1 1 auto; min-width: 0; }
+.body .t { font-size: 14.5px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+.body .d { font-size: 12px; color: var(--ink-2); margin-top: 1px; line-height: 1.3; }
+.kbd {
+  flex: 0 0 auto;
+  font-size: 13px; color: var(--accent);
+  opacity: 0; transform: translateX(-3px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+li.cmd:hover .kbd { opacity: 1; transform: translateX(0); }
+
+/* Resultatpanel */
+#status {
+  margin-top: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  padding: 10px 12px;
+  display: none;
+  animation: rise .25s ease forwards;
+}
+#status.show { display: block; }
+#status .head { font-size: 12.5px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+#status pre {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#status.pending { border-left-color: var(--accent); }
+#status.pending .head { color: var(--accent); }
+#status.ok { border-left-color: var(--ok); background: var(--ok-bg); }
+#status.ok .head { color: var(--ok); }
+#status.err { border-left-color: var(--err); background: var(--err-bg); }
+#status.err .head { color: var(--err); }
+
+.dots::after { content: ''; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }

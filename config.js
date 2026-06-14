@@ -15,7 +15,11 @@ window.NYA_ZAPIER_CONFIG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbx9d_D8Z0AMA8klYgOq3N9VBMu4Ed_N8oc5jhaRzvF1moF8w9Bmt86Dgf6RGNGO0oF96g/exec',
 
   // Visningsnamn i UI
-  APP_NAME: 'nya-zapier',
+  APP_NAME: 'Vitalisera',
+  BUTTON_TEXT: 'Vitalisera Kommandon',
+
+  // Vitalisera-logga (grafiska manualen, delas med brandade mejl)
+  LOGO_URL: 'https://mcusercontent.com/415e930e2acb057a5ad12bd07/images/937b7fc2-3389-49b4-8e98-43c261ce33a0.png',
 };
 
 /*
@@ -32,20 +36,26 @@ window.NYA_ZAPIER_CONFIG = {
 window.NYA_ZAPIER_COMMANDS = [
   {
     id: 'hello',
-    text: '👋 Hej (klient-test)',
+    icon: '👋',
+    title: 'Hej',
+    desc: 'Klient-test — visar en notis i Trello',
     type: 'alert',
     message: 'Power-Up:en lever! Detta är en ren klient-stub utan GAS-anrop.',
   },
   {
     id: 'ping',
-    text: '📡 Ping GAS (echo)',
+    icon: '📡',
+    title: 'Ping GAS',
+    desc: 'Testa anslutningen till servern',
     type: 'gas',
     action: 'ping',
     // payload byggs i popup.js; GAS svarar med pong + ekat payload
   },
   {
     id: 'card-info',
-    text: '🃏 Skicka kortinfo till GAS',
+    icon: '🃏',
+    title: 'Skicka kortinfo',
+    desc: 'Skicka kortets data till GAS',
     type: 'gasCard',
     action: 'echo',
   },
