@@ -1,0 +1,583 @@
+/* ============================================================================
+ * Vitalisera · Kursöversikt — datadriven vy (produktion)
+ *
+ * En KURS = en Trello-lista; varje DELTAGARE = ett kort. Den här vyn ger
+ * administratören Malin en KONSOLIDERAD MATRIS över alla deltagare och var de
+ * är i den administrativa processen — och framför allt board-brett SE LUCKORNA:
+ * steg där en label är satt (automationen triggad) men checklistan inte bockad
+ * ("borde vara klart men är inte"). Samma flöde som deltagar-dashboarden, nu
+ * aggregerat över hela kursen.
+ *
+ * Publikt API (Robert wirar mot t.cards senare):
+ *   window.CourseView.render(rootEl, model, handlers)
+ *
+ * Ren vanilla JS. Inga nätverksanrop, ingen Trello-SDK. Om
+ * window.NYA_ZAPIER_COURSE_MODEL saknas renderas DEMO_MODEL så filen kan
+ * förhandsgranskas fristående. Allt scopat under .vz-course.
+ * ========================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------- ikoner (inline SVG) ---------- */
+  var ic = {
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    hand:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2a8 8 0 0 1-7-4l-2.8-5a2 2 0 0 1 3.5-2L7 14"/></svg>',
+    search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+    sort:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 4l3 3M17 4v16M17 4l-3 3M17 20l3-3"/></svg>',
+    people:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
+  };
+
+  var MARK_URL = 'https://vitalisera.github.io/trello-powerup-connector/icons/vitalisera-mark.png';
+
+  /* status → metadata för matriscellen + legend */
+  var STATUS = {
+    done:   { cls: 'd-done',   word: 'Klar',     icon: ic.check, glyph: '' },
+    gap:    { cls: 'd-gap',    word: 'Lucka',    icon: ic.warn,  glyph: '' },
+    wait:   { cls: 'd-wait',   word: 'Återstår', icon: null,     glyph: '·' },
+    manual: { cls: 'd-manual', word: 'Manuellt', icon: ic.hand,  glyph: '' },
+    na:     { cls: 'd-na',     word: 'Ej relevant', icon: null,  glyph: '–' }
+  };
+
+  /* ---------- hjälpare ---------- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function el(html) {
+    var d = document.createElement('div');
+    d.innerHTML = html.trim();
+    return d.firstChild;
+  }
+  function meta(status) { return STATUS[status] || STATUS.wait; }
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '–';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  function safeProgress(p) {
+    var pr = p && p.progress ? p.progress : {};
+    var total = pr.total != null ? pr.total : 0;
+    var done = pr.done != null ? pr.done : 0;
+    var pct = pr.pct != null ? pr.pct : (total ? Math.round(done / total * 100) : 0);
+    return { done: done, total: total, pct: pct };
+  }
+  function gapsOf(p, steps) {
+    if (p.gapCount != null) return p.gapCount;
+    var st = p.status || {};
+    return steps.reduce(function (n, s) { return n + (st[s.key] === 'gap' ? 1 : 0); }, 0);
+  }
+
+  /* ---------- topbar (kurs + datum + dagar till start) ---------- */
+  function countdownHtml(daysToStart) {
+    if (daysToStart == null) {
+      return ''
+        + '<div class="vz-cv-countdown is-passed">'
+        + '  <span class="num">–</span><span class="unit">startdatum</span>'
+        + '</div>';
+    }
+    if (daysToStart < 0) {
+      return ''
+        + '<div class="vz-cv-countdown is-passed">'
+        + '  <span class="num">' + Math.abs(daysToStart) + '</span><span class="unit">dagar sedan start</span>'
+        + '</div>';
+    }
+    var soon = daysToStart <= 14;
+    return ''
+      + '<div class="vz-cv-countdown' + (soon ? ' is-soon' : '') + '">'
+      + '  <span class="num">' + daysToStart + '</span>'
+      + '  <span class="unit">' + (daysToStart === 1 ? 'dag till start' : 'dagar till start') + '</span>'
+      + '</div>';
+  }
+
+  function topbarHtml(course) {
+    course = course || {};
+    return ''
+      + '<header class="vz-cv-topbar">'
+      + '  <div class="vz-cv-brand">'
+      + '    <img src="' + MARK_URL + '" alt="Vitalisera">'
+      + '    <div class="sep"></div>'
+      + '    <div class="crumb">Kursöversikt<b>' + esc(course.name || 'Kurs') + '</b></div>'
+      + '  </div>'
+      + '  <div class="vz-cv-when">'
+      + '    <div class="vz-cv-date">'
+      + '      <div class="label">Kursdatum</div>'
+      + '      <div class="val">' + esc(course.datum || '–') + '</div>'
+      + '    </div>'
+      +      countdownHtml(course.daysToStart)
+      + '  </div>'
+      + '</header>';
+  }
+
+  /* ---------- sammanfattning + kontroller ---------- */
+  function summaryHtml(summary, course, state) {
+    var s = summary || {};
+    var allClear = (s.withGaps || 0) === 0;
+    var soon = course && course.daysToStart != null && course.daysToStart >= 0 && course.daysToStart <= 14;
+
+    var headHtml = allClear
+      ? '<span class="hl">Inga luckor.</span> Allt som triggats är också bockat.'
+      : (s.withGaps || 0) + ' deltagare har <span class="hl">öppna luckor</span> som väntar på din bock.';
+    if (soon && !allClear) {
+      headHtml = 'Snart kursstart — fokus skiftar till förberedelse. ' + headHtml;
+    } else if (soon && allClear) {
+      headHtml = 'Snart kursstart och inga luckor — fint läge.';
+    }
+
+    return ''
+      + '<section class="vz-cv-summary' + (allClear ? ' all-clear' : '') + '">'
+      + '  <div class="vz-cv-stats">'
+      + '    <div class="vz-cv-stat is-people">'
+      + '      <span class="big" data-count="' + (s.total || 0) + '">0</span>'
+      + '      <span class="lbl"><span class="ic">' + ic.people + '</span>Deltagare</span>'
+      + '    </div>'
+      + '    <div class="vz-cv-stat is-gap' + ((s.withGaps || 0) > 0 ? ' has-gaps' : '') + '">'
+      + '      <span class="big" data-count="' + (s.withGaps || 0) + '">0</span>'
+      + '      <span class="lbl"><span class="ic">' + ic.warn + '</span>Har luckor</span>'
+      + '    </div>'
+      + '    <div class="vz-cv-stat ' + (allClear ? 'is-clear' : 'is-action') + '">'
+      + '      <span class="big" data-count="' + (s.openActions || 0) + '">0</span>'
+      + '      <span class="lbl"><span class="ic">' + (allClear ? ic.check : ic.spark) + '</span>Åtgärder väntar</span>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="vz-cv-sumside">'
+      + '    <div class="head' + (allClear ? ' clear' : '') + '">' + headHtml + '</div>'
+      + '    <div class="vz-cv-controls">'
+      + '      <div class="vz-cv-search">' + ic.search
+      + '        <input type="text" data-cv-search placeholder="Sök deltagare…" aria-label="Sök deltagare" value="' + esc(state.query || '') + '">'
+      + '      </div>'
+      + '      <div class="vz-cv-seg" role="group" aria-label="Sortering">'
+      + '        <button data-sort="gaps" class="' + (state.sort === 'gaps' ? 'active' : '') + '">Flest luckor</button>'
+      + '        <button data-sort="progress" class="' + (state.sort === 'progress' ? 'active' : '') + '">Minst klar</button>'
+      + '        <button data-sort="name" class="' + (state.sort === 'name' ? 'active' : '') + '">Namn</button>'
+      + '      </div>'
+      + '    </div>'
+      + '  </div>'
+      + '</section>';
+  }
+
+  /* ---------- matris-huvud ---------- */
+  function theadHtml(steps, phases) {
+    // rad 1: fas-rubriker (colspan över sina steg)
+    var phaseRow = '<tr>'
+      + '<th class="vz-cv-corner" rowspan="2">'
+      + '  <div class="ct">Deltagare</div>'
+      + '  <div class="cn">rad per kort i listan</div>'
+      + '</th>';
+    var firstPhaseKey = phases.length ? phases[0].key : null;
+    phases.forEach(function (ph, i) {
+      phaseRow += '<th class="vz-cv-phasehead' + (i > 0 ? ' phase-2 phase-edge' : '') + '" colspan="' + ph.count + '">'
+        + '<div class="ph-line"><span>' + esc(ph.title) + '</span><span class="bar"></span></div>'
+        + '</th>';
+    });
+    phaseRow += '</tr>';
+
+    // rad 2: steg-rubriker
+    var stepRow = '<tr>';
+    var n = 0;
+    var phaseStart = {}; // markera första steget i varje (icke-första) fas → vänsterkant
+    var counts = {};
+    phases.forEach(function (ph) { counts[ph.key] = 0; });
+    steps.forEach(function (s) {
+      n += 1;
+      var edge = (s.phase && s.phase !== firstPhaseKey && counts[s.phase] === 0) ? ' phase-edge' : '';
+      counts[s.phase] = (counts[s.phase] || 0) + 1;
+      stepRow += '<th class="vz-cv-stephead' + edge + '" title="' + esc(s.title) + '">'
+        + '<span class="sidx">' + n + '</span>'
+        + '<span class="stitle">' + esc(s.short || s.title) + '</span>'
+        + '</th>';
+    });
+    stepRow += '</tr>';
+
+    return '<thead>' + phaseRow + stepRow + '</thead>';
+  }
+
+  /* ---------- en deltagarrad ---------- */
+  function rowHtml(p, steps, idx, firstPhaseKey) {
+    var prog = safeProgress(p);
+    var gaps = gapsOf(p, steps);
+    var hasGaps = gaps > 0;
+    var complete = prog.total > 0 && prog.done >= prog.total;
+    var delay = Math.min(idx * 45, 900);
+
+    var cls = 'vz-cv-row'
+      + (hasGaps ? ' has-gaps' : '')
+      + (complete ? ' is-complete' : '');
+
+    var gapFlag = hasGaps
+      ? '<span class="gapflag">' + ic.warn + (gaps) + '</span>'
+      : '';
+
+    var cells = '';
+    var phaseSeen = {};
+    steps.forEach(function (s) {
+      var stcode = (p.status && p.status[s.key]) || 'wait';
+      var m = meta(stcode);
+      var edge = (s.phase && s.phase !== firstPhaseKey && !phaseSeen[s.phase]) ? ' phase-edge' : '';
+      phaseSeen[s.phase] = true;
+      var inner = m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>';
+      cells += '<td class="vz-cv-cell' + edge + (stcode === 'gap' ? ' is-gap' : '') + '"'
+        + ' data-step-key="' + esc(s.key) + '" title="' + esc(s.title + ' — ' + m.word) + '">'
+        + '<span class="vz-cv-dot ' + m.cls + '">' + inner + '</span>'
+        + '</td>';
+    });
+
+    return ''
+      + '<tr class="' + cls + '" data-pkey="' + esc(p.key) + '" style="animation-delay:' + delay + 'ms" tabindex="0" role="button">'
+      + '  <td class="vz-cv-namecell">'
+      + '    <div class="vz-cv-avatar">' + esc(initials(p.name)) + '</div>'
+      + '    <div class="vz-cv-pinfo">'
+      + '      <div class="pname">' + esc(p.name || 'Deltagare') + gapFlag + '</div>'
+      + '      <div class="vz-cv-prog">'
+      + '        <span class="vz-cv-bar"><span data-pct="' + prog.pct + '"></span></span>'
+      + '        <span class="frac">' + prog.done + '/' + prog.total + '</span>'
+      + '      </div>'
+      + '    </div>'
+      + '  </td>'
+      +    cells
+      + '</tr>';
+  }
+
+  function emptyHtml(query) {
+    return ''
+      + '<tr><td colspan="99">'
+      + '  <div class="vz-cv-empty">'
+      + '    <div class="em-ic">' + ic.search + '</div>'
+      + '    <h3>Ingen deltagare matchar</h3>'
+      + '    <p>Inget kort i listan matchar ”' + esc(query) + '”. Rensa sökningen för att se alla.</p>'
+      + '  </div>'
+      + '</td></tr>';
+  }
+
+  /* ---------- footer-legend ---------- */
+  function footHtml() {
+    return ''
+      + '<footer class="vz-cv-foot">'
+      + '  <span class="ftitle">Statusnyckel</span>'
+      + '  <div class="vz-cv-legend">'
+      + '    <span class="vz-cv-lg lg-done"><span class="swab">' + ic.check + '</span>Klar</span>'
+      + '    <span class="vz-cv-lg lg-gap"><span class="swab">' + ic.warn + '</span>Lucka — label satt, ej bockad</span>'
+      + '    <span class="vz-cv-lg lg-wait"><span class="swab">·</span>Återstår</span>'
+      + '    <span class="vz-cv-lg lg-manual"><span class="swab">' + ic.hand + '</span>Manuellt steg</span>'
+      + '    <span class="vz-cv-lg lg-na"><span class="swab">–</span>Ej relevant</span>'
+      + '  </div>'
+      + '</footer>';
+  }
+
+  /* ---------- sortering ---------- */
+  function sortParticipants(list, steps, mode) {
+    var arr = list.slice();
+    if (mode === 'name') {
+      arr.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'sv'); });
+    } else if (mode === 'progress') {
+      arr.sort(function (a, b) {
+        var pa = safeProgress(a).pct, pb = safeProgress(b).pct;
+        if (pa !== pb) return pa - pb;                 // minst klar överst
+        return gapsOf(b, steps) - gapsOf(a, steps);
+      });
+    } else { // 'gaps' (default) — flest luckor överst
+      arr.sort(function (a, b) {
+        var ga = gapsOf(a, steps), gb = gapsOf(b, steps);
+        if (ga !== gb) return gb - ga;
+        var pa = safeProgress(a).pct, pb = safeProgress(b).pct;
+        if (pa !== pb) return pa - pb;                 // sedan minst klar
+        return String(a.name || '').localeCompare(String(b.name || ''), 'sv');
+      });
+    }
+    return arr;
+  }
+
+  /* ---------- räkne-upp-animation av siffror ---------- */
+  function animateCounts(rootEl) {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var nodes = rootEl.querySelectorAll('[data-count]');
+    Array.prototype.forEach.call(nodes, function (node) {
+      var target = parseInt(node.getAttribute('data-count'), 10) || 0;
+      if (reduce || target === 0) { node.textContent = String(target); return; }
+      var dur = 700, start = null;
+      function tick(ts) {
+        if (start == null) start = ts;
+        var t = Math.min((ts - start) / dur, 1);
+        var eased = 1 - Math.pow(1 - t, 3);
+        node.textContent = String(Math.round(eased * target));
+        if (t < 1) requestAnimationFrame(tick);
+        else node.textContent = String(target);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+
+  /* ---------- progress-bar-fyllning ---------- */
+  function animateBars(scopeEl) {
+    var bars = scopeEl.querySelectorAll('.vz-cv-bar > span[data-pct]');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        Array.prototype.forEach.call(bars, function (b) {
+          var pct = parseFloat(b.getAttribute('data-pct')) || 0;
+          b.style.width = pct + '%';
+        });
+      });
+    });
+  }
+
+  /* ========================================================================
+   * RENDER — det publika API:t
+   * ====================================================================== */
+  function render(rootEl, model, handlers) {
+    if (!rootEl) return;
+    model = model || {};
+    handlers = handlers || {};
+    var course = model.course || {};
+    var steps = (model.steps || []).slice();
+    var participants = (model.participants || []).slice();
+
+    // härled fas-grupper (i förekommande ordning) för kolumn-grupperingen
+    var phases = [];
+    var pmap = {};
+    steps.forEach(function (s) {
+      var key = s.phase || '_';
+      if (!pmap[key]) {
+        pmap[key] = { key: key, title: phaseTitle(key, s), count: 0 };
+        phases.push(pmap[key]);
+      }
+      pmap[key].count += 1;
+    });
+    var firstPhaseKey = phases.length ? phases[0].key : null;
+
+    // härled summary om den saknas
+    var summary = model.summary;
+    if (!summary) {
+      var withGaps = 0, openActions = 0;
+      participants.forEach(function (p) {
+        var g = gapsOf(p, steps);
+        if (g > 0) withGaps += 1;
+        openActions += g;
+      });
+      summary = { total: participants.length, withGaps: withGaps, openActions: openActions };
+    }
+
+    // interaktivt tillstånd
+    var state = {
+      sort: 'gaps',     // default: flest luckor överst
+      query: ''
+    };
+
+    // bygg skalet (statiska delar)
+    rootEl.innerHTML = '<div class="vz-course"><div class="vz-cv-shell">'
+      + topbarHtml(course)
+      + '<div data-cv-summary></div>'
+      + '<div class="vz-cv-matrixwrap"><table class="vz-cv-table">'
+      +   theadHtml(steps, phases)
+      +   '<tbody data-cv-body></tbody>'
+      + '</table></div>'
+      + footHtml()
+      + '</div></div>';
+
+    var summaryHost = rootEl.querySelector('[data-cv-summary]');
+    var body = rootEl.querySelector('[data-cv-body]');
+
+    function paintSummary() {
+      summaryHost.innerHTML = summaryHtml(summary, course, state);
+      wireSummary();
+      animateCounts(summaryHost);
+    }
+
+    function visibleParticipants() {
+      var q = state.query.trim().toLowerCase();
+      var list = participants;
+      if (q) {
+        list = list.filter(function (p) {
+          return String(p.name || '').toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      return sortParticipants(list, steps, state.sort);
+    }
+
+    function paintBody(stagger) {
+      var list = visibleParticipants();
+      if (!list.length) {
+        body.innerHTML = emptyHtml(state.query);
+        return;
+      }
+      body.innerHTML = list.map(function (p, i) {
+        return rowHtml(p, steps, stagger ? i : 9999, firstPhaseKey);
+      }).join('');
+      // vid icke-staggrad ompaint (sortering/sök) → visa direkt utan delay
+      if (!stagger) {
+        Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-row'), function (r) {
+          r.style.animationDelay = '0ms';
+        });
+      }
+      wireRows();
+      animateBars(body);
+    }
+
+    function wireSummary() {
+      var search = summaryHost.querySelector('[data-cv-search]');
+      if (search) {
+        search.addEventListener('input', function () {
+          state.query = search.value || '';
+          paintBody(false);
+        });
+      }
+      Array.prototype.forEach.call(summaryHost.querySelectorAll('[data-sort]'), function (btn) {
+        btn.addEventListener('click', function () {
+          state.sort = btn.getAttribute('data-sort');
+          Array.prototype.forEach.call(summaryHost.querySelectorAll('[data-sort]'), function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          paintBody(false);
+        });
+      });
+    }
+
+    function pByKey(k) {
+      return participants.filter(function (p) { return p.key === k; })[0];
+    }
+
+    function wireRows() {
+      Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-row'), function (row) {
+        var pkey = row.getAttribute('data-pkey');
+        var p = pByKey(pkey);
+
+        // klick på cell → onSelectCell (stoppa bubbling till radens onOpenCard)
+        Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-cell'), function (cell) {
+          cell.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var stepKey = cell.getAttribute('data-step-key');
+            if (typeof handlers.onSelectCell === 'function') {
+              try { handlers.onSelectCell(p, stepKey); } catch (err) { /* no-op */ }
+            } else {
+              console.log('[CourseView] onSelectCell', pkey, stepKey);
+            }
+          });
+        });
+
+        // klick på raden (namn-cell eller övrigt) → öppna kort/dashboard
+        var open = function () {
+          if (typeof handlers.onOpenCard === 'function') {
+            try { handlers.onOpenCard(p); } catch (err) { /* no-op */ }
+          } else {
+            console.log('[CourseView] onOpenCard', pkey);
+          }
+        };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+      });
+    }
+
+    // initial paint
+    paintSummary();
+    paintBody(true);
+  }
+
+  /* fas-titel: använd stegets phase-key för en läsbar rubrik */
+  function phaseTitle(key, sampleStep) {
+    var map = {
+      anmalan: 'Anmälan & antagning',
+      forberedelse: 'Förberedelse inför kurs'
+    };
+    if (map[key]) return map[key];
+    if (sampleStep && sampleStep.phaseTitle) return sampleStep.phaseTitle;
+    return key === '_' ? 'Steg' : (key.charAt(0).toUpperCase() + key.slice(1));
+  }
+
+  /* ========================================================================
+   * DEMO_MODEL — ~7 deltagare med varierad status
+   * De 8 stegen i 2 faser; key: anmalan,tack,intervju,antagen,avgift,praktisk,steg1,hf
+   * ====================================================================== */
+  var STEPS = [
+    { key: 'anmalan',   title: 'Intresseanmälan',        short: 'Intresse',   phase: 'anmalan' },
+    { key: 'tack',      title: 'Tack för anmälan',       short: 'Tack',       phase: 'anmalan' },
+    { key: 'intervju',  title: 'Intervju',               short: 'Intervju',   phase: 'anmalan' },
+    { key: 'antagen',   title: 'Antagen till kurs',      short: 'Antagen',    phase: 'anmalan' },
+    { key: 'avgift',    title: 'Anmälningsavgift',       short: 'Avgift',     phase: 'forberedelse' },
+    { key: 'praktisk',  title: 'Praktisk info',          short: 'Praktisk',   phase: 'forberedelse' },
+    { key: 'steg1',     title: 'Steg 1-formulär',        short: 'Steg 1',     phase: 'forberedelse' },
+    { key: 'hf',        title: 'Hälsoformulär → läkare', short: 'Hälsoform.', phase: 'forberedelse' }
+  ];
+
+  function mkParticipant(key, name, statuses) {
+    var status = {};
+    STEPS.forEach(function (s, i) { status[s.key] = statuses[i] || 'wait'; });
+    var done = STEPS.filter(function (s) { return status[s.key] === 'done'; }).length;
+    var relevant = STEPS.filter(function (s) { return status[s.key] !== 'na'; }).length;
+    var gapCount = STEPS.filter(function (s) { return status[s.key] === 'gap'; }).length;
+    return {
+      key: key,
+      name: name,
+      cardUrl: 'https://trello.com/c/' + key,
+      status: status,
+      progress: { done: done, total: relevant, pct: relevant ? Math.round(done / relevant * 100) : 0 },
+      gapCount: gapCount
+    };
+  }
+
+  var DEMO_PARTICIPANTS = [
+    // nästan klar, men en glömd bock kvar (lucka)
+    mkParticipant('p1', 'Astrid Lindholm Bergström',
+      ['done','done','done','done','done','done','gap','manual']),
+    // flera luckor — board-bredd: tre steg triggade men ej bockade
+    mkParticipant('p2', 'Bertil Claesson',
+      ['done','gap','manual','gap','done','wait','gap','done']),
+    // tidig i processen
+    mkParticipant('p3', 'Carl Magnus Björk',
+      ['done','done','manual','wait','wait','wait','wait','wait']),
+    // klar rakt igenom
+    mkParticipant('p4', 'Doris Hägg',
+      ['done','done','done','done','done','done','done','done']),
+    // mitt i, en lucka + ej relevant HF
+    mkParticipant('p5', 'Einar Sjöqvist',
+      ['done','done','done','gap','done','manual','wait','na']),
+    // precis anmäld
+    mkParticipant('p6', 'Frida Öberg',
+      ['done','gap','wait','wait','wait','wait','wait','wait']),
+    // två luckor i förberedelsefasen
+    mkParticipant('p7', 'Gunnar Åkerlund',
+      ['done','done','done','done','gap','done','gap','wait'])
+  ];
+
+  var withGaps = DEMO_PARTICIPANTS.filter(function (p) { return p.gapCount > 0; }).length;
+  var openActions = DEMO_PARTICIPANTS.reduce(function (n, p) { return n + p.gapCount; }, 0);
+
+  var DEMO_MODEL = {
+    course: {
+      name: 'Steg 1 · Mullingstorp 24 juni – 2 juli 2026',
+      datum: '24 jun – 2 jul 2026',
+      daysToStart: 10            // ≤14 → markerar att fokus skiftar till förberedelse
+    },
+    steps: STEPS,
+    participants: DEMO_PARTICIPANTS,
+    summary: {
+      total: DEMO_PARTICIPANTS.length,
+      withGaps: withGaps,
+      openActions: openActions
+    }
+  };
+
+  /* ---------- expose ---------- */
+  window.CourseView = { render: render, DEMO_MODEL: DEMO_MODEL };
+
+  /* ---------- fristående auto-boot ---------- */
+  function autoBoot() {
+    var root = document.getElementById('root') || document.querySelector('[data-course-root]');
+    if (!root) return;
+    if (root.getAttribute('data-vz-manual') === '1') return; // app:en wirar själv
+    var model = window.NYA_ZAPIER_COURSE_MODEL || DEMO_MODEL;
+    render(root, model, {
+      onOpenCard: function (p) { console.log('[demo] onOpenCard', p && p.key, p && p.cardUrl); },
+      onSelectCell: function (p, stepKey) { console.log('[demo] onSelectCell', p && p.key, stepKey); }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoBoot);
+  } else {
+    autoBoot();
+  }
+})();
