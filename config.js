@@ -51,14 +51,14 @@ window.NYA_ZAPIER_CONFIG = {
  * ⚠️ UTKAST att granska mot Bertil-kortet — justera fritt.
  */
 window.NYA_ZAPIER_FLOW = [
-  { key: 'anmalan',  title: 'Intresseanmälan',        desc: 'Anmälan inkommen via webbformulär',          always: true,                         automation: 'V3 Ny intresseanmälan' },
-  { key: 'tack',     title: 'Tack för anmälan',       desc: 'Bekräftelsemejl till deltagaren',            checkItem: 'Email-Tack för anmälan skickad', triggerLabel: 'Skicka tack för anmälan', automation: 'Skicka Tack för anmälan' },
-  { key: 'intervju', title: 'Intervju',               desc: 'Intervju med deltagaren utförd',             checkItem: 'Intervju utförd' },
-  { key: 'antagen',  title: 'Antagen till kurs',      desc: '"Du har fått en plats"-mejl skickat',        checkItem: 'Antagen till kurs', triggerLabel: 'Skicka mail - "Du har fått en plats"', automation: 'Skicka Du har fått en plats' },
-  { key: 'avgift',   title: 'Anmälningsavgift',       desc: 'Faktura skickad och avgift betald',          checkItem: 'Anmälningsavgift betald', triggerLabel: 'Anm. avgift betald', automation: 'Kryssa anm avgift 1' },
-  { key: 'praktisk', title: 'Praktisk info',          desc: 'Praktisk information skickad',                checkItem: 'Praktisk info skickat' },
-  { key: 'steg1',    title: 'Steg 1 – formulär',      desc: 'Deltagarformulär skapat och skickat',        triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
-  { key: 'hf',       title: 'Hälsoformulär → läkare', desc: 'HF delat till läkare/kursledare',            checkItem: 'Delat Hälsoformulär till läkare/kursledare', automation: 'Kopiera HF till läkare' },
+  { key: 'anmalan',  phase: 'Anmälan & antagning', title: 'Intresseanmälan',        desc: 'Anmälan inkommen via webbformulär',          always: true,                         automation: 'V3 Ny intresseanmälan' },
+  { key: 'tack',     phase: 'Anmälan & antagning', title: 'Tack för anmälan',       desc: 'Bekräftelsemejl till deltagaren',            checkItem: 'Email-Tack för anmälan skickad', triggerLabel: 'Skicka tack för anmälan', automation: 'Skicka Tack för anmälan' },
+  { key: 'intervju', phase: 'Anmälan & antagning', title: 'Intervju',               desc: 'Intervju med deltagaren utförd',             checkItem: 'Intervju utförd' },
+  { key: 'antagen',  phase: 'Anmälan & antagning', title: 'Antagen till kurs',      desc: '"Du har fått en plats"-mejl skickat',        checkItem: 'Antagen till kurs', triggerLabel: 'Skicka mail - "Du har fått en plats"', automation: 'Skicka Du har fått en plats' },
+  { key: 'avgift',   phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift',   desc: 'Faktura skickad och avgift betald',          checkItem: 'Anmälningsavgift betald', triggerLabel: 'Anm. avgift betald', automation: 'Kryssa anm avgift 1' },
+  { key: 'praktisk', phase: 'Förberedelse inför kurs', title: 'Praktisk info',      desc: 'Praktisk information skickad',                checkItem: 'Praktisk info skickat' },
+  { key: 'steg1',    phase: 'Förberedelse inför kurs', title: 'Steg 1 – formulär',  desc: 'Deltagarformulär skapat och skickat',        triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
+  { key: 'hf',       phase: 'Förberedelse inför kurs', title: 'Hälsoformulär → läkare', desc: 'HF delat till läkare/kursledare',        checkItem: 'Delat Hälsoformulär till läkare/kursledare', automation: 'Kopiera HF till läkare' },
 ];
 
 window.NYA_ZAPIER_COMMANDS = [

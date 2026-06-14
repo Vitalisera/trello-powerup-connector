@@ -107,7 +107,7 @@
 
     var m = meta(next.status);
     var isGap = next.status === 'gap';
-    var kicker = 'Nästa åtgärd för ' + esc(firstName(model));
+    var kicker = 'Nästa åtgärd'; // admin-perspektiv (Malin), ej deltagarens namn
     var titleHtml, subHtml, btnLabel, btnIsAccent, hint;
 
     if (isGap) {
