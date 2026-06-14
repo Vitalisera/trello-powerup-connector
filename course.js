@@ -170,6 +170,7 @@ var STAFF_BOARDS = [
     filterLabels: ['Kock'], excludeName: [], defaultRole: 'Kock' },
 ];
 var ASSIST_LIST_ID = null; // assistent-listans id, satt av renderStaffPanel → matallergi-hämtning
+var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Skicka till kock" (kockens mejl)
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
   if (norm(a) === norm(b)) { return true; }
@@ -250,6 +251,7 @@ function renderStaffPanel(groups, courseName) {
       body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
     if (g.cfg.key === 'assistenter' && g.listId) { ASSIST_LIST_ID = g.listId; }  // för matallergi-hämtning
+    if (g.cfg.key === 'kockar' && g.listId) { KOCK_LIST_ID = g.listId; }          // för "Skicka till kock"
     var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
       ? '<div class="vz-stub-row">'
         + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
@@ -438,8 +440,10 @@ function renderHfPanel(rows, courseName) {
     + '<div class="vz-allergi-box">'
     + '<div class="vz-allergi-title">Matallergier</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
-    + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Matallergier</button>'
-    + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div></div>';
+    + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Sammanställ matallergier</button>'
+    + '<button class="vz-btn" id="vz-allergi-kock">Skicka till kock</button>'
+    + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div>'
+    + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
   host.appendChild(sec);
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
@@ -518,6 +522,46 @@ function renderHfPanel(rows, courseName) {
     });
   }
 
+  // ── Skicka till kock: öppna ett mejludkast till kocken med sammanställningen.
+  //    Malin granskar och skickar själv (inget auto-utskick). Kopierar även till urklipp
+  //    som fallback ifall mejlklienten klipper av en lång body.
+  var kockBtn = sec.querySelector('#vz-allergi-kock');
+  var kockOut = sec.querySelector('#vz-allergi-kock-out');
+  if (kockBtn && kockOut) {
+    kockBtn.addEventListener('click', function () {
+      var text = (allergiOut.value || '').trim();
+      kockOut.style.display = '';
+      if (!text || /^[⏳⚠]/.test(text)) {
+        kockOut.textContent = 'Sammanställ matallergierna först (klicka "Sammanställ matallergier").';
+        return;
+      }
+      kockBtn.disabled = true;
+      kockOut.textContent = '⏳ Hämtar kockens e-postadress…';
+      var emailP = KOCK_LIST_ID
+        ? t.getRestApi().getToken().then(function (token) {
+            if (!token) { return ''; }
+            return restGet(token, 'lists/' + KOCK_LIST_ID + '/cards?fields=name,desc').then(function (cards) {
+              var e = '';
+              (cards || []).some(function (c) { var x = extractStaffEmail(c.desc); if (x) { e = x; return true; } return false; });
+              return e;
+            });
+          }).catch(function () { return ''; })
+        : Promise.resolve('');
+      emailP.then(function (email) {
+        var subject = 'Matallergier – ' + (courseName || 'kursen');
+        var mailto = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject)
+          + '&body=' + encodeURIComponent(text);
+        try { if (navigator.clipboard) { navigator.clipboard.writeText(text); } } catch (e) {}
+        try { var a = document.createElement('a'); a.href = mailto; document.body.appendChild(a); a.click(); a.remove(); } catch (e) {}
+        kockOut.textContent = email
+          ? 'Öppnade ett mejludkast till kocken (' + email + '). Sammanställningen är även kopierad till urklipp — granska och skicka.'
+          : 'Ingen e-post hittades i kockkortet. Sammanställningen är kopierad till urklipp — klistra in i ett mejl till kocken (ett tomt utkast öppnades).';
+      }).catch(function (err) {
+        kockOut.textContent = '⚠️ ' + err.message;
+      }).then(function () { kockBtn.disabled = false; });
+    });
+  }
+
   // ── Skicka till läkare: dry-run förhandsvisning (inget skickas skarpt).
   var docBtn = sec.querySelector('#vz-hf-doctor');
   var docOut = sec.querySelector('#vz-hf-doctor-out');
@@ -579,7 +623,11 @@ function loadStoryMatrix(courseName, participants, cards) {
         var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
         if (!list) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
         return restGet(token, 'lists/' + list.id + '/cards?fields=name,labels').then(function (cs) {
-          var leaders = (cs || []).map(function (c) { var p = staffPerson(c, GL); return p ? p.name : null; }).filter(Boolean);
+          // Matriserna ska INTE innehålla "Vitaliseraperson på plats" (de läser ej livsberättelser/
+          // har ej uppföljningssamtal) — men de är kvar i "Personal på kursen"-panelen.
+          var leaders = (cs || []).map(function (c) { return staffPerson(c, GL); })
+            .filter(function (p) { return p && p.role !== 'Vitaliseraperson på plats'; })
+            .map(function (p) { return p.name; });
           return { leaders: leaders, selStory: selStory, selFollow: selFollow };
         });
       });
