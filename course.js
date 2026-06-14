@@ -100,12 +100,22 @@ function restGet(token, path) {
   return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
 
-/* ---------- Personal (gruppledare/assistenter/kockar = egna boards) ---------- */
-// Tolerant matchning på board-namn (vet ej exakta namnen → nyckelord).
-var STAFF_ROLES = [
-  { key: 'gruppledare', label: 'Gruppledare', re: /gruppled|ledare/i },
-  { key: 'assistenter', label: 'Assistenter', re: /assistent/i },
-  { key: 'kockar', label: 'Kockar', re: /kock/i },
+/* ---------- Personal (gruppledare/assistenter/kockar = egna boards) ----------
+ * Regler från Rumsindelning (Hämta alla som ska vara närvarande.js):
+ *  - Gruppledare-board: kort MÅSTE ha en av filterLabels → rollen = labelnamnet.
+ *  - Kockar-board: kort MÅSTE ha label "Kock".
+ *  - Assistenter-board: ingen label-filter, men EXKLUDERA kort vars namn innehåller
+ *    "Assistenter"/"Intresserad"/"Status". Roll = "Assistent".
+ *  - Namn = delen efter " - " i kortnamnet (annars hela).
+ */
+var STAFF_BOARDS = [
+  { key: 'gruppledare', label: 'Gruppledare', re: /gruppled|ledare/i,
+    filterLabels: ['Gruppledare', 'Kursledare', 'Biträdande kursledare', 'Gruppledarpraktikant', 'Vitaliseraperson på plats'],
+    excludeName: [], defaultRole: 'Gruppledare' },
+  { key: 'assistenter', label: 'Assistenter', re: /assistent/i,
+    filterLabels: [], excludeName: ['assistenter', 'intresserad', 'status'], defaultRole: 'Assistent' },
+  { key: 'kockar', label: 'Kockar', re: /kock/i,
+    filterLabels: ['Kock'], excludeName: [], defaultRole: 'Kock' },
 ];
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
@@ -119,21 +129,36 @@ function cleanStaffName(n) {
   var parts = s.split(' - ');
   return (parts.length > 1 ? parts.slice(1).join(' - ') : s).trim();
 }
+// Filtrera + rolla ett personalkort enligt board-reglerna. Returnerar {name,role} eller null.
+function staffPerson(card, cfg) {
+  var labelNames = (card.labels || []).map(function (l) { return l.name; });
+  var role = cfg.defaultRole;
+  if (cfg.filterLabels.length) {
+    var hit = labelNames.filter(function (n) { return cfg.filterLabels.indexOf(n) !== -1; })[0];
+    if (!hit) { return null; }            // måste ha en av filter-labels
+    role = hit;                            // rollen = labelnamnet
+  }
+  var nm = String(card.name || '');
+  if (cfg.excludeName.some(function (x) { return norm(nm).indexOf(x) !== -1; })) { return null; }
+  var name = cleanStaffName(nm);
+  return name ? { name: name, role: role } : null;
+}
 function loadStaff(courseName) {
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }
     return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
       boards = boards || [];
-      var jobs = STAFF_ROLES.map(function (role) {
-        var b = boards.filter(function (bd) { return role.re.test(bd.name || ''); })[0];
-        if (!b) { return Promise.resolve({ role: role, found: false, people: [] }); }
+      var jobs = STAFF_BOARDS.map(function (cfg) {
+        var b = boards.filter(function (bd) { return cfg.re.test(bd.name || ''); })[0];
+        if (!b) { return Promise.resolve({ cfg: cfg, found: false, people: [] }); }
         return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
           var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
-          if (!list) { return { role: role, found: true, list: null, people: [] }; }
-          return restGet(token, 'lists/' + list.id + '/cards?fields=name').then(function (cards) {
-            return { role: role, found: true, list: list.name, people: (cards || []).map(function (c) { return cleanStaffName(c.name); }).filter(Boolean) };
+          if (!list) { return { cfg: cfg, found: true, list: null, people: [] }; }
+          return restGet(token, 'lists/' + list.id + '/cards?fields=name,labels').then(function (cards) {
+            var people = (cards || []).map(function (c) { return staffPerson(c, cfg); }).filter(Boolean);
+            return { cfg: cfg, found: true, list: list.name, people: people };
           });
-        }).catch(function () { return { role: role, found: true, people: [] }; });
+        }).catch(function () { return { cfg: cfg, found: true, people: [] }; });
       });
       return Promise.all(jobs);
     });
@@ -148,18 +173,33 @@ function renderStaffPanel(groups) {
     var body;
     if (!g.found) { body = '<div style="font-size:12.5px;color:#8aa3ac">Ingen board hittad</div>'; }
     else if (!g.people.length) { body = '<div style="font-size:12.5px;color:#8aa3ac">' + (g.list ? 'Inga tilldelade än' : 'Ingen kurslista hittad') + '</div>'; }
-    else { body = g.people.map(function (p) { return '<div style="font-size:13.5px;padding:3px 0;border-top:1px solid #eef3f4">' + esc(p) + '</div>'; }).join(''); }
+    else {
+      body = g.people.map(function (p) {
+        var roleTag = (p.role && p.role !== g.cfg.label) ? '<span style="font-size:11px;color:#5d7c87;margin-left:6px">· ' + esc(p.role) + '</span>' : '';
+        return '<div style="font-size:13.5px;padding:3px 0;border-top:1px solid #eef3f4">' + esc(p.name) + roleTag + '</div>';
+      }).join('');
+    }
+    var extra = (g.cfg.key === 'assistenter' && g.people.length)
+      ? stubBtn('Alla emailadresser', 'Skulle samla och visa alla assistenters e-postadresser för kursen. Kopplas senare.')
+      : '';
     return '<div style="flex:1 1 0;min-width:170px;background:#fff;border:1px solid #cfe0e2;border-radius:12px;padding:12px 14px;box-shadow:0 4px 14px rgba(8,68,92,.08)">'
-      + '<div style="font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#357087;margin-bottom:6px">' + esc(g.role.label) + (g.people.length ? ' · ' + g.people.length : '') + '</div>'
-      + body + '</div>';
+      + '<div style="font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#357087;margin-bottom:6px">' + esc(g.cfg.label) + (g.people.length ? ' · ' + g.people.length : '') + '</div>'
+      + body + extra + '</div>';
   }).join('');
   sec.innerHTML = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;margin-bottom:10px;color:#08445c">Personal på kursen</div>'
     + '<div style="display:flex;gap:14px;flex-wrap:wrap">' + cols + '</div>';
   host.appendChild(sec);
+  wireStubs(sec);
 }
 
-/* ---------- Kursnivå-checklista (#3) — persistent via Power-Up pluginData ---------- */
-function courseKey(name) { return 'vz_chk_' + norm(name).replace(/[^a-z0-9]+/g, '_'); }
+/* ---------- Kursnivå-checklista (#3) — GLOBAL per kurssteg (Malins beslut) ----------
+ * Delas över alla kursomgångar; Steg 1/2/3A har varsin lista. Lagras board-shared.
+ */
+function courseKey(name) {
+  var m = String(name || '').match(/steg\s*([0-9a-zåäö]+)/i);
+  var steg = m ? norm(m[1]) : 'global';
+  return 'vz_chk_steg_' + steg;
+}
 var DEFAULT_TODOS = ['Ordna kock', 'Inköp inför kurs', 'Tilldela livsberättelser till gruppledare', 'Full assistentgrupp'];
 function loadCourseChecklist(courseName) {
   var key = courseKey(courseName);
@@ -208,36 +248,60 @@ function renderChecklistPanel(key, items) {
   host.appendChild(sec);
 }
 
-/* ---------- HF-urval (#3): vilka hälsoformulär skickas till läkaren ---------- */
-function loadHfPanel(courseName, participants) {
-  var key = 'vz_hf_' + norm(courseName).replace(/[^a-z0-9]+/g, '_');
-  t.get('board', 'shared', key).then(function (sel) {
-    renderHfPanel(key, participants || [], (sel && typeof sel === 'object') ? sel : {});
-  }).catch(function () { renderHfPanel(key, participants || [], {}); });
+/* ---------- HF-urval (#3): speglar kortets checklist-punkt (skriva senare) ----------
+ * "Delat Hälsoformulär till läkare/kursledare" i kortets checklista = sanningskälla.
+ * Läses här (read-only mirror). Skarp av/på-bockning kopplas via mutation senare.
+ */
+var HF_ITEM_RE = /h[äa]lsoformul[äa]r.*(l[äa]kare|kursledare)|(l[äa]kare|kursledare).*h[äa]lsoformul[äa]r/i;
+function hfDoneForCard(card) {
+  var done = false, exists = false;
+  (card.checklists || []).forEach(function (cl) {
+    (cl.checkItems || []).forEach(function (it) {
+      if (HF_ITEM_RE.test(it.name || '')) { exists = true; if (norm(it.state) === 'complete') { done = true; } }
+    });
+  });
+  return { exists: exists, done: done };
 }
-function renderHfPanel(key, participants, sel) {
+function loadHfPanel(cards) {
+  var rows = (cards || []).map(function (c) {
+    var hf = hfDoneForCard(c);
+    return { name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''), exists: hf.exists, done: hf.done };
+  });
+  renderHfPanel(rows);
+}
+function renderHfPanel(rows) {
   var host = document.querySelector('.vz-course') || ROOT();
   if (!host) { return; }
   var sec = document.createElement('section');
   sec.style.cssText = 'max-width:1400px;margin:6px auto 30px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
-  function paint() {
-    var n = Object.keys(sel).filter(function (k) { return sel[k]; }).length;
-    var rows = participants.map(function (p) {
-      return '<label style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #eef3f4;cursor:pointer">'
-        + '<input type="checkbox" data-k="' + esc(p.key) + '"' + (sel[p.key] ? ' checked' : '') + ' style="width:17px;height:17px;accent-color:#357087;flex:none">'
-        + '<span style="font-size:14px">' + esc(p.name) + '</span></label>';
-    }).join('') || '<div style="font-size:13px;color:#8aa3ac">Inga deltagare.</div>';
-    sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px">'
-      + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Hälsoformulär till läkare</div>'
-      + '<div style="font-size:12.5px;color:#5d7c87">' + n + ' valda · sparas automatiskt</div></div>'
-      + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:4px">Bocka för vilka deltagares HF som ska skickas för läkarbedömning.</div>'
-      + rows;
-    Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
-      cb.addEventListener('change', function () { sel[cb.getAttribute('data-k')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} paint(); });
-    });
-  }
-  paint();
+  var done = rows.filter(function (r) { return r.done; }).length;
+  var body = rows.map(function (r) {
+    var mark = r.done ? '<span style="color:#1f7a53;font-weight:700">✓ Skickat</span>'
+      : (r.exists ? '<span style="color:#b5710b;font-weight:700">○ Ej skickat</span>'
+        : '<span style="color:#8aa3ac">– saknas i checklista</span>');
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #eef3f4">'
+      + '<span style="font-size:14px">' + esc(r.name) + '</span>' + mark + '</div>';
+  }).join('') || '<div style="font-size:13px;color:#8aa3ac">Inga deltagare.</div>';
+  sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px">'
+    + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Hälsoformulär till läkare</div>'
+    + '<div style="font-size:12.5px;color:#5d7c87">' + done + '/' + rows.length + ' skickade</div></div>'
+    + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:4px">Speglar checklistpunkten "Delat Hälsoformulär till läkare/kursledare" på varje kort. Av-/påbockning härifrån kopplas senare.</div>'
+    + body
+    + stubBtn('Skicka till läkare', 'Skulle skicka ' + done + ' hälsoformulär till läkaren för bedömning. Kopplas server-side (med bekräftelse) senare.');
   host.appendChild(sec);
+  wireStubs(sec);
+}
+
+// Åtgärdsknapp-stub: visar vad den SKULLE göra (mejl/sidoeffekter kopplas server-side).
+function stubBtn(label, msgText) {
+  return '<div style="margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px">'
+    + '<button class="vz-stub" data-msg="' + esc(msgText) + '" style="border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:9px;font-family:inherit">' + esc(label) + '</button>'
+    + '<span style="font-size:11.5px;color:#8aa3ac;margin-left:10px">stub — kopplas senare</span></div>';
+}
+function wireStubs(scope) {
+  Array.prototype.forEach.call(scope.querySelectorAll('.vz-stub'), function (b) {
+    b.addEventListener('click', function () { t.alert({ message: b.getAttribute('data-msg'), duration: 8, display: 'info' }); });
+  });
 }
 
 /* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
@@ -284,10 +348,12 @@ function renderStoryMatrix(key, participants, leaders, sel) {
     }).join('');
     sec.innerHTML = head
       + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:8px">Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.</div>'
-      + '<table style="border-collapse:collapse"><thead><tr><th></th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table>';
+      + '<table style="border-collapse:collapse"><thead><tr><th></th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table>'
+      + stubBtn('Skicka mail', 'Skulle mejla varje gruppledare vilka livsberättelser hen ska läsa. Kopplas server-side (med bekräftelse) senare.');
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
+    wireStubs(sec);
   }
   paint();
   host.appendChild(sec);
@@ -307,7 +373,7 @@ function loadCourse(listId, listName) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
     loadStaff(res[0]);
-    loadHfPanel(res[0], model.participants);
+    loadHfPanel(res[1] || []);
     loadStoryMatrix(res[0], model.participants);
     loadCourseChecklist(res[0]);
   }).catch(function (err) {
