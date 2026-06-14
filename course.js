@@ -35,6 +35,23 @@ function extractStaffEmail(desc) {
   return f ? f[0].trim() : '';
 }
 
+// Assistentkortets beskrivning → AI-extraherbar text. Formatet har aldrig parsats förut
+// (Robert 2026-06-15) och texten är liten → vi skickar HELA desc:en till AI:n och låter
+// den plocka ut allergin (robust mot okänt format). Anonymisering bevaras genom att
+// städa bort namn/mejl/telefon lokalt INNAN sändning; nyrader → " · ". Tom → ''.
+function stripStaffDescForAI(desc, name) {
+  var s = String(desc || '');
+  if (!s.trim()) { return ''; }
+  s = s.replace(STAFF_EMAIL_RE, ' ').replace(new RegExp(ANY_EMAIL_RE.source, 'gi'), ' ');
+  s = s.replace(/\(?\+?\d[\d\s\-()]{6,}\d/g, ' ');           // telefonnummer
+  if (name) {                                                 // ta bort namnet (för- och efternamn)
+    String(name).split(/\s+/).filter(Boolean).forEach(function (part) {
+      if (part.length >= 2) { s = s.replace(new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' '); }
+    });
+  }
+  return s.replace(/[*_#>`]/g, ' ').replace(/\s*\n+\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
+}
+
 /* ---------- Status-härledning per kort (samma logik som Vy1) ---------- */
 function statusForCard(card) {
   var checked = {};
@@ -152,6 +169,7 @@ var STAFF_BOARDS = [
   { key: 'kockar', label: 'Kockar', re: /kock/i,
     filterLabels: ['Kock'], excludeName: [], defaultRole: 'Kock' },
 ];
+var ASSIST_LIST_ID = null; // assistent-listans id, satt av renderStaffPanel → matallergi-hämtning
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
   if (norm(a) === norm(b)) { return true; }
@@ -230,6 +248,7 @@ function renderStaffPanel(groups) {
       }).join('');
       body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
+    if (g.cfg.key === 'assistenter' && g.listId) { ASSIST_LIST_ID = g.listId; }  // för matallergi-hämtning
     var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
       ? '<div class="vz-stub-row">'
         + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
@@ -409,7 +428,7 @@ function renderHfPanel(rows) {
     + '<div class="vz-allergi-title">Matallergier</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
     + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Matallergier</button>'
-    + '<span class="vz-stub-note">läser hälsoformulären anonymiserat (koder, ej namn)</span></div></div>';
+    + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div></div>';
   host.appendChild(sec);
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
@@ -421,31 +440,56 @@ function renderHfPanel(rows) {
   if (allergiOut) { allergiOut.addEventListener('input', fitAllergi); }
   if (allergiBtn) {
     allergiBtn.addEventListener('click', function () {
-      var withHf = rows.filter(function (r) { return r.link; });
-      if (!withHf.length) {
-        allergiOut.value = 'Inga deltagare har en hälsoformulär-länk i kortkommentarerna än.';
-        return;
-      }
-      var items = withHf.map(function (r) { return { code: r.code, url: r.link }; });
+      // Deltagare → kod Pn + HF-doklänk. Assistenter (egen lista) → kod An + anonymiserad desc.
+      var items = [];
       var codeToName = {};
-      withHf.forEach(function (r) { codeToName[r.code] = r.name; });
+      rows.filter(function (r) { return r.link; }).forEach(function (r) {
+        items.push({ code: r.code, url: r.link });
+        codeToName[r.code] = r.name;
+      });
       allergiBtn.disabled = true;
-      allergiOut.value = '⏳ Läser ' + items.length + ' hälsoformulär och sammanställer…';
-      postToGas('courseAllergies', { items: items }).then(function (data) {
-        if (!data || data.ok !== true) {
-          if (data && data.error === 'anthropic_key_missing') {
-            allergiOut.value = '⚠️ Kan inte sammanställa: AI-nyckeln (ANTHROPIC_API_KEY) saknas i serverns inställningar.';
-          } else {
-            allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel');
-          }
+      allergiOut.value = '⏳ Hämtar underlag…';
+
+      // Hämta assistentkortens beskrivning skarpt (read-only) och städa bort PII innan sändning.
+      var asstP = ASSIST_LIST_ID
+        ? t.getRestApi().getToken().then(function (token) {
+            if (!token) { return []; }
+            return restGet(token, 'lists/' + ASSIST_LIST_ID + '/cards?fields=name,desc');
+          }).catch(function () { return []; })
+        : Promise.resolve([]);
+
+      asstP.then(function (cards) {
+        (cards || []).forEach(function (c, i) {
+          if (['assistenter', 'intresserad', 'status'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
+          var nm = cleanStaffName(c.name);
+          var blob = stripStaffDescForAI(c.desc, nm);
+          if (!blob) { return; }
+          var code = 'A' + (i + 1);
+          items.push({ code: code, allergy: blob });
+          codeToName[code] = nm;
+        });
+        if (!items.length) {
+          allergiOut.value = 'Inget underlag än: inga deltagare med hälsoformulär-länk och inga assistentkort.';
+          allergiBtn.disabled = false;
           return;
         }
-        // Avanonymisera: byt varje kod (Pn) mot deltagarens namn, lokalt.
-        var text = String(data.summary || '');
-        Object.keys(codeToName).forEach(function (code) {
-          text = text.replace(new RegExp('\\b' + code + '\\b', 'g'), codeToName[code]);
+        allergiOut.value = '⏳ Läser ' + items.length + ' underlag (deltagare + assistenter) och sammanställer…';
+        return postToGas('courseAllergies', { items: items }).then(function (data) {
+          if (!data || data.ok !== true) {
+            if (data && data.error === 'anthropic_key_missing') {
+              allergiOut.value = '⚠️ Kan inte sammanställa: AI-nyckeln (ANTHROPIC_API_KEY) saknas i serverns inställningar.';
+            } else {
+              allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel');
+            }
+            return;
+          }
+          // Avanonymisera: byt varje kod (Pn/An) mot riktigt namn, lokalt.
+          var text = String(data.summary || '');
+          Object.keys(codeToName).forEach(function (code) {
+            text = text.replace(new RegExp('\\b' + code + '\\b', 'g'), codeToName[code]);
+          });
+          allergiOut.value = text || '(tomt svar)';
         });
-        allergiOut.value = text || '(tomt svar)';
       }).catch(function (err) {
         allergiOut.value = '⚠️ ' + err.message;
       }).then(function () { allergiBtn.disabled = false; fitAllergi(); });
