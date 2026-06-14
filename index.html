@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>nya-zapier connector</title>
+</head>
+<body>
+  <!--
+    Connector-iframen. Detta är sidan vars URL registreras i Power-Up
+    admin-portalen. Den renderar inget synligt – den registrerar bara
+    capability-callbacks via TrelloPowerUp.initialize().
+
+    Hostas som STATISK sida (Cloudflare Pages/Netlify/Vercel) – ALDRIG på GAS
+    (HtmlService dubbel-iframe-sandbox bryter inbäddningen).
+  -->
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <script src="./config.js"></script>
+  <script src="./client.js"></script>
+</body>
+</html>
