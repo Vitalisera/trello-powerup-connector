@@ -4,14 +4,26 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Vitalisera – Kursöversikt</title>
-  <link rel="stylesheet" href="./course.css" />
+  <!-- CSS med versions-query (busta cache) -->
+  <script>
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      document.write('<link rel="stylesheet" href="./course.css' + q + '">');
+    })();
+  </script>
   <style>html,body{height:100%;margin:0}</style>
 </head>
 <body>
   <div id="root"></div>
-  <script src="https://p.trellocdn.com/power-up.min.js"></script>
-  <script src="./config.js"></script>
-  <script src="./course-view.js"></script>
-  <script src="./course.js"></script>
+  <!-- Ladda skript med samma versions-query → färska modalfiler vid ny deploy. -->
+  <script>
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      ['https://p.trellocdn.com/power-up.min.js', './config.js' + q, './course-view.js' + q, './course.js' + q]
+        .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
+    })();
+  </script>
 </body>
 </html>
