@@ -3,63 +3,66 @@
  * Connector-entrypoint. Registrerar capability-callbacks.
  *
  * Capabilities (måste även bockas i admin-portalen):
- *   - card-buttons        : EN knapp på kort → öppnar command-paletten
- *   - board-buttons       : EN knapp på board → öppnar command-paletten
- *   - card-detail-badges  : statusbadge på kortets baksida
+ *   - card-back-section   : deltagar-dashboard (kompakt strip, öppnar fullvy)
+ *   - card-buttons        : knapp på kort → öppnar dashboard (t.modal fullskärm)
+ *   - card-detail-badges  : status-badge → öppnar dashboard
+ *   - board-buttons       : knapp på board → command-palett (board saknar kort)
  *
- * UX-beslut (Robert godkände autonomi): EN knapp som öppnar en t.popup-palett,
- * inte en knapp per automation. Paletten (popup.html) listar alla kommandon.
+ * Visionen: en flödesorienterad deltagar-dashboard (status ur labels+checklista
+ * +automationer). Dashboarden bor i card-back-section + t.modal (rymliga ytor);
+ * kommandopaletten (popup) blir snabbåtgärder.
  */
 'use strict';
 
-// Knappikon = bara emblemet (skarpt vid ~20px; full logga blir oläslig så liten).
-var MARK = window.NYA_ZAPIER_CONFIG.MARK_URL;
-var BTN_TEXT = window.NYA_ZAPIER_CONFIG.BUTTON_TEXT;
+var CFG = window.NYA_ZAPIER_CONFIG;
+var MARK = CFG.MARK_URL;
+var BTN_TEXT = CFG.BUTTON_TEXT;
 
-// Öppnar command-paletten som iframe-popup (url-form av t.popup).
+// Öppnar deltagar-dashboarden som fullskärms-modal.
+function openDashboard(t) {
+  return t.modal({
+    url: './dashboard.html',
+    fullscreen: true,
+    title: CFG.APP_NAME + ' – Deltagarstatus',
+    accentColor: '#08445c',
+  });
+}
+
+// Öppnar command-paletten (snabbåtgärder) som popup.
 function openPalette(t) {
   return t.popup({
-    title: window.NYA_ZAPIER_CONFIG.APP_NAME + ' – Kommandon',
+    title: CFG.APP_NAME + ' – Kommandon',
     url: './popup.html',
-    height: 220, // initial höjd; popup.js kallar t.sizeTo() vid behov
+    height: 220,
   });
 }
 
 TrelloPowerUp.initialize({
-  // Kort-knapp: icon är en sträng-URL (Trello lägger till ?color=).
+  // Alltid synlig dashboard-strip inne på kortet (ovanför bilagor).
+  'card-back-section': function (t, opts) {
+    return {
+      title: CFG.APP_NAME + ' – Deltagarstatus',
+      icon: MARK,
+      content: {
+        type: 'iframe',
+        url: t.signUrl('./dashboard.html', { compact: '1' }),
+        height: 56,
+      },
+    };
+  },
+
+  // Kort-knapp → öppna fullvy-dashboarden. icon = sträng-URL (emblemet).
   'card-buttons': function (t, opts) {
-    return [
-      {
-        icon: MARK,
-        text: BTN_TEXT,
-        callback: openPalette,
-        condition: 'edit',
-      },
-    ];
+    return [{ icon: MARK, text: BTN_TEXT, callback: openDashboard, condition: 'edit' }];
   },
 
-  // Board-knapp: icon är ett objekt {dark, light} för ljus/mörk bakgrund.
-  // Emblemet är teal → samma bild på båda bakgrunderna.
-  'board-buttons': function (t, opts) {
-    return [
-      {
-        icon: { dark: MARK, light: MARK },
-        text: BTN_TEXT,
-        callback: openPalette,
-        condition: 'edit',
-      },
-    ];
-  },
-
-  // Detalj-badge: visar att Power-Up:en är aktiv på kortet.
+  // Detalj-badge → öppna dashboarden.
   'card-detail-badges': function (t, opts) {
-    return [
-      {
-        title: window.NYA_ZAPIER_CONFIG.APP_NAME,
-        text: 'Kommandon',
-        color: 'blue',
-        callback: openPalette,
-      },
-    ];
+    return [{ title: CFG.APP_NAME, text: 'Status', color: 'blue', callback: openDashboard }];
+  },
+
+  // Board-knapp: icon {dark,light}. Board saknar kortkontext → command-palett.
+  'board-buttons': function (t, opts) {
+    return [{ icon: { dark: MARK, light: MARK }, text: BTN_TEXT, callback: openPalette, condition: 'edit' }];
   },
 });
