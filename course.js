@@ -156,6 +156,8 @@ function loadStaff(courseName) {
           if (!list) { return { cfg: cfg, found: true, list: null, people: [] }; }
           return restGet(token, 'lists/' + list.id + '/cards?fields=name,labels').then(function (cards) {
             var people = (cards || []).map(function (c) { return staffPerson(c, cfg); }).filter(Boolean);
+            // Specialregel: översta assistenten är alltid Assistentledare.
+            if (cfg.key === 'assistenter' && people.length) { people[0].role = 'Assistentledare'; }
             return { cfg: cfg, found: true, list: list.name, people: people };
           });
         }).catch(function () { return { cfg: cfg, found: true, people: [] }; });
@@ -164,30 +166,42 @@ function loadStaff(courseName) {
     });
   }).then(function (groups) { if (groups) { renderStaffPanel(groups); } }).catch(function () { /* tyst */ });
 }
+/* ---------- Layout-regioner: placera paneler i rätt del av vyn ----------
+ * CourseView bygger namngivna regioner (.vz-region-aside / .vz-region-below).
+ * vzRegion() returnerar rätt element; faller fail-soft tillbaka till .vz-course.
+ */
+function vzRegion(name) {
+  if (window.CourseView && typeof window.CourseView.region === 'function') {
+    var r = window.CourseView.region(name);
+    if (r) { return r; }
+  }
+  return document.querySelector('.vz-course') || ROOT();
+}
+
 function renderStaffPanel(groups) {
-  var host = document.querySelector('.vz-course') || ROOT();
+  var host = vzRegion('aside');
   if (!host) { return; }
   var sec = document.createElement('section');
-  sec.style.cssText = 'max-width:1400px;margin:6px auto 30px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
-  var cols = groups.map(function (g) {
+  sec.className = 'vz-panel vz-panel--aside';
+  var cards = groups.map(function (g) {
     var body;
-    if (!g.found) { body = '<div style="font-size:12.5px;color:#8aa3ac">Ingen board hittad</div>'; }
-    else if (!g.people.length) { body = '<div style="font-size:12.5px;color:#8aa3ac">' + (g.list ? 'Inga tilldelade än' : 'Ingen kurslista hittad') + '</div>'; }
+    if (!g.found) { body = '<div class="vz-panel-empty">Ingen board hittad</div>'; }
+    else if (!g.people.length) { body = '<div class="vz-panel-empty">' + (g.list ? 'Inga tilldelade än' : 'Ingen kurslista hittad') + '</div>'; }
     else {
-      body = g.people.map(function (p) {
-        var roleTag = (p.role && p.role !== g.cfg.label) ? '<span style="font-size:11px;color:#5d7c87;margin-left:6px">· ' + esc(p.role) + '</span>' : '';
-        return '<div style="font-size:13.5px;padding:3px 0;border-top:1px solid #eef3f4">' + esc(p.name) + roleTag + '</div>';
+      var rows = g.people.map(function (p) {
+        var roleTag = (p.role && p.role !== g.cfg.defaultRole) ? '<span class="vz-staff-role">' + esc(p.role) + '</span>' : '';
+        return '<li class="vz-staff-row"><span class="vz-staff-name">' + esc(p.name) + '</span>' + roleTag + '</li>';
       }).join('');
+      body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
     var extra = (g.cfg.key === 'assistenter' && g.people.length)
       ? stubBtn('Alla emailadresser', 'Skulle samla och visa alla assistenters e-postadresser för kursen. Kopplas senare.')
       : '';
-    return '<div style="flex:1 1 0;min-width:170px;background:#fff;border:1px solid #cfe0e2;border-radius:12px;padding:12px 14px;box-shadow:0 4px 14px rgba(8,68,92,.08)">'
-      + '<div style="font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#357087;margin-bottom:6px">' + esc(g.cfg.label) + (g.people.length ? ' · ' + g.people.length : '') + '</div>'
+    return '<div class="vz-staff-group">'
+      + '<div class="vz-staff-grouphead">' + esc(g.cfg.label) + (g.people.length ? '<span class="vz-staff-badge">' + g.people.length + '</span>' : '') + '</div>'
       + body + extra + '</div>';
   }).join('');
-  sec.innerHTML = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;margin-bottom:10px;color:#08445c">Personal på kursen</div>'
-    + '<div style="display:flex;gap:14px;flex-wrap:wrap">' + cols + '</div>';
+  sec.innerHTML = '<div class="vz-panel-title">Personal på kursen</div>' + cards;
   host.appendChild(sec);
   wireStubs(sec);
 }
@@ -212,26 +226,26 @@ function loadCourseChecklist(courseName) {
 }
 function persistChecklist(key, items) { try { t.set('board', 'shared', key, items).catch(function () {}); } catch (e) {} }
 function renderChecklistPanel(key, items) {
-  var host = document.querySelector('.vz-course') || ROOT();
+  var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
-  sec.style.cssText = 'max-width:1400px;margin:6px auto 34px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  sec.className = 'vz-panel vz-panel--below';
   function paint() {
     var done = items.filter(function (i) { return i.done; }).length;
     var rows = items.map(function (it, idx) {
-      return '<label data-i="' + idx + '" class="vzchk-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef3f4;cursor:pointer">'
-        + '<input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' style="width:17px;height:17px;accent-color:#1f7a53;flex:none">'
-        + '<span style="flex:1 1 auto;font-size:14px;' + (it.done ? 'text-decoration:line-through;color:#8aa3ac' : '') + '">' + esc(it.text) + '</span>'
-        + '<button data-del="' + idx + '" title="Ta bort" style="border:none;background:none;cursor:pointer;color:#b23a2e;font-size:15px;padding:2px 6px">✕</button>'
+      return '<label data-i="' + idx + '" class="vzchk-row' + (it.done ? ' is-done' : '') + '">'
+        + '<input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' class="vzchk-box">'
+        + '<span class="vzchk-text">' + esc(it.text) + '</span>'
+        + '<button data-del="' + idx + '" title="Ta bort" class="vzchk-del">✕</button>'
         + '</label>';
     }).join('');
-    sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px">'
-      + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Kurschecklista</div>'
-      + '<div style="font-size:12.5px;color:#5d7c87">' + done + '/' + items.length + ' klara · sparas automatiskt</div></div>'
-      + rows
-      + '<div style="margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px">'
-      + '<input id="vzchk-new" placeholder="Lägg till uppgift på kursnivå…" style="display:block;width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;padding:9px 11px;border:1px solid #cfe0e2;border-radius:8px">'
-      + '<button id="vzchk-add" style="margin-top:8px;border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:8px;font-family:inherit">Lägg till</button></div>';
+    sec.innerHTML = '<div class="vz-panel-head">'
+      + '<div class="vz-panel-title">Kurschecklista</div>'
+      + '<div class="vz-panel-meta">' + done + '/' + items.length + ' klara · sparas automatiskt</div></div>'
+      + '<div class="vzchk-list">' + rows + '</div>'
+      + '<div class="vzchk-add-row">'
+      + '<input id="vzchk-new" placeholder="Lägg till uppgift på kursnivå…" class="vz-input">'
+      + '<button id="vzchk-add" class="vz-btn">Lägg till</button></div>';
     // events
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { items[+cb.getAttribute('data-i')].done = cb.checked; persistChecklist(key, items); paint(); });
@@ -252,13 +266,29 @@ function renderChecklistPanel(key, items) {
  * "Delat Hälsoformulär till läkare/kursledare" i kortets checklista = sanningskälla.
  * Läses här (read-only mirror). Skarp av/på-bockning kopplas via mutation senare.
  */
-// Länk ur kort-kommentar (markör-nyckelord + URL). Trello short-URL funkar som länk direkt.
-var URL_RE = /(https?:\/\/[^\s)]+)/;
-function commentLink(card, kwRe) {
+/* Länk ur kort-kommentar — regler från nya-zapier (Skicka formulär-flödet):
+ * specifika markörer + dokument-URL (docs.google/zpr.io), EXKLUDERA drive-mapp.
+ * zpr.io är short-URL som redirectar till dokumentet → fungerar som klickbar länk.
+ * Trello returnerar commentCard nyast först → första matchen = senaste länken.
+ */
+var HF_LINK_RES = [
+  /l[äa]nk till h[äa]lsoformul[äa]ret:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
+  /h[äa]lsoformul[äa]r[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
+];
+var STORY_LINK_RES = [
+  /livsber[äa]ttelse[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
+  /nul[äa]gesbeskriv[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
+  /\*\*livsber[äa]ttelse:\*\*\s*(https?:\/\/[^\s)\]"]+)/i,
+];
+function isFolderUrl(u) { return /drive\.google\.com\/drive\/folders/i.test(u || ''); }
+function commentLink(card, regexes) {
   var acts = card.actions || [];
   for (var i = 0; i < acts.length; i++) {
     var txt = (acts[i].data && acts[i].data.text) || '';
-    if (kwRe.test(txt)) { var m = txt.match(URL_RE); if (m) { return m[1]; } }
+    for (var j = 0; j < regexes.length; j++) {
+      var m = txt.match(regexes[j]);
+      if (m && m[1] && !isFolderUrl(m[1])) { return m[1]; }
+    }
   }
   return null;
 }
@@ -278,47 +308,50 @@ function loadHfPanel(cards) {
     return {
       name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
       exists: hf.exists, done: hf.done,
-      link: commentLink(c, /h[äa]lsoformul[äa]r/i), // HF-länk ur kommentar om den finns
+      link: commentLink(c, HF_LINK_RES), // HF-dokumentlänk ur kommentar om den finns
     };
   });
   renderHfPanel(rows);
 }
 function renderHfPanel(rows) {
-  var host = document.querySelector('.vz-course') || ROOT();
+  var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
-  sec.style.cssText = 'max-width:1400px;margin:6px auto 30px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142';
+  sec.className = 'vz-panel vz-panel--below';
   var done = rows.filter(function (r) { return r.done; }).length;
-  var body = rows.map(function (r) {
+  var bodyRows = rows.map(function (r) {
     var nameHtml = r.link
-      ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" style="font-size:14px;color:#0c66e4;text-decoration:none">' + esc(r.name) + ' ↗</a>'
-      : '<span style="font-size:14px">' + esc(r.name) + '</span>';
-    var mark = r.done ? '<span style="color:#1f7a53;font-weight:700;white-space:nowrap;flex:none">✓ Skickat</span>'
-      : (r.exists ? '<span style="color:#b5710b;font-weight:700;white-space:nowrap;flex:none">○ Ej skickat</span>'
-        : '<span style="color:#8aa3ac;white-space:nowrap;flex:none">– saknas i checklista</span>');
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 0;border-top:1px solid #eef3f4">'
-      + '<span style="flex:1 1 auto;min-width:0">' + nameHtml + '</span>' + mark + '</div>';
-  }).join('') || '<div style="font-size:13px;color:#8aa3ac">Inga deltagare.</div>';
-  sec.innerHTML = '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px">'
-    + '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c">Hälsoformulär till läkare</div>'
-    + '<div style="font-size:12.5px;color:#5d7c87">' + done + '/' + rows.length + ' skickade</div></div>'
-    + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:4px">Namn med ↗ länkar till hälsoformuläret. Status speglar checklistpunkten "Delat Hälsoformulär till läkare/kursledare".</div>'
-    + body
+      ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(r.name) + ' <span class="vz-ext">↗</span></a>'
+      : '<span class="vz-tbl-name">' + esc(r.name) + '</span>';
+    var mark = r.done ? '<span class="vz-status vz-status--done">✓ Skickat</span>'
+      : (r.exists ? '<span class="vz-status vz-status--pending">○ Ej skickat</span>'
+        : '<span class="vz-status vz-status--missing">– saknas i checklista</span>');
+    return '<tr><td class="vz-tbl-namecell">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + mark + '</td></tr>';
+  }).join('');
+  var table = rows.length
+    ? '<table class="vz-tbl vz-tbl--hf"><colgroup><col class="vz-col-name"><col class="vz-col-status"></colgroup>'
+      + '<tbody>' + bodyRows + '</tbody></table>'
+    : '<div class="vz-panel-empty">Inga deltagare.</div>';
+  sec.innerHTML = '<div class="vz-panel-head">'
+    + '<div class="vz-panel-title">Hälsoformulär till läkare</div>'
+    + '<div class="vz-panel-meta">' + done + '/' + rows.length + ' skickade</div></div>'
+    + '<div class="vz-panel-note">Namn med ↗ länkar till hälsoformuläret. Status speglar checklistpunkten "Delat Hälsoformulär till läkare/kursledare".</div>'
+    + table
     + stubBtn('Skicka till läkare', 'Skulle skicka ' + done + ' hälsoformulär till läkaren för bedömning. Kopplas server-side (med bekräftelse) senare.')
-    + '<div style="margin-top:14px;border-top:1px solid #eef3f4;padding-top:12px">'
-    + '<div style="font-size:13px;font-weight:700;color:#08445c;margin-bottom:6px">Matallergier</div>'
-    + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" style="width:100%;min-height:64px;font-family:inherit;font-size:13.5px;padding:8px 10px;border:1px solid #cfe0e2;border-radius:8px;box-sizing:border-box"></textarea>'
-    + '<div style="margin-top:8px">' + '<button class="vz-stub" data-msg="Skulle läsa alla hälsoformulär och sammanställa angivna matallergier här. Kopplas senare (kräver läsning av HF-dokumenten)." style="border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:9px;font-family:inherit">Matallergier</button>'
-    + '<span style="font-size:11.5px;color:#8aa3ac;margin-left:10px">stub — hämtar ur HF senare</span></div></div>';
+    + '<div class="vz-allergi-box">'
+    + '<div class="vz-allergi-title">Matallergier</div>'
+    + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
+    + '<div class="vz-allergi-actions"><button class="vz-stub vz-btn" data-msg="Skulle läsa alla hälsoformulär och sammanställa angivna matallergier här. Kopplas senare (kräver läsning av HF-dokumenten).">Matallergier</button>'
+    + '<span class="vz-stub-note">stub — hämtar ur HF senare</span></div></div>';
   host.appendChild(sec);
   wireStubs(sec);
 }
 
 // Åtgärdsknapp-stub: visar vad den SKULLE göra (mejl/sidoeffekter kopplas server-side).
 function stubBtn(label, msgText) {
-  return '<div style="margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px">'
-    + '<button class="vz-stub" data-msg="' + esc(msgText) + '" style="border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:9px;font-family:inherit">' + esc(label) + '</button>'
-    + '<span style="font-size:11.5px;color:#8aa3ac;margin-left:10px">stub — kopplas senare</span></div>';
+  return '<div class="vz-stub-row">'
+    + '<button class="vz-stub vz-btn" data-msg="' + esc(msgText) + '">' + esc(label) + '</button>'
+    + '<span class="vz-stub-note">stub — kopplas senare</span></div>';
 }
 function wireStubs(scope) {
   Array.prototype.forEach.call(scope.querySelectorAll('.vz-stub'), function (b) {
@@ -328,58 +361,75 @@ function wireStubs(scope) {
 
 /* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
 function loadStoryMatrix(courseName, participants, cards) {
-  var key = 'vz_story_' + norm(courseName).replace(/[^a-z0-9]+/g, '_');
+  var slug = norm(courseName).replace(/[^a-z0-9]+/g, '_');
+  var key = 'vz_story_' + slug;
+  var followKey = 'vz_followup_' + slug;
   // Livsberättelse-länk per deltagare ur kort-kommentar.
   var storyLinks = {};
-  (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, /livsber[äa]ttels|nul[äa]gesbeskriv/i); });
+  (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); });
   var GL = STAFF_BOARDS[0];
+  function asObj(x) { return (x && typeof x === 'object') ? x : {}; }
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }
     return Promise.all([
       restGet(token, 'members/me/boards?fields=name&filter=open'),
       t.get('board', 'shared', key).catch(function () { return {}; }),
+      t.get('board', 'shared', followKey).catch(function () { return {}; }),
     ]).then(function (r) {
-      var boards = r[0] || [], sel = (r[1] && typeof r[1] === 'object') ? r[1] : {};
+      var boards = r[0] || [], selStory = asObj(r[1]), selFollow = asObj(r[2]);
       var b = boards.filter(function (bd) { return GL.re.test(bd.name || ''); })[0];
-      if (!b) { return { leaders: [], sel: sel }; }
+      if (!b) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
         var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
-        if (!list) { return { leaders: [], sel: sel }; }
+        if (!list) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
         return restGet(token, 'lists/' + list.id + '/cards?fields=name,labels').then(function (cs) {
           var leaders = (cs || []).map(function (c) { var p = staffPerson(c, GL); return p ? p.name : null; }).filter(Boolean);
-          return { leaders: leaders, sel: sel };
+          return { leaders: leaders, selStory: selStory, selFollow: selFollow };
         });
       });
     });
-  }).then(function (d) { if (d) { renderStoryMatrix(key, participants || [], d.leaders, d.sel, storyLinks); } }).catch(function () {});
+  }).then(function (d) {
+    if (!d) { return; }
+    renderStoryMatrix(key, participants || [], d.leaders, d.selStory, {
+      title: 'Livsberättelser → gruppledare', storyLinks: storyLinks,
+      note: 'Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.',
+      stubMsg: 'Skulle mejla varje gruppledare vilka livsberättelser hen ska läsa. Kopplas server-side (med bekräftelse) senare.',
+    });
+    renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
+      title: 'Uppföljningssamtal → gruppledare', storyLinks: {},
+      note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
+      stubMsg: 'Skulle mejla varje gruppledare vilka uppföljningssamtal hen ska hålla. Kopplas server-side (med bekräftelse) senare.',
+    });
+  }).catch(function () {});
 }
-function renderStoryMatrix(key, participants, leaders, sel, storyLinks) {
-  storyLinks = storyLinks || {};
-  var host = document.querySelector('.vz-course') || ROOT();
+function renderStoryMatrix(key, participants, leaders, sel, opts) {
+  opts = opts || {}; sel = sel || {};
+  var storyLinks = opts.storyLinks || {};
+  var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
-  sec.style.cssText = 'max-width:1400px;margin:6px auto 34px;padding:16px 22px;font-family:Calibri,"Segoe UI",system-ui,sans-serif;color:#0d3142;overflow-x:auto';
-  var head = '<div style="font-family:Fraunces,Georgia,serif;font-size:19px;font-weight:600;color:#08445c;margin-bottom:6px">Livsberättelser → gruppledare</div>';
+  sec.className = 'vz-panel vz-panel--below';
+  var head = '<div class="vz-panel-title">' + esc(opts.title || 'Matris') + '</div>';
   if (!leaders.length) {
-    sec.innerHTML = head + '<div style="font-size:13px;color:#8aa3ac">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
+    sec.innerHTML = head + '<div class="vz-panel-empty">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
     host.appendChild(sec); return;
   }
   function cellKey(pk, ld) { return pk + '||' + ld; }
   function paint() {
-    var ths = leaders.map(function (l) { return '<th style="font-size:11.5px;font-weight:700;color:#357087;padding:6px 8px;white-space:nowrap;writing-mode:vertical-rl;transform:rotate(180deg);max-height:120px">' + esc(l) + '</th>'; }).join('');
+    var ths = leaders.map(function (l) { return '<th class="vz-story-leader"><span class="vz-story-leader-label">' + esc(l) + '</span></th>'; }).join('');
     var trs = participants.map(function (p) {
       var cells = leaders.map(function (l) {
         var ck = cellKey(p.key, l);
-        return '<td style="text-align:center;padding:4px 8px;border-top:1px solid #eef3f4"><input type="checkbox" data-ck="' + esc(ck) + '"' + (sel[ck] ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:#1f7a53"></td>';
+        return '<td class="vz-story-cell"><input type="checkbox" data-ck="' + esc(ck) + '"' + (sel[ck] ? ' checked' : '') + ' class="vz-story-box"></td>';
       }).join('');
       var lk = storyLinks[p.key];
-      var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" style="color:#0c66e4;text-decoration:none">' + esc(p.name) + ' ↗</a>' : esc(p.name);
-      return '<tr><td style="font-size:13.5px;padding:4px 10px 4px 0;white-space:nowrap;border-top:1px solid #eef3f4">' + nm + '</td>' + cells + '</tr>';
+      var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
+      return '<tr><td class="vz-story-namecell">' + nm + '</td>' + cells + '</tr>';
     }).join('');
     sec.innerHTML = head
-      + '<div style="font-size:12.5px;color:#5d7c87;margin-bottom:8px">Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.</div>'
-      + '<table style="border-collapse:collapse"><thead><tr><th></th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table>'
-      + stubBtn('Skicka mail', 'Skulle mejla varje gruppledare vilka livsberättelser hen ska läsa. Kopplas server-side (med bekräftelse) senare.');
+      + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
+      + '<div class="vz-story-scroll"><table class="vz-tbl vz-story-tbl"><thead><tr><th class="vz-story-corner">Deltagare</th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div>'
+      + stubBtn('Skicka mail', opts.stubMsg || 'Kopplas senare.');
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
@@ -501,4 +551,8 @@ function boot() {
   }).catch(function () { showAuth('Kunde inte kontrollera Trello-anslutningen.'); });
 }
 
+// Esc stänger modalen oavsett var fokus ligger i iframen.
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { try { t.closeModal(); } catch (_) {} }
+});
 document.addEventListener('DOMContentLoaded', boot);

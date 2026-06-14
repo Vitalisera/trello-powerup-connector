@@ -155,4 +155,7 @@ function render() {
   fit();
 }
 
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { try { t.closePopup(); } catch (_) {} }
+});
 document.addEventListener('DOMContentLoaded', render);

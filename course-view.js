@@ -53,6 +53,10 @@
     return d.firstChild;
   }
   function meta(status) { return STATUS[status] || STATUS.wait; }
+  function pmapFor(phases, key) {
+    for (var i = 0; i < phases.length; i++) { if (phases[i].key === key) { return phases[i]; } }
+    return null;
+  }
   function initials(name) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
     if (!parts.length) return '–';
@@ -161,8 +165,12 @@
   }
 
   /* ---------- matris-huvud ---------- */
-  function theadHtml(steps, phases) {
-    // rad 1: fas-rubriker (colspan över sina steg)
+  /* chevron-ikon för foldbar fas-rubrik */
+  var icChevron = '<svg class="vz-cv-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+  function theadHtml(steps, phases, collapsed) {
+    collapsed = collapsed || {};
+    // rad 1: fas-rubriker (colspan över sina steg) — klickbara för att fälla in/ut
     var phaseRow = '<tr>'
       + '<th class="vz-cv-corner" rowspan="2">'
       + '  <div class="ct">Deltagare</div>'
@@ -170,8 +178,19 @@
       + '</th>';
     var firstPhaseKey = phases.length ? phases[0].key : null;
     phases.forEach(function (ph, i) {
-      phaseRow += '<th class="vz-cv-phasehead' + (i > 0 ? ' phase-2 phase-edge' : '') + '" colspan="' + ph.count + '">'
-        + '<div class="ph-line"><span>' + esc(ph.title) + '</span><span class="bar"></span></div>'
+      var isCollapsed = !!collapsed[ph.key];
+      // när infälld: en smal kolumn (colspan 1) som visar antal dolda steg
+      var span = isCollapsed ? 1 : ph.count;
+      phaseRow += '<th class="vz-cv-phasehead' + (i > 0 ? ' phase-2 phase-edge' : '')
+        + (isCollapsed ? ' is-collapsed' : '') + '"'
+        + ' colspan="' + span + '" data-phase-key="' + esc(ph.key) + '"'
+        + ' role="button" tabindex="0"'
+        + ' aria-expanded="' + (isCollapsed ? 'false' : 'true') + '"'
+        + ' title="' + (isCollapsed ? 'Visa' : 'Dölj') + ' fasens steg">'
+        + '<div class="ph-line">' + icChevron
+        + '<span class="ph-name">' + esc(ph.title) + '</span>'
+        + '<span class="ph-count">' + ph.count + '</span>'
+        + '<span class="bar"></span></div>'
         + '</th>';
     });
     phaseRow += '</tr>';
@@ -179,14 +198,29 @@
     // rad 2: steg-rubriker
     var stepRow = '<tr>';
     var n = 0;
-    var phaseStart = {}; // markera första steget i varje (icke-första) fas → vänsterkant
     var counts = {};
+    var placeholderDone = {}; // en infälld fas ger EN platshållar-cell istället för sina steg
     phases.forEach(function (ph) { counts[ph.key] = 0; });
     steps.forEach(function (s) {
       n += 1;
-      var edge = (s.phase && s.phase !== firstPhaseKey && counts[s.phase] === 0) ? ' phase-edge' : '';
-      counts[s.phase] = (counts[s.phase] || 0) + 1;
-      stepRow += '<th class="vz-cv-stephead' + edge + '" title="' + esc(s.title) + '">'
+      var pk = s.phase || '_';
+      var firstInPhase = counts[pk] === 0;
+      var edge = (s.phase && s.phase !== firstPhaseKey && firstInPhase) ? ' phase-edge' : '';
+      counts[pk] = (counts[pk] || 0) + 1;
+      if (collapsed[pk]) {
+        // rendera bara en platshållar-cell för hela den infällda fasen
+        if (!placeholderDone[pk]) {
+          placeholderDone[pk] = true;
+          var phCount = (pmapFor(phases, pk) || { count: 0 }).count;
+          stepRow += '<th class="vz-cv-stephead vz-cv-collapsed-head' + edge + '"'
+            + ' data-phase-key="' + esc(pk) + '" role="button" tabindex="0"'
+            + ' title="Visa fasens ' + phCount + ' steg">'
+            + '<span class="cc-label">' + phCount + ' steg</span>'
+            + '</th>';
+        }
+        return;
+      }
+      stepRow += '<th class="vz-cv-stephead' + edge + '" data-phase-key="' + esc(pk) + '" title="' + esc(s.title) + '">'
         + '<span class="sidx">' + n + '</span>'
         + '<span class="stitle">' + esc(s.short || s.title) + '</span>'
         + '</th>';
@@ -197,7 +231,8 @@
   }
 
   /* ---------- en deltagarrad ---------- */
-  function rowHtml(p, steps, idx, firstPhaseKey) {
+  function rowHtml(p, steps, idx, firstPhaseKey, collapsed) {
+    collapsed = collapsed || {};
     var prog = safeProgress(p);
     var gaps = gapsOf(p, steps);
     var hasGaps = gaps > 0;
@@ -213,12 +248,31 @@
       : '';
 
     var cells = '';
-    var phaseSeen = {};
+    var phaseSeen = {};       // för fas-kant
+    var placeholderDone = {}; // EN platshållarcell per infälld fas
     steps.forEach(function (s) {
+      var pk = s.phase || '_';
+      var firstInPhase = !phaseSeen[pk];
+      var edge = (s.phase && s.phase !== firstPhaseKey && firstInPhase) ? ' phase-edge' : '';
+      phaseSeen[pk] = true;
+      if (collapsed[pk]) {
+        // infälld fas: räkna fasens luckor för en kompakt sammanfattning
+        if (!placeholderDone[pk]) {
+          placeholderDone[pk] = true;
+          var phGaps = 0;
+          steps.forEach(function (s2) {
+            if ((s2.phase || '_') === pk && (p.status && p.status[s2.key]) === 'gap') { phGaps++; }
+          });
+          cells += '<td class="vz-cv-cell vz-cv-collapsed-cell' + edge + (phGaps ? ' has-gaps' : '') + '"'
+            + ' data-phase-key="' + esc(pk) + '"'
+            + ' title="' + (phGaps ? phGaps + ' lucka/luckor i denna fas — klicka rubriken för att fälla ut' : 'Inga luckor i denna fas') + '">'
+            + (phGaps ? '<span class="cc-gap">' + phGaps + '</span>' : '<span class="cc-dash">·</span>')
+            + '</td>';
+        }
+        return;
+      }
       var stcode = (p.status && p.status[s.key]) || 'wait';
       var m = meta(stcode);
-      var edge = (s.phase && s.phase !== firstPhaseKey && !phaseSeen[s.phase]) ? ' phase-edge' : '';
-      phaseSeen[s.phase] = true;
       var inner = m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>';
       cells += '<td class="vz-cv-cell' + edge + (stcode === 'gap' ? ' is-gap' : '') + '"'
         + ' data-step-key="' + esc(s.key) + '" title="' + esc(s.title + ' — ' + m.word) + '">'
@@ -363,22 +417,57 @@
     // interaktivt tillstånd
     var state = {
       sort: 'gaps',     // default: flest luckor överst
-      query: ''
+      query: '',
+      collapsed: loadCollapsed(phases)  // { phaseKey: true } — infällda faser (minns i sessionen)
     };
 
-    // bygg skalet (statiska delar)
+    // bygg skalet (statiska delar) + namngivna layout-regioner
+    //   .vz-region-row : matris (vänster) + aside (höger, Personal)
+    //   .vz-region-below : full bredd (HF, checklista, livsberättelser)
     rootEl.innerHTML = '<div class="vz-course"><div class="vz-cv-shell">'
       + topbarHtml(course)
       + '<div data-cv-summary></div>'
-      + '<div class="vz-cv-matrixwrap"><table class="vz-cv-table">'
-      +   theadHtml(steps, phases)
-      +   '<tbody data-cv-body></tbody>'
-      + '</table></div>'
-      + footHtml()
+      + '<div class="vz-cv-regions">'
+      +   '<div class="vz-cv-row-region">'
+      +     '<div class="vz-region-matrix">'
+      +       '<div class="vz-cv-matrixwrap"><table class="vz-cv-table" data-cv-table>'
+      +         '<thead data-cv-head></thead>'
+      +         '<tbody data-cv-body></tbody>'
+      +       '</table></div>'
+      +       footHtml()
+      +     '</div>'
+      +     '<aside class="vz-region-aside" data-vz-region="aside"></aside>'
+      +   '</div>'
+      +   '<div class="vz-region-below" data-vz-region="below"></div>'
+      + '</div>'
       + '</div></div>';
 
     var summaryHost = rootEl.querySelector('[data-cv-summary]');
     var body = rootEl.querySelector('[data-cv-body]');
+    var head = rootEl.querySelector('[data-cv-head]');
+
+    function paintHead() {
+      head.innerHTML = theadHtml(steps, phases, state.collapsed).replace(/^<thead>|<\/thead>$/g, '');
+      wireHead();
+    }
+    function wireHead() {
+      // klick/tangent på fas-rubrik eller dess infällda platshållare → fäll in/ut
+      var togglers = head.querySelectorAll('[data-phase-key]');
+      Array.prototype.forEach.call(togglers, function (thEl) {
+        var pk = thEl.getAttribute('data-phase-key');
+        function toggle(e) {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          state.collapsed[pk] = !state.collapsed[pk];
+          saveCollapsed(state.collapsed);
+          paintHead();
+          paintBody(false);
+        }
+        thEl.addEventListener('click', toggle);
+        thEl.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { toggle(e); }
+        });
+      });
+    }
 
     function paintSummary() {
       summaryHost.innerHTML = summaryHtml(summary, course, state);
@@ -404,7 +493,7 @@
         return;
       }
       body.innerHTML = list.map(function (p, i) {
-        return rowHtml(p, steps, stagger ? i : 9999, firstPhaseKey);
+        return rowHtml(p, steps, stagger ? i : 9999, firstPhaseKey, state.collapsed);
       }).join('');
       // vid icke-staggrad ompaint (sortering/sök) → visa direkt utan delay
       if (!stagger) {
@@ -474,7 +563,36 @@
 
     // initial paint
     paintSummary();
+    paintHead();
     paintBody(true);
+  }
+
+  /* ---------- ihågkom infällda faser i sessionen (valfritt, fail-soft) ---------- */
+  var COLLAPSE_KEY = 'vz_cv_collapsed_phases';
+  function loadCollapsed(phases) {
+    var out = {};
+    try {
+      var raw = window.sessionStorage && window.sessionStorage.getItem(COLLAPSE_KEY);
+      if (raw) {
+        var saved = JSON.parse(raw) || {};
+        // behåll bara nycklar som finns bland aktuella faser
+        phases.forEach(function (ph) { if (saved[ph.key]) { out[ph.key] = true; } });
+      }
+    } catch (e) { /* sessionStorage kan saknas/blockeras i iframe — strunta */ }
+    return out;
+  }
+  function saveCollapsed(map) {
+    try {
+      if (window.sessionStorage) { window.sessionStorage.setItem(COLLAPSE_KEY, JSON.stringify(map || {})); }
+    } catch (e) { /* tyst */ }
+  }
+
+  /* ---------- layout-regioner: course.js placerar paneler i rätt region ---------- */
+  function region(name) {
+    var course = document.querySelector('.vz-course');
+    if (!course) { return null; }
+    var r = course.querySelector('[data-vz-region="' + name + '"]');
+    return r || course;  // fail-soft: faller tillbaka till .vz-course om regionen saknas
   }
 
   /* fas-titel: använd stegets phase-key för en läsbar rubrik */
@@ -562,7 +680,7 @@
   };
 
   /* ---------- expose ---------- */
-  window.CourseView = { render: render, DEMO_MODEL: DEMO_MODEL };
+  window.CourseView = { render: render, region: region, DEMO_MODEL: DEMO_MODEL };
 
   /* ---------- fristående auto-boot ---------- */
   function autoBoot() {

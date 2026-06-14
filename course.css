@@ -185,6 +185,36 @@
 }
 .vz-cv-search input::placeholder{color:var(--muted)}
 
+/* ===== LAYOUT-REGIONER ===== */
+/* hela region-zonen scrollar vertikalt inuti shellet */
+.vz-cv-regions{
+  flex:1;min-height:0;overflow:auto;
+  display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
+}
+/* rad: matris (vänster, flexar) + aside (höger, fast bredd) */
+.vz-cv-row-region{
+  display:flex;align-items:flex-start;gap:0;
+  min-height:0;
+}
+.vz-region-matrix{
+  flex:1 1 auto;min-width:0;
+  display:flex;flex-direction:column;
+  border-right:1px solid var(--hairline);
+}
+.vz-region-aside{
+  flex:0 0 320px;width:320px;align-self:stretch;
+  background:rgba(255,255,255,.55);
+  padding:16px 16px 22px;
+}
+.vz-region-below{
+  display:block;
+  border-top:1px solid var(--hairline);
+  background:rgba(255,255,255,.4);
+  padding:6px 24px 26px;
+}
+.vz-region-below:empty,.vz-region-aside:empty{display:none}
+
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
   flex:1;min-height:0;overflow:auto;position:relative;
@@ -207,6 +237,52 @@
 .vz-cv-phasehead .ph-line .bar{flex:1;height:1.5px;border-radius:2px;
   background:linear-gradient(90deg,rgba(53,112,135,.4),rgba(53,112,135,.05))}
 .vz-cv-phasehead.phase-2{border-left:1px dashed var(--hairline-strong)}
+
+/* --- foldbar fas-rubrik --- */
+.vz-cv-phasehead{cursor:pointer;user-select:none;transition:background .15s ease}
+.vz-cv-phasehead:hover{background:linear-gradient(180deg,#e7f2f2,#dcebec)}
+.vz-cv-phasehead:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.vz-cv-phasehead .ph-line .vz-cv-chev{
+  width:13px;height:13px;flex:none;color:var(--accent);
+  transition:transform .25s cubic-bezier(.22,1,.36,1);
+}
+.vz-cv-phasehead.is-collapsed .ph-line .vz-cv-chev{transform:rotate(-90deg)}
+.vz-cv-phasehead .ph-name{white-space:nowrap}
+.vz-cv-phasehead .ph-count{
+  font-size:10px;font-weight:800;letter-spacing:.04em;
+  background:var(--lightmint);color:var(--dark);
+  border-radius:20px;padding:1px 7px;flex:none;
+}
+.vz-cv-phasehead.is-collapsed{
+  background:linear-gradient(180deg,#e9f3f3,#dfeded);
+  border-left:1px dashed var(--hairline-strong);
+}
+.vz-cv-phasehead.is-collapsed .ph-line .bar{display:none}
+
+/* infälld fas: platshållar-cell i steghuvudet (kompakt vertikal etikett) */
+.vz-cv-collapsed-head{
+  cursor:pointer;min-width:38px;width:38px;padding:9px 2px 12px;
+  text-align:center;vertical-align:middle;background:linear-gradient(180deg,#eef6f6,#e4f0f1);
+  transition:background .15s ease;
+}
+.vz-cv-collapsed-head:hover{background:linear-gradient(180deg,#e3f0f0,#d6e9ea)}
+.vz-cv-collapsed-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.vz-cv-collapsed-head .cc-label{
+  display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);
+  font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--muted);white-space:nowrap;
+}
+
+/* infälld fas: kompakt sammanfattnings-cell per rad */
+.vz-cv-collapsed-cell{
+  min-width:38px;width:38px;text-align:center;vertical-align:middle;
+  background:rgba(8,68,92,.025);
+}
+.vz-cv-collapsed-cell.has-gaps{background:rgba(181,113,11,.07)}
+.vz-cv-collapsed-cell .cc-gap{
+  display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;
+  background:var(--amber);color:#fff;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;
+}
+.vz-cv-collapsed-cell .cc-dash{color:#9bbcc6;font-size:14px;font-weight:700}
 
 /* delningslinje mellan faserna i hela kolumn-höjden */
 .vz-cv-table td.phase-edge,
@@ -374,6 +450,139 @@
 .vz-cv-lg.lg-manual .swab{background:#fff;border:2px dashed var(--accent);color:var(--accent)}
 .vz-cv-lg.lg-na .swab{background:transparent;border-color:transparent;color:#bcd0d6}
 
+/* ============================================================================
+   PANELER (Personal, Hälsoformulär, Kurschecklista, Livsberättelser)
+   Renderas av course.js i regionerna. Tidigare inline-stil → strukturerade
+   tabeller/grid med justerade kolumner. Status bryter aldrig rad; namn ellipsar.
+   ============================================================================ */
+.vz-course .vz-panel{
+  font-family:var(--font-body);color:var(--ink);
+  background:#fff;border:1px solid var(--hairline);border-radius:14px;
+  box-shadow:var(--shadow-sm);
+  padding:16px 18px;margin:0 0 18px;
+}
+.vz-course .vz-region-below .vz-panel{margin-top:18px}
+.vz-course .vz-region-below .vz-panel:first-child{margin-top:6px}
+.vz-course .vz-panel--aside{padding:14px 15px}
+.vz-course .vz-region-aside .vz-panel--aside + .vz-panel--aside{margin-top:14px}
+
+.vz-course .vz-panel-title{
+  font-family:var(--font-display);font-size:19px;font-weight:600;color:var(--dark);
+}
+.vz-course .vz-panel--aside .vz-panel-title{font-size:17px;margin-bottom:10px}
+.vz-course .vz-panel-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  margin-bottom:8px;flex-wrap:wrap;
+}
+.vz-course .vz-panel-meta{font-size:12.5px;color:var(--muted);font-weight:600;white-space:nowrap}
+.vz-course .vz-panel-note{font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.45}
+.vz-course .vz-panel-empty{font-size:13px;color:#8aa3ac;padding:4px 0}
+
+/* generisk panel-tabell: kolumner via <colgroup>, status no-wrap, namn ellipsar */
+.vz-course .vz-tbl{width:100%;border-collapse:collapse;table-layout:fixed}
+.vz-course .vz-tbl td,.vz-course .vz-tbl th{vertical-align:middle}
+.vz-course .vz-tbl tbody tr td{border-top:1px solid #eef3f4}
+.vz-course .vz-tbl tbody tr:first-child td{border-top:none}
+.vz-course .vz-tbl-namecell{
+  padding:8px 14px 8px 0;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0;
+}
+.vz-course .vz-tbl-statuscell{padding:8px 0;text-align:right;white-space:nowrap;width:1%}
+.vz-course .vz-col-status{width:130px}
+
+.vz-course .vz-tbl-link{color:#0c66e4;text-decoration:none;font-size:14px}
+.vz-course .vz-tbl-link:hover{text-decoration:underline}
+.vz-course .vz-tbl-link .vz-ext{font-size:12px;opacity:.8}
+.vz-course .vz-tbl-name{font-size:14px}
+
+/* status-etiketter — bryter ALDRIG rad */
+.vz-course .vz-status{font-weight:700;white-space:nowrap;font-size:13.5px}
+.vz-course .vz-status--done{color:var(--success)}
+.vz-course .vz-status--pending{color:var(--amber)}
+.vz-course .vz-status--missing{color:#8aa3ac;font-weight:600}
+
+/* knappar + textfält (delas av paneler) */
+.vz-course .vz-btn{
+  border:none;cursor:pointer;background:var(--accent);color:#fff;font-weight:700;
+  font-size:13.5px;padding:9px 16px;border-radius:9px;font-family:inherit;
+  transition:background .15s ease,box-shadow .15s ease;
+}
+.vz-course .vz-btn:hover{background:#2c5f73;box-shadow:var(--shadow-sm)}
+.vz-course .vz-input,.vz-course .vz-textarea{
+  display:block;width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;
+  padding:9px 11px;border:1px solid #cfe0e2;border-radius:8px;color:var(--ink);background:#fff;
+}
+.vz-course .vz-input:focus,.vz-course .vz-textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(53,112,135,.15)}
+.vz-course .vz-textarea{min-height:64px;font-size:13.5px;resize:vertical}
+
+.vz-course .vz-stub-row{margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vz-course .vz-stub-note{font-size:11.5px;color:#8aa3ac}
+
+/* --- Personal (aside): grupper staplade vertikalt --- */
+.vz-course .vz-staff-group{
+  background:#fbfdfd;border:1px solid var(--hairline);border-radius:11px;
+  padding:11px 13px;margin-bottom:12px;
+}
+.vz-course .vz-staff-group:last-child{margin-bottom:0}
+.vz-course .vz-staff-grouphead{
+  display:flex;align-items:center;gap:8px;
+  font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);
+  margin-bottom:6px;
+}
+.vz-course .vz-staff-badge{
+  font-size:10.5px;font-weight:800;background:var(--lightmint);color:var(--dark);
+  border-radius:20px;padding:1px 7px;
+}
+.vz-course .vz-staff-list{list-style:none;margin:0;padding:0}
+.vz-course .vz-staff-row{
+  display:flex;align-items:baseline;gap:6px;
+  padding:4px 0;border-top:1px solid #eef3f4;font-size:13.5px;
+}
+.vz-course .vz-staff-row:first-child{border-top:none}
+.vz-course .vz-staff-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vz-course .vz-staff-role{flex:none;font-size:11px;color:var(--muted)}
+.vz-course .vz-staff-role::before{content:"· "}
+
+/* --- Kurschecklista --- */
+.vz-course .vzchk-list{display:block}
+.vz-course .vzchk-row{
+  display:flex;align-items:center;gap:10px;padding:8px 0;
+  border-top:1px solid #eef3f4;cursor:pointer;
+}
+.vz-course .vzchk-row:first-child{border-top:none}
+.vz-course .vzchk-box{width:17px;height:17px;accent-color:var(--success);flex:none;cursor:pointer}
+.vz-course .vzchk-text{flex:1 1 auto;font-size:14px;min-width:0}
+.vz-course .vzchk-row.is-done .vzchk-text{text-decoration:line-through;color:#8aa3ac}
+.vz-course .vzchk-del{border:none;background:none;cursor:pointer;color:#b23a2e;font-size:15px;padding:2px 6px;flex:none;border-radius:6px}
+.vz-course .vzchk-del:hover{background:rgba(178,58,46,.1)}
+.vz-course .vzchk-add-row{margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px}
+.vz-course .vzchk-add-row .vz-btn{margin-top:8px}
+
+/* --- Matallergier-ruta --- */
+.vz-course .vz-allergi-box{margin-top:14px;border-top:1px solid #eef3f4;padding-top:12px}
+.vz-course .vz-allergi-title{font-size:13px;font-weight:700;color:var(--dark);margin-bottom:6px}
+.vz-course .vz-allergi-actions{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* --- Livsberättelse-matris --- */
+.vz-course .vz-story-scroll{overflow-x:auto}
+.vz-course .vz-story-tbl{width:auto;table-layout:auto;border-collapse:collapse}
+.vz-course .vz-story-corner{
+  text-align:left;font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--dark);
+  padding:0 12px 8px 0;white-space:nowrap;
+}
+.vz-course .vz-story-leader{
+  padding:6px 6px 8px;vertical-align:bottom;
+}
+.vz-course .vz-story-leader-label{
+  display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);
+  font-size:11.5px;font-weight:700;color:var(--accent);white-space:nowrap;max-height:130px;
+}
+.vz-course .vz-story-namecell{
+  font-size:13.5px;padding:5px 12px 5px 0;white-space:nowrap;border-top:1px solid #eef3f4;
+}
+.vz-course .vz-story-cell{text-align:center;padding:4px 8px;border-top:1px solid #eef3f4}
+.vz-course .vz-story-box{width:16px;height:16px;accent-color:var(--success);cursor:pointer}
+
 /* ===== reduced motion ===== */
 @media (prefers-reduced-motion:reduce){
   .vz-course *{animation:none !important;transition:none !important}
@@ -387,6 +596,10 @@
   .vz-cv-summary{grid-template-columns:1fr;gap:16px}
   .vz-cv-sumside{align-items:flex-start;text-align:left}
   .vz-cv-controls{justify-content:flex-start}
+  /* stapla: matris överst, Personal-aside under (full bredd) */
+  .vz-cv-row-region{flex-direction:column}
+  .vz-region-matrix{border-right:none;border-bottom:1px solid var(--hairline);width:100%}
+  .vz-region-aside{flex:1 1 auto;width:100%;align-self:auto}
 }
 @media (max-width:680px){
   .vz-course{padding:8px}
@@ -394,4 +607,6 @@
   .vz-cv-brand .crumb b{max-width:22ch}
   .vz-cv-corner,.vz-cv-namehead,.vz-cv-namecell{min-width:200px;width:200px}
   .vz-cv-search input{width:118px}
+  .vz-region-below{padding:6px 12px 20px}
+  .vz-course .vz-col-status{width:108px}
 }

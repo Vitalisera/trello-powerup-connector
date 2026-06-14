@@ -211,6 +211,12 @@ function bootCompact() {
   }).catch(function () {});
 }
 
+// Esc stänger modalen (fullvy) oavsett fokus. Kompakt strip = ingen modal.
+if (!COMPACT) {
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { try { t.closeModal(); } catch (_) {} }
+  });
+}
 document.addEventListener('DOMContentLoaded', function () {
   if (COMPACT) { bootCompact(); } else { bootFull(); }
 });
