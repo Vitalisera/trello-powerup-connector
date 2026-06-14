@@ -22,6 +22,13 @@ window.NYA_ZAPIER_CONFIG = {
   LOGO_URL: 'https://mcusercontent.com/415e930e2acb057a5ad12bd07/images/937b7fc2-3389-49b4-8e98-43c261ce33a0.png',
   // Bara emblemet (utan ordmärke) — skarpt i pyttesmå ytor som Trellos knappikon.
   MARK_URL: './icons/vitalisera-mark.png',
+
+  // ⚠️ FYLL I: Trello API-nyckel för REST-klienten (t.getRestApi).
+  //   Genereras i https://trello.com/power-ups/admin → din Power-Up → fliken
+  //   "API Key" → "Generate a new API Key". Nyckeln är PUBLIK (klient-app-nyckel,
+  //   ej hemlig token) → ok att ligga här. Token hämtas per-användare via authorize().
+  APP_KEY: 'REPLACE_WITH_TRELLO_APP_KEY',
+  APP_AUTHOR: 'Vitalisera',
 };
 
 /*

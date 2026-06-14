@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anslut Trello</title>
+  <style>
+    html,body{margin:0;font-family:Calibri,"Segoe UI",Candara,system-ui,sans-serif;color:#08445c;background:#cce2e3}
+    .wrap{padding:18px 16px;text-align:center}
+    img{width:40px;height:40px;border-radius:9px;margin-bottom:8px}
+    h1{font-size:16px;margin:0 0 6px}
+    p{font-size:13px;color:#4d7c8e;margin:0 0 14px;line-height:1.45}
+    button{border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;font-size:14px;
+      padding:11px 18px;border-radius:9px;font-family:inherit}
+    button:active{transform:scale(.98)}
+    .err{color:#b23a2e;font-size:12.5px;margin-top:10px;min-height:1em}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <img id="logo" alt="" />
+    <h1>Anslut till Trello</h1>
+    <p>Power-Up:en behöver din tillåtelse att läsa och uppdatera korten (checklistor, etiketter) i ditt namn. Du gör detta en gång.</p>
+    <button id="go">Anslut Trello</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <script src="./config.js"></script>
+  <script>
+    var CFG = window.NYA_ZAPIER_CONFIG;
+    var t = window.TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
+    document.getElementById('logo').src = CFG.MARK_URL;
+    document.getElementById('go').addEventListener('click', function () {
+      document.getElementById('err').textContent = '';
+      t.getRestApi().authorize({ scope: 'read,write', expiration: 'never' })
+        .then(function () { return t.closePopup(); })
+        .catch(function () { document.getElementById('err').textContent = 'Anslutningen avbröts. Försök igen.'; });
+    });
+  </script>
+</body>
+</html>
