@@ -19,7 +19,7 @@ var MARK = CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '28';
+var V = '29';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 function openDashboard(t) {
@@ -40,6 +40,11 @@ function openCourseFromCard(t) {
 // Kursöversikt från board (list-väljare i vyn).
 function openCourseFromBoard(t) {
   return t.modal({ url: vurl('./course.html'), fullscreen: true, title: CFG.APP_NAME + ' – Kursöversikt', accentColor: '#08445c' });
+}
+
+// Inställningar (kugghjul) — konfig som annars vore hårdkodad (läkar-mejl, test-läge…).
+function openSettings(t) {
+  return t.modal({ url: vurl('./settings.html'), title: CFG.APP_NAME + ' – Inställningar', accentColor: '#08445c' });
 }
 
 TrelloPowerUp.initialize({
@@ -66,9 +71,12 @@ TrelloPowerUp.initialize({
     ];
   },
 
-  // Board-knapp: icon {dark,light}. Board-brett → kursöversikt med list-väljare.
+  // Board-knappar: Kursöversikt + Inställningar (kugghjul). icon {dark,light}.
   'board-buttons': function (t, opts) {
-    return [{ icon: { dark: MARK, light: MARK }, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromBoard, condition: 'edit' }];
+    return [
+      { icon: { dark: MARK, light: MARK }, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromBoard, condition: 'edit' },
+      { icon: { dark: MARK, light: MARK }, text: '⚙ ' + CFG.APP_NAME + ' – Inställningar', callback: openSettings, condition: 'edit' },
+    ];
   },
 }, {
   // REST-klient: krävs för t.getRestApi() (Vy2 checklist-läsning, framtida mutationer).
