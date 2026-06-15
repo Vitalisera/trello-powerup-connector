@@ -140,6 +140,8 @@
 .vz-cv-stat .lbl{font-size:12px;color:var(--muted);margin-top:6px;font-weight:600;letter-spacing:.01em}
 .vz-cv-stat .lbl .ic{display:inline-flex;width:12px;height:12px;vertical-align:-1px;margin-right:5px}
 .vz-cv-stat .lbl .ic svg{width:12px;height:12px}
+.vz-cv-stat .vz-cv-gender{display:block;margin-top:4px;font-size:11.5px;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.vz-cv-stat .vz-cv-gender:empty{display:none}
 .vz-cv-stat.is-gap{border-color:rgba(181,113,11,.4);background:linear-gradient(160deg,rgba(181,113,11,.08),#fff 60%)}
 .vz-cv-stat.is-gap .big{color:var(--amber)}
 .vz-cv-stat.is-gap .lbl{color:var(--amber)}

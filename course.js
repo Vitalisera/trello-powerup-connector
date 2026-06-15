@@ -171,6 +171,8 @@ var STAFF_BOARDS = [
 ];
 var ASSIST_LIST_ID = null; // assistent-listans id, satt av renderStaffPanel → matallergi-hämtning
 var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Skicka till kock" (kockens mejl)
+var STAFF_COUNT = 0;       // total personal (gruppledare + assistenter + kockar), satt av renderStaffPanel
+var KOCK_NAME = '';        // kockens förnamn (för hälsning "Hej Arpan,")
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
   if (norm(a) === norm(b)) { return true; }
@@ -235,6 +237,11 @@ function vzRegion(name) {
 
 function renderStaffPanel(groups, courseName) {
   var emailsKey = 'vz_emails_' + courseSlug(courseName);
+  // Total personal (gruppledare + assistenter + kockar) + kockens förnamn → matallergi-mejlet.
+  STAFF_COUNT = (groups || []).reduce(function (n, g) { return n + ((g.people && g.people.length) || 0); }, 0);
+  var kockGroup = (groups || []).filter(function (g) { return g.cfg.key === 'kockar'; })[0];
+  KOCK_NAME = (kockGroup && kockGroup.people && kockGroup.people[0])
+    ? ((kockGroup.people[0].name || '').trim().split(/\s+/)[0] || '') : '';
   var host = vzRegion('aside');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -530,10 +537,12 @@ function renderHfPanel(rows, courseName) {
           var deltBody = deanonFirst((pp[0] || '').replace(/===\s*DELTAGARE\s*===/i, '').trim()) || 'Inga kända matallergier.';
           var persBody = deanonFirst((pp[1] || '').trim()) || 'Inga kända matallergier.';
           var dCount = rows.length;
-          var pCount = items.filter(function (it) { return /^A/.test(it.code); }).length;
-          var mejl = 'Hej!\n\n'
+          // Personal = ALL staff (gruppledare + assistenter + kockar) inkl. kocken (mottagaren).
+          var pCount = STAFF_COUNT || items.filter(function (it) { return /^A/.test(it.code); }).length;
+          var greeting = KOCK_NAME ? ('Hej ' + KOCK_NAME + ',') : 'Hej!';
+          var mejl = greeting + '\n\n'
             + 'Här kommer en sammanställning av matallergierna inför kursen.\n\n'
-            + 'Som det ser ut just nu är det ' + dCount + ' deltagare och ' + pCount + ' personal.\n\n'
+            + 'Som det ser ut just nu är det ' + dCount + ' deltagare och ' + pCount + ' personal (inklusive dig).\n\n'
             + 'Deltagare (kopierat från hälsoformuläret):\n' + deltBody + '\n\n'
             + 'Personal:\n' + persBody + '\n\n'
             + 'Jag återkommer om det blir ändring i antal eller om någon ny allergi dyker upp.';
@@ -762,6 +771,23 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   host.appendChild(sec);
 }
 
+// Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,
+// som härleder kön via Claude. Fyller #vz-cv-gender asynkront; tyst om något fallerar.
+function loadGenderSplit(participants) {
+  var names = (participants || []).map(function (p) { return (p.name || '').trim().split(/\s+/)[0]; }).filter(Boolean);
+  if (!names.length) { return; }
+  postToGas('courseGenderSplit', { names: names }).then(function (data) {
+    var el = document.getElementById('vz-cv-gender');
+    if (!el || !data || data.ok !== true) { return; }
+    var c = data.counts || {};
+    var parts = [];
+    if (c.K) { parts.push(c.K + (c.K === 1 ? ' kvinna' : ' kvinnor')); }
+    if (c.M) { parts.push(c.M + (c.M === 1 ? ' man' : ' män')); }
+    if (c.unknown) { parts.push(c.unknown + ' okänt'); }
+    el.textContent = parts.join(' · ');
+  }).catch(function () { /* tyst */ });
+}
+
 function loadCourse(listId, listName) {
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
@@ -775,6 +801,7 @@ function loadCourse(listId, listName) {
   }).then(function (res) {
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
+    loadGenderSplit(model.participants);
     loadStaff(res[0]);
     loadHfPanel(res[1] || [], res[0]);
     loadStoryMatrix(res[0], model.participants, res[1] || []);

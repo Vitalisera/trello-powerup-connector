@@ -28,8 +28,16 @@ function esc(s) {
 function parseDesc(desc) {
   var out = {};
   String(desc || '').split('\n').forEach(function (line) {
-    var m = line.match(/^\s*([^:]{2,30}):\s*(.+?)\s*$/);
-    if (m) { out[norm(m[1])] = m[2]; }
+    // Korten skriver fälten i markdown-fetstil ("**Namn:** …") → strippa * först,
+    // annars hamnar ** i nyckeln och uppslag som d['epost'] missar (William-buggen).
+    var clean = line.replace(/\*+/g, '').trim();
+    var m = clean.match(/^([^:]{2,30}):\s*(.+?)\s*$/);
+    if (!m) { return; }
+    var val = m[2].trim();
+    // Markdown-länk "[text](url)" → visa texten (t.ex. mailto-länkad e-post).
+    var link = val.match(/^\[([^\]]+)\]\([^)]*\)$/);
+    if (link) { val = link[1].trim(); }
+    out[norm(m[1])] = val;
   });
   return out;
 }

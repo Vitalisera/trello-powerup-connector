@@ -138,6 +138,7 @@
       + '    <div class="vz-cv-stat is-people">'
       + '      <span class="big" data-count="' + (s.total || 0) + '">0</span>'
       + '      <span class="lbl"><span class="ic">' + ic.people + '</span>Deltagare</span>'
+      + '      <span class="vz-cv-gender" id="vz-cv-gender"></span>'
       + '    </div>'
       + '    <div class="vz-cv-stat is-gap' + ((s.withGaps || 0) > 0 ? ' has-gaps' : '') + '">'
       + '      <span class="big" data-count="' + (s.withGaps || 0) + '">0</span>'
