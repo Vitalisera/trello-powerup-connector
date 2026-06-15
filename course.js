@@ -503,7 +503,7 @@ function renderHfPanel(rows, courseName) {
           allergiBtn.disabled = false;
           return;
         }
-        allergiOut.value = '⏳ Läser ' + items.length + ' underlag (deltagare + assistenter) och sammanställer…';
+        allergiOut.value = '⏳ Läser ' + items.length + ' underlag (deltagare + personal) och sammanställer…';
         return postToGas('courseAllergies', { items: items }).then(function (data) {
           if (!data || data.ok !== true) {
             if (data && data.error === 'anthropic_key_missing') {
