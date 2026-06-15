@@ -142,6 +142,9 @@
 .vz-cv-stat .lbl .ic svg{width:12px;height:12px}
 .vz-cv-stat .vz-cv-gender{display:block;margin-top:4px;font-size:11.5px;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
 .vz-cv-stat .vz-cv-gender:empty{display:none}
+.vz-mailbox{margin-top:12px}
+.vz-mailbox-label{font-size:12.5px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.vz-mailbox .vz-textarea{width:100%;box-sizing:border-box}
 .vz-cv-stat.is-gap{border-color:rgba(181,113,11,.4);background:linear-gradient(160deg,rgba(181,113,11,.08),#fff 60%)}
 .vz-cv-stat.is-gap .big{color:var(--amber)}
 .vz-cv-stat.is-gap .lbl{color:var(--amber)}

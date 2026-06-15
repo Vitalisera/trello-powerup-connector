@@ -174,6 +174,7 @@ var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Ski
 var STAFF_COUNT = 0;       // total personal (gruppledare + assistenter + kockar), satt av renderStaffPanel
 var KOCK_NAME = '';        // kockens förnamn (för hälsning "Hej Arpan,")
 var COURSE_GL_NAMES = [];  // kursens gruppledar/VP-namn → matcha mot "Matallergier Gruppledare/VP"-listan
+var MALIN_PRESENT = false; // Malin var med på kursveckan = finns som "Vitaliseraperson på plats" i gruppledar-listan
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
   if (norm(a) === norm(b)) { return true; }
@@ -244,7 +245,10 @@ function renderStaffPanel(groups, courseName) {
   KOCK_NAME = (kockGroup && kockGroup.people && kockGroup.people[0])
     ? ((kockGroup.people[0].name || '').trim().split(/\s+/)[0] || '') : '';
   var glGroup = (groups || []).filter(function (g) { return g.cfg.key === 'gruppledare'; })[0];
-  COURSE_GL_NAMES = (glGroup && glGroup.people) ? glGroup.people.map(function (p) { return p.name; }).filter(Boolean) : [];
+  var glPeople = (glGroup && glGroup.people) || [];
+  COURSE_GL_NAMES = glPeople.map(function (p) { return p.name; }).filter(Boolean);
+  // Malin var med på kursveckan = hon finns som "Vitaliseraperson på plats" i gruppledar-listan (Robert).
+  MALIN_PRESENT = glPeople.some(function (p) { return p.role === 'Vitaliseraperson på plats' && /malin/i.test(p.name || ''); });
   var host = vzRegion('aside');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -721,6 +725,62 @@ function buildLeaderAssignments(sel, participants, leaders) {
   }).filter(function (a) { return a.participants.length; });
 }
 
+/* ---------- Gruppledar-mejl: textgenerering (Malins mallar) ---------- */
+function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+// "A" / "A och B" / "A, B och C"
+function swedishList(arr) {
+  arr = (arr || []).filter(Boolean);
+  if (!arr.length) { return ''; }
+  if (arr.length === 1) { return arr[0]; }
+  return arr.slice(0, -1).join(', ') + ' och ' + arr[arr.length - 1];
+}
+// Redigerbar mejl-ruta (rubrik + auto-växande textarea). Malin redigerar; Skicka kopplas i nästa steg.
+function mailBox(label, value) {
+  var wrap = document.createElement('div');
+  wrap.className = 'vz-mailbox';
+  var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
+  var ta = document.createElement('textarea'); ta.className = 'vz-textarea'; ta.value = value;
+  wrap.appendChild(lbl); wrap.appendChild(ta);
+  function fit() { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
+  ta.addEventListener('input', fit); setTimeout(fit, 0);
+  return wrap;
+}
+function livsAllaText(assignLines, total, men, women) {
+  var antal = (men != null && women != null)
+    ? ('Just nu är de bara ' + total + ', ' + men + ' män och ' + women + ' kvinnor.')
+    : ('Just nu är de bara ' + total + ' deltagare.');
+  return 'Hej på Er!\n\n'
+    + 'Idag är sista inlämningsdag för deltagare att lämna in sina livsberättelser. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
+    + 'Det blir en liten grupp denna gång. ' + antal + ' Men vi hoppas på en eller två till innan kursen startar, så håll tummarna för det!\n\n'
+    + 'Jag delar upp livsberättelserna enligt följande, och skickar länkarna till er enskilt:\n\n'
+    + assignLines;
+}
+function livsEnskildMall() {
+  return 'Hej {GRUPPLEDARE}!\n\n'
+    + 'Här kommer länkarna till formulären som du har fått i uppdrag att läsa:\n\n'
+    + '{DELTAGARE}\n\n'
+    + 'Kram';
+}
+function uppfoljningText(assignLines) {
+  if (MALIN_PRESENT) {
+    return 'Hej Alla!\n\n'
+      + 'Tack för en väldigt fin vecka!\n\n'
+      + 'Det är nu dags för uppföljningssamtal. Jag har delat upp deltagarna enligt följande:\n\n'
+      + assignLines + '\n\n'
+      + 'Här är länken till dokumentet där ni skriver en sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
+      + 'Försök gärna att hålla tidsspannet att de ska få ett samtal inom 10 dagar.\n\n'
+      + 'Önskar er en fin helg ❤️';
+  }
+  return 'Hej!\n\n'
+    + 'Hoppas ni har haft en fin vecka 🌞\n\n'
+    + 'Jag har gjort en uppdelning för uppföljningssamtal enligt nedan. Och jag lägger också länken till dokumentet där ni skriver in en liten sammanfattning av samtalet nedan.\n\n'
+    + 'Jag skickar separata email med kontaktuppgifter till er.\n\n'
+    + 'Försök gärna att få till samtalen inom två veckor:\n\n'
+    + assignLines + '\n\n'
+    + 'Länk till uppföljningssamtalen: {SAMMANFATTNINGSLÄNK}\n\n'
+    + 'Kram och ha en fin helg!';
+}
+
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
   opts = opts || {}; sel = sel || {};
   var storyLinks = opts.storyLinks || {};
@@ -750,9 +810,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
       + '<div class="vz-story-scroll"><table class="vz-tbl vz-story-tbl"><thead><tr><th class="vz-story-corner">Deltagare</th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div>'
       + '<div class="vz-stub-row">'
-      + '<button class="vz-btn" id="vz-mail-btn">Skicka mail</button>'
-      + '<span class="vz-stub-note">förhandsvisning (dry-run) — inget skickas</span></div>'
-      + '<div id="vz-mail-out" class="vz-panel-note" style="display:none;white-space:pre-line"></div>';
+      + '<button class="vz-btn" id="vz-mail-btn">Skapa mejltext</button>'
+      + '<span class="vz-stub-note">genererar redigerbar text — du granskar och skickar själv</span></div>'
+      + '<div id="vz-mail-out"></div>';
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
@@ -762,19 +822,33 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       mailBtn.addEventListener('click', function () {
         var assignments = buildLeaderAssignments(sel, participants, leaders);
         if (!assignments.length) {
-          mailOut.style.display = ''; mailOut.textContent = 'Bocka minst en deltagare per gruppledare först.';
+          mailOut.innerHTML = '<div class="vz-panel-note">Bocka minst en deltagare per gruppledare först.</div>';
           return;
         }
         mailBtn.disabled = true;
-        mailOut.style.display = ''; mailOut.textContent = '⏳ Förhandsvisar…';
-        postToGas('sendGroupLeaderMail', { dryRun: true, kind: opts.kind || '', assignments: assignments }).then(function (data) {
-          if (!data || data.ok !== true) { mailOut.textContent = '⚠️ ' + ((data && data.error) || 'okänt fel'); return; }
-          var lines = (data.preview || []).map(function (p) {
-            return '• ' + p.leaderName + ' (' + (p.leaderEmail || 'mejl saknas') + '): ' + p.count + ' st';
-          });
-          mailOut.textContent = 'Skulle mejla ' + lines.length + ' gruppledare. Inget skickades — bekräfta-steg kommer.\n' + lines.join('\n');
-        }).catch(function (err) {
-          mailOut.textContent = '⚠️ ' + err.message;
+        mailOut.innerHTML = '<div class="vz-panel-note">⏳ Skapar mejltext…</div>';
+        // Tilldelnings-rader ("Gruppledare-förnamn: deltagare1, deltagare2 och deltagare3").
+        var assignLines = assignments.map(function (a) {
+          return firstNameOf(a.leaderName) + ': ' + swedishList(a.participants.map(firstNameOf));
+        }).join('\n');
+        if (opts.kind === 'uppfoljning') {
+          mailOut.innerHTML = '';
+          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines)));
+          mailBtn.disabled = false;
+          return;
+        }
+        // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
+        var firstNames = participants.map(function (p) { return firstNameOf(p.name); }).filter(Boolean);
+        postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
+          var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
+          mailOut.innerHTML = '';
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K)));
+          mailOut.appendChild(mailBox('Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)', livsEnskildMall()));
+        }).catch(function () {
+          // Fallback utan M/K-antal.
+          mailOut.innerHTML = '';
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null)));
+          mailOut.appendChild(mailBox('Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)', livsEnskildMall()));
         }).then(function () { mailBtn.disabled = false; });
       });
     }
