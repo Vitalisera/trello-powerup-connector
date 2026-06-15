@@ -584,11 +584,13 @@
   padding:0 12px 8px 0;white-space:nowrap;
 }
 .vz-course .vz-story-leader{
-  padding:6px 6px 8px;vertical-align:bottom;
+  padding:4px 4px 6px;vertical-align:bottom;height:96px;
 }
 .vz-course .vz-story-leader-label{
-  display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);
-  font-size:11.5px;font-weight:700;color:var(--accent);white-space:nowrap;max-height:130px;
+  /* 45° diagonal (läsbar) i st.f. lodrät. Origin left-bottom → texten stiger upp-höger
+     från kolumnens nederkant, krockar ej med tabellraderna. Byt -45→45 för motsatt lutning. */
+  display:inline-block;transform:rotate(-45deg);transform-origin:left bottom;
+  font-size:11.5px;font-weight:700;color:var(--accent);white-space:nowrap;
 }
 .vz-course .vz-story-namecell{
   font-size:13.5px;padding:5px 12px 5px 0;white-space:nowrap;border-top:1px solid #eef3f4;
