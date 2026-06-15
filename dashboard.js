@@ -193,12 +193,27 @@ var handlers = {
   },
 };
 
+// checkItem-states är OPÅLITLIGA via t.card('checklists') (Trello-begränsning, jfr Vy2 som
+// därför läser REST). Hämta checklistorna via REST → korrekta states + pålitliga checkItem-id.
+// Fallback: ingen token/fel → behåll t.card-checklistorna (best effort).
+function fetchChecklistsREST(cardId) {
+  if (!cardId) { return Promise.resolve(null); }
+  return t.getRestApi().getToken().then(function (token) {
+    if (!token) { return null; }
+    return restGet(token, 'cards/' + cardId + '/checklists?checkItems=all&checkItem_fields=name,state&fields=name');
+  }).catch(function () { return null; });
+}
+
 function bootFull() {
   t.card('id', 'name', 'desc', 'labels', 'checklists').then(function (card) {
-    CARD_ID = (card && card.id) || null; // för skarpa skrivningar (label/checkItem)
-    var model = buildModel(card || {});
-    window.DashboardView.render(document.getElementById('root'), model, handlers);
-    if (card && card.id) { loadComments(card.id); }
+    card = card || {};
+    CARD_ID = card.id || null; // för skarpa skrivningar (label/checkItem)
+    return fetchChecklistsREST(card.id).then(function (cls) {
+      if (cls) { card.checklists = cls; } // REST (pålitligt) ersätter t.card; annars best effort
+      var model = buildModel(card);
+      window.DashboardView.render(document.getElementById('root'), model, handlers);
+      if (card.id) { loadComments(card.id); }
+    });
   }).catch(function (err) {
     document.getElementById('root').innerHTML =
       '<div style="padding:28px;font-family:Calibri,sans-serif;color:#b23a2e">⚠️ Kunde inte läsa kortet: ' + esc(err.message) + '</div>';
@@ -247,8 +262,11 @@ function bootCompact() {
   // Kompakt strip ska hugga innehållet → höjd auto (full-läget använder 100%).
   document.documentElement.style.height = 'auto';
   document.body.style.height = 'auto';
-  t.card('name', 'labels', 'checklists').then(function (card) {
-    var model = buildModel(card || {});
+  t.card('id', 'name', 'labels', 'checklists').then(function (card) {
+    card = card || {};
+    return fetchChecklistsREST(card.id).then(function (cls) {
+    if (cls) { card.checklists = cls; } // pålitliga states (annars t.card best effort)
+    var model = buildModel(card);
     var next = firstGap(model);
     var gaps = 0;
     model.phases.forEach(function (p) { p.steps.forEach(function (s) { if (s.status === 'gap') { gaps++; } }); });
@@ -265,6 +283,7 @@ function bootCompact() {
       t.modal({ url: './dashboard.html', fullscreen: true, title: 'Vitalisera – Deltagarstatus', accentColor: '#08445c' });
     });
     t.sizeTo('body').catch(function () {});
+    });
   }).catch(function () {});
 }
 
