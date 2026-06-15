@@ -1,6 +1,6 @@
 /* global window */
 /*
- * Delad konfiguration för connectorn (laddas i både index.html och popup.html).
+ * Delad konfiguration för connectorn (laddas i index.html).
  *
  * ⚠️ FYLL I: GAS_URL — URL:en till din GAS-webapp-deployment (doPost).
  *    Hämtas i Apps Script: Deploy → New deployment → Web app → "Web app URL".
@@ -32,17 +32,6 @@ window.NYA_ZAPIER_CONFIG = {
 };
 
 /*
- * Command-palette-registret.
- *
- * Varje kommando = en rad i popup-menyn. Tre typer demonstreras:
- *   - 'alert'  : ren klient-stub (t.alert), rör aldrig GAS. Bevisar capability-wiring.
- *   - 'gas'    : POST:ar {action} till GAS doPost och visar svaret. Bevisar kedjan.
- *   - 'gasCard': läser kortkontext (t.card) och skickar med den till GAS.
- *
- * Lägg till nya automationer genom att lägga till ett objekt här – ingen knapp
- * per automation behövs, allt samlas i paletten.
- */
-/*
  * FLÖDESMODELL (deltagarresan) — härledd ur datan 2026-06-14:
  *   - status-källa = kortets "Administration"-checklista (hård "klar"-markör)
  *   - labels i nya-zapier är TRIGGERS (lägg label → kör action), inte status —
@@ -68,32 +57,4 @@ window.NYA_ZAPIER_FLOW = [
   { key: 'praktisk', phase: 'Förberedelse inför kurs', title: 'Praktisk info',      desc: 'Praktisk information skickad',                checkItem: 'Praktisk info skickat' },
   { key: 'steg1',    phase: 'Förberedelse inför kurs', title: 'Steg 1 – formulär',  desc: 'Deltagarformulär skapat och skickat',        triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
   { key: 'hf',       phase: 'Förberedelse inför kurs', title: 'Hälsoformulär → läkare', desc: 'HF delat till läkare/kursledare',        checkItem: 'Delat Hälsoformulär till läkare/kursledare', automation: 'Kopiera HF till läkare' },
-];
-
-window.NYA_ZAPIER_COMMANDS = [
-  {
-    id: 'hello',
-    icon: '👋',
-    title: 'Hej',
-    desc: 'Klient-test — visar en notis i Trello',
-    type: 'alert',
-    message: 'Power-Up:en lever! Detta är en ren klient-stub utan GAS-anrop.',
-  },
-  {
-    id: 'ping',
-    icon: '📡',
-    title: 'Ping GAS',
-    desc: 'Testa anslutningen till servern',
-    type: 'gas',
-    action: 'ping',
-    // payload byggs i popup.js; GAS svarar med pong + ekat payload
-  },
-  {
-    id: 'card-info',
-    icon: '🃏',
-    title: 'Skicka kortinfo',
-    desc: 'Skicka kortets data till GAS',
-    type: 'gasCard',
-    action: 'echo',
-  },
 ];
