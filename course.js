@@ -173,6 +173,7 @@ var ASSIST_LIST_ID = null; // assistent-listans id, satt av renderStaffPanel →
 var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Skicka till kock" (kockens mejl)
 var STAFF_COUNT = 0;       // total personal (gruppledare + assistenter + kockar), satt av renderStaffPanel
 var KOCK_NAME = '';        // kockens förnamn (för hälsning "Hej Arpan,")
+var COURSE_GL_NAMES = [];  // kursens gruppledar/VP-namn → matcha mot "Matallergier Gruppledare/VP"-listan
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
   if (norm(a) === norm(b)) { return true; }
@@ -242,6 +243,8 @@ function renderStaffPanel(groups, courseName) {
   var kockGroup = (groups || []).filter(function (g) { return g.cfg.key === 'kockar'; })[0];
   KOCK_NAME = (kockGroup && kockGroup.people && kockGroup.people[0])
     ? ((kockGroup.people[0].name || '').trim().split(/\s+/)[0] || '') : '';
+  var glGroup = (groups || []).filter(function (g) { return g.cfg.key === 'gruppledare'; })[0];
+  COURSE_GL_NAMES = (glGroup && glGroup.people) ? glGroup.people.map(function (p) { return p.name; }).filter(Boolean) : [];
   var host = vzRegion('aside');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -488,15 +491,24 @@ function renderHfPanel(rows, courseName) {
           }).catch(function () { return []; })
         : Promise.resolve([]);
 
-      asstP.then(function (cards) {
-        (cards || []).forEach(function (c, i) {
+      Promise.all([asstP, fetchGroupLeaderAllergies()]).then(function (rr) {
+        var cards = rr[0] || [], glAll = rr[1] || [];
+        var aN = 0; // löpande A-kod-räknare (assistenter + gruppledare/VP)
+        cards.forEach(function (c) {
           if (['assistenter', 'intresserad', 'status'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
           var nm = cleanStaffName(c.name);
           var blob = stripStaffDescForAI(c.desc, nm);
-          var code = 'A' + (i + 1);
+          var code = 'A' + (++aN);
           // Hoppa INTE över tom beskrivning → alla assistenter räknas; tom = platshållare (flaggas oklar).
           items.push({ code: code, allergy: blob || '(inget angivet i kortet)' });
           codeToName[code] = nm;
+        });
+        // Gruppledar/VP-allergier ur "Matallergier Gruppledare/VP" (matchade mot kursens gruppledare).
+        // Desc = hela allergitexten (enda texten i korten, Robert) → skickas rakt, ingen PII-städning.
+        glAll.forEach(function (g) {
+          var code = 'A' + (++aN);
+          items.push({ code: code, allergy: g.allergy });
+          codeToName[code] = g.name;
         });
         if (!items.length) {
           allergiOut.value = 'Inget underlag än: inga deltagare med hälsoformulär-länk och inga assistentkort.';
@@ -786,6 +798,45 @@ function loadGenderSplit(participants) {
     if (c.unknown) { parts.push(c.unknown + ' okänt'); }
     el.textContent = parts.join(' · ');
   }).catch(function () { /* tyst */ });
+}
+
+// Fuzzy namn-match (kursens gruppledare ↔ "Matallergier Gruppledare/VP"-kortens namn).
+function glNameMatch(a, b) {
+  a = norm(a); b = norm(b);
+  if (!a || !b) { return false; }
+  if (a === b || a.indexOf(b) !== -1 || b.indexOf(a) !== -1) { return true; }
+  var ta = a.split(/\s+/), tb = b.split(/\s+/);
+  return ta[0] === tb[0] && ta[ta.length - 1] === tb[tb.length - 1]; // samma för- OCH efternamn
+}
+
+// Hämtar gruppledar/VP-allergier ur listan "Matallergier Gruppledare/VP" på Gruppledare-boarden
+// och behåller bara de som matchar kursens gruppledare (COURSE_GL_NAMES). READ-ONLY, fail-soft.
+// Korten: namn = personen, desc = allergin (hela texten). Returnerar [{name, allergy}].
+function fetchGroupLeaderAllergies() {
+  if (!COURSE_GL_NAMES.length) { return Promise.resolve([]); }
+  return t.getRestApi().getToken().then(function (token) {
+    if (!token) { return []; }
+    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+      var b = (boards || []).filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
+      if (!b) { return []; }
+      return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
+        var lst = (lists || []).filter(function (l) { return /matallerg.*(gruppled|vp)/i.test(l.name || ''); })[0];
+        if (!lst) { return []; }
+        return restGet(token, 'lists/' + lst.id + '/cards?fields=name,desc').then(function (cs) {
+          var out = [];
+          (cs || []).forEach(function (c) {
+            var person = cleanStaffName(c.name);
+            var allergy = String(c.desc || '').trim();
+            if (!allergy) { return; }
+            if (COURSE_GL_NAMES.some(function (gl) { return glNameMatch(person, gl); })) {
+              out.push({ name: person, allergy: allergy });
+            }
+          });
+          return out;
+        });
+      });
+    });
+  }).catch(function () { return []; });
 }
 
 function loadCourse(listId, listName) {

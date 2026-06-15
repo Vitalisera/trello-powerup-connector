@@ -216,9 +216,14 @@ function bootFull() {
   t.card('id', 'name', 'desc', 'labels', 'checklists').then(function (card) {
     card = card || {};
     CARD_ID = card.id || null; // för skarpa skrivningar (label/checkItem)
-    return fetchChecklistsREST(card.id).then(function (cls) {
-      if (cls) { card.checklists = cls; } // REST (pålitligt) ersätter t.card; annars best effort
+    return Promise.all([
+      fetchChecklistsREST(card.id),
+      t.list('name').catch(function () { return null; }), // för kursvecka-fallback (= kurslistans namn)
+    ]).then(function (r) {
+      if (r[0]) { card.checklists = r[0]; } // REST (pålitligt) ersätter t.card; annars best effort
       var model = buildModel(card);
+      // Kursvecka: deltagarens önskemål ur beskrivningen, annars kurslistans namn (= faktisk kurs).
+      if (!model.participant.kursvecka && r[1] && r[1].name) { model.participant.kursvecka = r[1].name; }
       window.DashboardView.render(document.getElementById('root'), model, handlers);
       if (card.id) { loadComments(card.id); }
     });

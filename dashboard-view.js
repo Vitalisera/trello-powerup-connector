@@ -219,7 +219,7 @@
     var total = flatSteps(model).length;
     var html = ''
       + '<aside class="vz-rail">'
-      + '  <div class="vz-rail-head"><h2>Steg-räls</h2><span class="n">' + total + ' steg</span></div>';
+      + '  <div class="vz-rail-head"><h2>Processväg</h2><span class="n">' + total + ' steg</span></div>';
 
     var counter = 0, delay = 0;
     (model.phases || []).forEach(function (ph) {
