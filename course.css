@@ -145,6 +145,7 @@
 .vz-mailbox{margin-top:12px}
 .vz-mailbox-label{font-size:12.5px;font-weight:700;color:var(--accent);margin-bottom:4px}
 .vz-mailbox .vz-textarea{width:100%;box-sizing:border-box}
+.vz-mailbox-actions{display:flex;align-items:center;gap:10px;margin-top:6px}
 .vz-cv-stat.is-gap{border-color:rgba(181,113,11,.4);background:linear-gradient(160deg,rgba(181,113,11,.08),#fff 60%)}
 .vz-cv-stat.is-gap .big{color:var(--amber)}
 .vz-cv-stat.is-gap .lbl{color:var(--amber)}

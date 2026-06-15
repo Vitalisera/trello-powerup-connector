@@ -734,15 +734,28 @@ function swedishList(arr) {
   if (arr.length === 1) { return arr[0]; }
   return arr.slice(0, -1).join(', ') + ' och ' + arr[arr.length - 1];
 }
-// Redigerbar mejl-ruta (rubrik + auto-växande textarea). Malin redigerar; Skicka kopplas i nästa steg.
-function mailBox(label, value) {
+// Redigerbar mejl-ruta (rubrik + auto-växande textarea). pkey = pluginData-nyckel → Malins
+// redigeringar persisteras board-shared (överlever stäng/öppna), som övriga textfält.
+function mailBox(label, value, pkey) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-mailbox';
   var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
   var ta = document.createElement('textarea'); ta.className = 'vz-textarea'; ta.value = value;
-  wrap.appendChild(lbl); wrap.appendChild(ta);
+  var row = document.createElement('div'); row.className = 'vz-mailbox-actions';
+  var btn = document.createElement('button'); btn.className = 'vz-btn'; btn.textContent = 'Kopiera text';
+  var note = document.createElement('span'); note.className = 'vz-stub-note';
+  btn.addEventListener('click', function () {
+    try {
+      if (navigator.clipboard) { navigator.clipboard.writeText(ta.value); note.textContent = '✓ Kopierat'; }
+      else { ta.select(); document.execCommand('copy'); note.textContent = '✓ Kopierat'; }
+    } catch (e) { note.textContent = '⚠️ Kunde ej kopiera — markera och kopiera manuellt.'; }
+  });
+  row.appendChild(btn); row.appendChild(note);
+  wrap.appendChild(lbl); wrap.appendChild(ta); wrap.appendChild(row);
   function fit() { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
-  ta.addEventListener('input', fit); setTimeout(fit, 0);
+  ta.addEventListener('input', function () { fit(); if (pkey) { persistText(pkey, ta.value); } });
+  if (pkey && value) { persistText(pkey, value); } // spara genererad text direkt
+  setTimeout(fit, 0);
   return wrap;
 }
 function livsAllaText(assignLines, total, men, women) {
@@ -831,9 +844,10 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         var assignLines = assignments.map(function (a) {
           return firstNameOf(a.leaderName) + ': ' + swedishList(a.participants.map(firstNameOf));
         }).join('\n');
+        var MALL_LBL = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
         if (opts.kind === 'uppfoljning') {
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines)));
+          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU'));
           mailBtn.disabled = false;
           return;
         }
@@ -842,15 +856,33 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
           var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K)));
-          mailOut.appendChild(mailBox('Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)', livsEnskildMall()));
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K), key + '_mailA'));
+          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB'));
         }).catch(function () {
-          // Fallback utan M/K-antal.
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null)));
-          mailOut.appendChild(mailBox('Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)', livsEnskildMall()));
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null), key + '_mailA'));
+          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB'));
         }).then(function () { mailBtn.disabled = false; });
       });
+    }
+    // Visa tidigare genererad/redigerad mejltext direkt (överlever stäng/öppna).
+    if (mailOut) {
+      var MALL_LBL2 = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
+      if (opts.kind === 'uppfoljning') {
+        t.get('board', 'shared', key + '_mailU').then(function (v) {
+          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU')); }
+        }).catch(function () {});
+      } else {
+        Promise.all([
+          t.get('board', 'shared', key + '_mailA').catch(function () { return null; }),
+          t.get('board', 'shared', key + '_mailB').catch(function () { return null; }),
+        ]).then(function (r) {
+          if ((r[0] || r[1]) && !mailOut.children.length) {
+            mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', String(r[0] || ''), key + '_mailA'));
+            mailOut.appendChild(mailBox(MALL_LBL2, String(r[1] || ''), key + '_mailB'));
+          }
+        }).catch(function () {});
+      }
     }
   }
   paint();
