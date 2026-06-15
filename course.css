@@ -584,12 +584,16 @@
   padding:0 12px 8px 0;white-space:nowrap;
 }
 .vz-course .vz-story-leader{
-  padding:4px 4px 6px;vertical-align:bottom;height:96px;
+  /* smal kolumn (= kryssets bredd). position:relative → etiketten kan ligga absolut
+     och därmed INTE vidga kolumnen (roterad inline-block behåller annars oroterad bredd). */
+  position:relative;width:30px;min-width:30px;height:108px;
+  vertical-align:bottom;padding:0;
 }
 .vz-course .vz-story-leader-label{
-  /* 45° diagonal (läsbar) i st.f. lodrät. Origin left-bottom → texten stiger upp-höger
-     från kolumnens nederkant, krockar ej med tabellraderna. Byt -45→45 för motsatt lutning. */
-  display:inline-block;transform:rotate(-45deg);transform-origin:left bottom;
+  /* 45° diagonal (läsbar). Absolut → påverkar ej kolumnbredd; stiger upp-höger från
+     kolumnens nederkant. Byt -45→45 (+ ev. left/transform-origin) för motsatt lutning. */
+  position:absolute;bottom:6px;left:50%;
+  transform:rotate(-45deg);transform-origin:left bottom;
   font-size:11.5px;font-weight:700;color:var(--accent);white-space:nowrap;
 }
 .vz-course .vz-story-namecell{
