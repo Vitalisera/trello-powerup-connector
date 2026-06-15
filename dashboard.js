@@ -52,25 +52,28 @@ function buildModel(card) {
   card = card || {};
   var d = parseDesc(card.desc);
 
-  var checked = {};
+  // checkItems per namn → {id, idChecklist, complete}. id behövs för skarp bockning.
+  var ciByName = {};
   (card.checklists || []).forEach(function (cl) {
     (cl.checkItems || []).forEach(function (it) {
-      if (norm(it.state) === 'complete') { checked[norm(it.name)] = true; }
+      ciByName[norm(it.name)] = { id: it.id, idChecklist: cl.id, complete: norm(it.state) === 'complete' };
     });
   });
   var labels = {};
   (card.labels || []).forEach(function (l) { if (l.name) { labels[norm(l.name)] = true; } });
 
   // Robust matchning: exakt eller delsträng (tål små namnskillnader).
-  function isChecked(name) {
-    if (!name) { return false; }
+  function findCheckItem(name) {
+    if (!name) { return null; }
     var n = norm(name);
-    if (checked[n]) { return true; }
-    return Object.keys(checked).some(function (k) { return k.indexOf(n) !== -1 || n.indexOf(k) !== -1; });
+    if (ciByName[n]) { return ciByName[n]; }
+    var k = Object.keys(ciByName).filter(function (k) { return k.indexOf(n) !== -1 || n.indexOf(k) !== -1; })[0];
+    return k ? ciByName[k] : null;
   }
 
   var flow = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
-    var checklistDone = isChecked(s.checkItem);
+    var ci = findCheckItem(s.checkItem);
+    var checklistDone = !!(ci && ci.complete);
     var labelSet = s.triggerLabel ? !!labels[norm(s.triggerLabel)] : false;
     var status = s.always ? 'done'
       : checklistDone ? 'done'
@@ -80,7 +83,9 @@ function buildModel(card) {
       key: s.key, title: s.title, desc: s.desc, status: status,
       automation: s.automation || null, triggerLabel: s.triggerLabel || null,
       labelSet: labelSet, checklistDone: checklistDone,
-      checkItemName: s.checkItem || null, phase: s.phase || 'Steg', events: [],
+      checkItemName: s.checkItem || null,
+      checkItemId: ci ? ci.id : null, // skarp bockning (PUT checkItem)
+      phase: s.phase || 'Steg', events: [],
     };
   });
 
@@ -119,26 +124,78 @@ function firstGap(model) {
   return next;
 }
 
-// Stubbade åtgärder (skarp server-side-körning kopplas senare).
+/* ---------- Skarpa åtgärder (gap-stängning) ----------
+ * onRunLabel  : sätter triggerlabeln på kortet (POST idLabels) → startar nya-zapier-automationen.
+ * onTickChecklist : bockar checklistepunkten (PUT checkItem state=complete).
+ * Säkerhet: (1) bekräfta-dialog (t.popup confirm) före varje skrivning, (2) test-läge
+ * (vz_settings.testMode) → simulera, skriv ALDRIG skarpt, (3) idempotens (hoppa om redan satt/bockad).
+ */
+var CARD_ID = null; // sätts av bootFull
+
+function notify(msg, kind) { try { t.alert({ message: msg, duration: 8, display: kind || 'info' }); } catch (e) {} }
+function getSettings() { return t.get('board', 'shared', 'vz_settings').then(function (s) { return s || {}; }).catch(function () { return {}; }); }
+
+// Trello-skrivning (POST/PUT) via REST med appKey+token. Returnerar JSON.
+function restWrite(method, path) {
+  return t.getRestApi().getToken().then(function (token) {
+    if (!token) { throw new Error('Ingen Trello-token — anslut Power-Up:en (Kursöversikt → Anslut) först.'); }
+    var sep = path.indexOf('?') === -1 ? '?' : '&';
+    return fetch('https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token), { method: method })
+      .then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+  });
+}
+
+function doRunLabel(s) {
+  return getSettings().then(function (set) {
+    if (set.testMode) { notify('TEST-läge: skulle satt labeln "' + s.triggerLabel + '" (ingen ändring gjordes).', 'info'); return; }
+    if (!CARD_ID) { throw new Error('Kort-id saknas.'); }
+    return t.board('labels').then(function (b) {
+      var lbl = ((b && b.labels) || []).filter(function (l) { return norm(l.name) === norm(s.triggerLabel); })[0];
+      if (!lbl) { throw new Error('Hittar ingen label "' + s.triggerLabel + '" på brädan.'); }
+      return restWrite('POST', 'cards/' + CARD_ID + '/idLabels?value=' + encodeURIComponent(lbl.id));
+    }).then(function () { notify('✓ Satte "' + s.triggerLabel + '" — automationen "' + (s.automation || '') + '" startar.', 'success'); bootFull(); });
+  }).catch(function (err) { notify('⚠️ ' + err.message, 'error'); });
+}
+
+function doTick(s) {
+  return getSettings().then(function (set) {
+    if (set.testMode) { notify('TEST-läge: skulle bockat "' + s.checkItemName + '" (ingen ändring gjordes).', 'info'); return; }
+    if (!CARD_ID) { throw new Error('Kort-id saknas.'); }
+    return restWrite('PUT', 'cards/' + CARD_ID + '/checkItem/' + s.checkItemId + '?state=complete')
+      .then(function () { notify('✓ Bockade "' + s.checkItemName + '".', 'success'); bootFull(); });
+  }).catch(function (err) { notify('⚠️ ' + err.message, 'error'); });
+}
+
 var handlers = {
   onSelectStep: function () {},
   onRunLabel: function (s) {
-    t.alert({
-      message: 'Skulle sätta labeln "' + (s.triggerLabel || '') + '" och starta ' + (s.automation || 'steget')
-        + '. Skarp körning kopplas server-side.',
-      duration: 8, display: 'info',
+    if (!s.triggerLabel) { return; }
+    if (s.labelSet) { notify('Labeln "' + s.triggerLabel + '" är redan satt.', 'info'); return; }
+    t.popup({
+      type: 'confirm',
+      title: 'Sätt label & starta steg',
+      message: 'Sätter labeln "' + s.triggerLabel + '" på kortet, vilket startar automationen "' + (s.automation || '') + '" (kan skicka mejl till deltagaren). Fortsätt?',
+      confirmText: 'Sätt label', confirmStyle: 'primary',
+      onConfirm: function (tt) { return tt.closePopup().then(function () { return doRunLabel(s); }); },
     });
   },
   onTickChecklist: function (s) {
-    t.alert({
-      message: 'Skulle bocka av "' + (s.checkItemName || s.title) + '" i checklistan. Skarp körning kopplas server-side.',
-      duration: 8, display: 'info',
+    if (!s.checkItemName) { notify('Det här steget har ingen checklistepunkt.', 'info'); return; }
+    if (s.checklistDone) { notify('"' + s.checkItemName + '" är redan bockad.', 'info'); return; }
+    if (!s.checkItemId) { notify('Hittar inte checklistepunktens id — bocka i kortet manuellt.', 'error'); return; }
+    t.popup({
+      type: 'confirm',
+      title: 'Bocka av checklistepunkt',
+      message: 'Bockar av "' + s.checkItemName + '" i kortets checklista. Fortsätt?',
+      confirmText: 'Bocka av', confirmStyle: 'primary',
+      onConfirm: function (tt) { return tt.closePopup().then(function () { return doTick(s); }); },
     });
   },
 };
 
 function bootFull() {
   t.card('id', 'name', 'desc', 'labels', 'checklists').then(function (card) {
+    CARD_ID = (card && card.id) || null; // för skarpa skrivningar (label/checkItem)
     var model = buildModel(card || {});
     window.DashboardView.render(document.getElementById('root'), model, handlers);
     if (card && card.id) { loadComments(card.id); }
