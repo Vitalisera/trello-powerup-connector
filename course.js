@@ -443,6 +443,7 @@ function renderHfPanel(rows, courseName) {
     + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Sammanställ matallergier</button>'
     + '<button class="vz-btn" id="vz-allergi-kock">Skicka till kock</button>'
     + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div>'
+    + '<div id="vz-allergi-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
     + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
   host.appendChild(sec);
 
@@ -450,6 +451,7 @@ function renderHfPanel(rows, courseName) {
   //    ersätt koderna med riktiga namn lokalt i svaret.
   var allergiBtn = sec.querySelector('#vz-allergi-btn');
   var allergiOut = sec.querySelector('#vz-allergi');
+  var allergiInfo = sec.querySelector('#vz-allergi-info');
   // Rutan växer med innehållet.
   function fitAllergi() { if (allergiOut) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
   if (allergiOut) {
@@ -508,13 +510,50 @@ function renderHfPanel(rows, courseName) {
             }
             return;
           }
-          // Avanonymisera: byt varje kod (Pn/An) mot riktigt namn, lokalt.
-          var text = String(data.summary || '');
+          // ── Malins mall: per person, FÖRNAMN, mejl-ramat. ──
+          var raw = String(data.summary || '');
+          var byCode = data.byCode || {};
+          // Förnamn; kollision (samma förnamn på flera) → + efternamnsinitial ("Lena S").
+          var firstCount = {};
           Object.keys(codeToName).forEach(function (code) {
-            text = text.replace(new RegExp('\\b' + code + '\\b', 'g'), codeToName[code]);
+            var fn = (codeToName[code] || '').trim().split(/\s+/)[0]; if (fn) { firstCount[fn] = (firstCount[fn] || 0) + 1; }
           });
-          allergiOut.value = text || '(tomt svar)';
-          if (text) { persistText(allergiKey, allergiOut.value); }   // överlever stäng/öppna
+          function displayFirst(code) {
+            var toks = (codeToName[code] || '').trim().split(/\s+/); var fn = toks[0] || '';
+            return (firstCount[fn] > 1 && toks.length > 1) ? (fn + ' ' + toks[toks.length - 1].charAt(0)) : fn;
+          }
+          function deanonFirst(s) {
+            Object.keys(codeToName).forEach(function (code) { s = s.replace(new RegExp('\\b' + code + '\\b', 'g'), displayFirst(code)); });
+            return s;
+          }
+          var pp = raw.split(/===\s*PERSONAL\s*===/i);
+          var deltBody = deanonFirst((pp[0] || '').replace(/===\s*DELTAGARE\s*===/i, '').trim()) || 'Inga kända matallergier.';
+          var persBody = deanonFirst((pp[1] || '').trim()) || 'Inga kända matallergier.';
+          var dCount = rows.length;
+          var pCount = items.filter(function (it) { return /^A/.test(it.code); }).length;
+          var mejl = 'Hej!\n\n'
+            + 'Här kommer en sammanställning av matallergierna inför kursen.\n\n'
+            + 'Som det ser ut just nu är det ' + dCount + ' deltagare och ' + pCount + ' personal.\n\n'
+            + 'Deltagare (kopierat från hälsoformuläret):\n' + deltBody + '\n\n'
+            + 'Personal:\n' + persBody + '\n\n'
+            + 'Jag återkommer om det blir ändring i antal eller om någon ny allergi dyker upp.';
+          allergiOut.value = mejl;
+          persistText(allergiKey, mejl);
+          // Oklar/saknat → SEPARAT info (medvetet EJ med i kock-mejlet).
+          var oklar = [];
+          Object.keys(byCode).forEach(function (code) {
+            var v = String(byCode[code] || '');
+            var reason = /ingen doc-länk/i.test(v) ? 'inget hälsoformulär länkat'
+              : /(kunde ej läsas|läsfel)/i.test(v) ? 'formuläret kunde inte läsas'
+              : /inget angivet i kortet/i.test(v) ? 'inget angivet i personalkortet'
+              : /okänd/i.test(v) ? 'allergifrågan ej besvarad' : '';
+            if (reason) { oklar.push((codeToName[code] || code) + ' – ' + reason); }
+          });
+          rows.filter(function (r) { return !r.link; }).forEach(function (r) { oklar.push(r.name + ' – saknar hälsoformulär'); });
+          if (allergiInfo) {
+            allergiInfo.style.display = oklar.length ? '' : 'none';
+            allergiInfo.textContent = oklar.length ? ('Att kontrollera manuellt (ej med i mejlet): ' + oklar.join('; ')) : '';
+          }
         });
       }).catch(function (err) {
         allergiOut.value = '⚠️ ' + err.message;
