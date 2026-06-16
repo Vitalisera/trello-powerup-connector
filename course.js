@@ -617,7 +617,7 @@ function renderHfPanel(rows, courseName) {
         var subject = 'Matallergier – ' + (courseName || 'kursen');
         var mailto = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject)
           + '&body=' + encodeURIComponent(text);
-        try { if (navigator.clipboard) { navigator.clipboard.writeText(text); } } catch (e) {}
+        copyTextToClipboard(text);
         try { var a = document.createElement('a'); a.href = mailto; document.body.appendChild(a); a.click(); a.remove(); } catch (e) {}
         kockOut.textContent = email
           ? 'Öppnade ett mejludkast till kocken (' + email + '). Sammanställningen är även kopierad till urklipp — granska och skicka.'
@@ -738,6 +738,25 @@ function swedishList(arr) {
 }
 // Redigerbar mejl-ruta (rubrik + auto-växande textarea). pkey = pluginData-nyckel → Malins
 // redigeringar persisteras board-shared (överlever stäng/öppna), som övriga textfält.
+// Robust kopiering i Trello-modalen: navigator.clipboard.writeText blockeras ofta av iframe-permissions
+// (rejectar tyst → "✓ Kopierat" ljuger, gammalt clipboard-innehåll blir kvar). execCommand('copy') via en
+// temporär textarea i klick-gesten funkar i iframe → primär; clipboard-API som fallback. Returnerar Promise<bool>.
+function copyTextToClipboard(text) {
+  var ok = false;
+  try {
+    var tmp = document.createElement('textarea');
+    tmp.value = String(text == null ? '' : text);
+    tmp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(tmp);
+    tmp.focus(); tmp.select();
+    try { tmp.setSelectionRange(0, tmp.value.length); } catch (e) {}
+    ok = document.execCommand('copy');
+    tmp.remove();
+  } catch (e) { ok = false; }
+  if (ok) { return Promise.resolve(true); }
+  if (navigator.clipboard) { return navigator.clipboard.writeText(String(text == null ? '' : text)).then(function () { return true; }).catch(function () { return false; }); }
+  return Promise.resolve(false);
+}
 function mailBox(label, value, pkey, sendCfg) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-mailbox';
@@ -747,10 +766,9 @@ function mailBox(label, value, pkey, sendCfg) {
   var btn = document.createElement('button'); btn.className = 'vz-btn'; btn.textContent = 'Kopiera text';
   var note = document.createElement('span'); note.className = 'vz-stub-note';
   btn.addEventListener('click', function () {
-    try {
-      if (navigator.clipboard) { navigator.clipboard.writeText(ta.value); note.textContent = '✓ Kopierat'; }
-      else { ta.select(); document.execCommand('copy'); note.textContent = '✓ Kopierat'; }
-    } catch (e) { note.textContent = '⚠️ Kunde ej kopiera — markera och kopiera manuellt.'; }
+    copyTextToClipboard(ta.value).then(function (okCopy) {
+      note.textContent = okCopy ? '✓ Kopierat' : '⚠️ Kunde ej kopiera — markera texten i rutan och tryck Cmd+C.';
+    });
   });
   row.appendChild(btn);
   // Valfri Skicka-knapp (personal-mejl via GAS, fail-closed + bekräfta-dialog). build får aktuell ta.value.

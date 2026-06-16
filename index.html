@@ -15,7 +15,19 @@
     (HtmlService dubbel-iframe-sandbox bryter inbäddningen).
   -->
   <script src="https://p.trellocdn.com/power-up.min.js"></script>
-  <script src="./config.js"></script>
-  <script src="./client.js"></script>
+  <!--
+    Cache-bust på config.js + client.js (per minut). client.js är capability-ingången (sätter version V)
+    och hade ingen egen ?v-bust → fastnade i webbläsarens 600s-cache vid varje deploy (V43→44→45-pinan
+    2026-06-16). En tidsstämpel-query (Pages ignorerar den server-side men webbläsarens cache-nyckel ändras)
+    → client.js/config.js hämtas alltid färska inom ~1 min. (Denna index.html är själv 600s-cachad → första
+    propageringen efter en deploy dröjer, sedan självläker det.)
+  -->
+  <script>
+    (function () {
+      var cb = '?cb=' + Math.floor(Date.now() / 60000);
+      document.write('<script src="./config.js' + cb + '"><\/script>');
+      document.write('<script src="./client.js' + cb + '"><\/script>');
+    })();
+  </script>
 </body>
 </html>
