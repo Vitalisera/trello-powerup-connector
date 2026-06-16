@@ -428,6 +428,7 @@
     rootEl.innerHTML = '<div class="vz-course"><div class="vz-cv-shell">'
       + topbarHtml(course)
       + '<div data-cv-summary></div>'
+      + footHtml()   // #17a: statusnyckel ÖVERST (passar bättre än i botten, Robert 2026-06-16)
       + '<div class="vz-cv-regions">'
       +   '<div class="vz-cv-row-region">'
       +     '<div class="vz-region-matrix">'
@@ -435,7 +436,6 @@
       +         '<thead data-cv-head></thead>'
       +         '<tbody data-cv-body></tbody>'
       +       '</table></div>'
-      +       footHtml()
       +     '</div>'
       +     '<aside class="vz-region-aside" data-vz-region="aside"></aside>'
       +   '</div>'

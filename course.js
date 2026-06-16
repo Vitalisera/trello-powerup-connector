@@ -104,16 +104,29 @@ function statusForCard(card) {
 
 /* ---------- Datum ur listnamn → dagar till start ---------- */
 var MONTHS = { januari: 0, februari: 1, mars: 2, april: 3, maj: 4, juni: 5, juli: 6, augusti: 7, september: 8, oktober: 9, november: 10, december: 11 };
-function daysToStart(listName) {
-  // ex: "24 juni - 2 juli 2026 (Steg 1)"
+// Kursens startdatum ur listnamnet (ex "24 juni - 2 juli 2026 (Steg 1)") → Date, eller null. Ren funktion.
+function courseStartDate(listName) {
   var m = String(listName || '').match(/(\d{1,2})\s+([a-zåäö]+).*?(\d{4})/i);
   if (!m) { return null; }
   var mon = MONTHS[norm(m[2])];
   if (mon === undefined) { return null; }
-  var start = new Date(parseInt(m[3], 10), mon, parseInt(m[1], 10));
+  return new Date(parseInt(m[3], 10), mon, parseInt(m[1], 10));
+}
+function daysToStart(listName) {
+  var start = courseStartDate(listName);
+  if (!start) { return null; }
   var today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.round((start - today) / 86400000);
+}
+// Deadline = startdatum minus N dagar, formaterat "D mån" (sv). Ren funktion. '' om ogiltigt.
+var MONTHS_SV = ['jan', 'feb', 'mars', 'apr', 'maj', 'juni', 'juli', 'aug', 'sep', 'okt', 'nov', 'dec'];
+function deadlineDateStr(listName, daysBefore) {
+  var start = courseStartDate(listName);
+  var n = parseInt(daysBefore, 10);
+  if (!start || isNaN(n)) { return ''; }
+  var d = new Date(start.getTime() - n * 86400000);
+  return d.getDate() + ' ' + MONTHS_SV[d.getMonth()] + ' ' + d.getFullYear();
 }
 
 function buildCourseModel(listName, cards) {
@@ -346,19 +359,40 @@ function loadCourseChecklist(courseName) {
   var key = courseKey(courseName);
   t.get('board', 'shared', key).then(function (items) {
     if (!Array.isArray(items)) { items = DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }); }
-    renderChecklistPanel(key, items);
+    renderChecklistPanel(key, items, courseName);
   }).catch(function () {
-    renderChecklistPanel(key, DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }));
+    renderChecklistPanel(key, DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }), courseName);
   });
 }
 function persistChecklist(key, items) { try { t.set('board', 'shared', key, items).catch(function () {}); } catch (e) {} }
-function renderChecklistPanel(key, items) {
+function renderChecklistPanel(key, items, courseName) {
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
   sec.className = 'vz-panel vz-panel--below';
+  // #19: deadline-dagar (board-shared per kursinstans) → visa deadline-DATUM ur kursens startdatum.
+  var ddKey = 'vz_deadline_days_' + courseSlug(courseName || '');
+  var deadlineDays = '';
+  // Ladda ev. sparat deadline-värde (board-shared) → fyll input + datum när det kommit.
+  t.get('board', 'shared', ddKey).then(function (v) {
+    if (v != null && v !== '') {
+      deadlineDays = String(v);
+      var inp = sec.querySelector('#vzchk-dd'), out = sec.querySelector('#vzchk-dd-out');
+      if (inp) { inp.value = deadlineDays; } if (out) { out.innerHTML = ddOutHtml(); }
+    }
+  }).catch(function () {});
+  function ddOutHtml() {
+    var ddStr = deadlineDateStr(courseName, deadlineDays);
+    if (ddStr) { return '→ <strong>' + esc(ddStr) + '</strong>'; }
+    return (deadlineDays !== '' && courseName) ? '<span class="vz-stub-note">(kunde ej tolka kursdatum)</span>' : '';
+  }
   function paint() {
     var done = items.filter(function (i) { return i.done; }).length;
+    var deadlineRow = '<div class="vzchk-deadline">'
+      + '<label for="vzchk-dd">Deadline: lämna in senast </label>'
+      + '<input id="vzchk-dd" type="number" min="0" class="vz-input" style="width:64px;display:inline-block" value="' + esc(deadlineDays) + '" placeholder="dagar"> dagar innan kursstart'
+      + ' <span id="vzchk-dd-out">' + ddOutHtml() + '</span>'
+      + '</div>';
     var rows = items.map(function (it, idx) {
       return '<label data-i="' + idx + '" class="vzchk-row' + (it.done ? ' is-done' : '') + '">'
         + '<input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' class="vzchk-box">'
@@ -369,10 +403,19 @@ function renderChecklistPanel(key, items) {
     sec.innerHTML = '<div class="vz-panel-head">'
       + '<div class="vz-panel-title">Kurschecklista</div>'
       + '<div class="vz-panel-meta">' + done + '/' + items.length + ' klara · sparas automatiskt</div></div>'
+      + deadlineRow
       + '<div class="vzchk-list">' + rows + '</div>'
       + '<div class="vzchk-add-row">'
       + '<input id="vzchk-new" placeholder="Lägg till uppgift på kursnivå…" class="vz-input">'
       + '<button id="vzchk-add" class="vz-btn">Lägg till</button></div>';
+    // #19 deadline-input: uppdatera datumvisning live (utan re-paint → behåll fokus), persist på change.
+    var ddInp = sec.querySelector('#vzchk-dd');
+    var ddOut = sec.querySelector('#vzchk-dd-out');
+    if (ddInp) {
+      // Live: uppdatera bara datum-spanet (ingen re-paint → behåll fokus/cursor). Persist på change (blur).
+      ddInp.addEventListener('input', function () { deadlineDays = ddInp.value; if (ddOut) { ddOut.innerHTML = ddOutHtml(); } });
+      ddInp.addEventListener('change', function () { persistText(ddKey, String(deadlineDays || '')); });
+    }
     // events
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { items[+cb.getAttribute('data-i')].done = cb.checked; persistChecklist(key, items); paint(); });
