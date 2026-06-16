@@ -20,6 +20,10 @@
 var CFG = window.NYA_ZAPIER_CONFIG;
 var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var KEY = 'vz_settings';
+var TPL = (window.NYA_ZAPIER_TPL) || {}; // delade default-mallar (config.js) → förifyll textrutorna
+// Spara TOM om rutan är oförändrad från default → genereringen fortsätter följa default (auto-uppdateras);
+// bara en faktisk ändring lagras. @param {string} id @param {string} def @return {string}
+function tplVal(id, def) { var v = document.getElementById(id).value || ''; return v === (def || '') ? '' : v; }
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
@@ -71,13 +75,16 @@ function render(s) {
 
     + '<div class="vz-field">'
     + '<label>Mall-texter för gruppledar-mejlen</label>'
-    + '<p class="hint">Redigera mejltexterna fritt. Lämna en ruta TOM för standardmall. Dessa tokens fylls automatiskt vid generering/utskick: <b>{ANTAL}</b>, <b>{TILLDELNING}</b>, <b>{GRUPPLEDARE}</b>, <b>{DELTAGARE}</b>, <b>{SAMMANFATTNINGSLÄNK}</b>.</p>'
+    + '<p class="hint">Redigera mejltexterna fritt (förifyllda med standardtexten). Dessa tokens fylls automatiskt vid generering/utskick: <b>{ANTAL}</b>, <b>{TILLDELNING}</b>, <b>{GRUPPLEDARE}</b>, <b>{DELTAGARE}</b>, <b>{SAMMANFATTNINGSLÄNK}</b>.</p>'
     + '<label for="vz-tpl-livsalla" class="vz-sub">Livsberättelser – till alla</label>'
-    + '<textarea id="vz-tpl-livsalla" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_livsAlla || '') + '</textarea>'
+    + '<textarea id="vz-tpl-livsalla" class="vz-ta">' + esc(s.tpl_livsAlla || TPL.livsAlla || '') + '</textarea>'
     + '<label for="vz-tpl-livsenskild" class="vz-sub">Livsberättelser – enskild mall</label>'
-    + '<textarea id="vz-tpl-livsenskild" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_livsEnskild || '') + '</textarea>'
-    + '<label for="vz-tpl-uppfoljning" class="vz-sub">Uppföljningssamtal – till alla</label>'
-    + '<textarea id="vz-tpl-uppfoljning" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_uppfoljning || '') + '</textarea>'
+    + '<textarea id="vz-tpl-livsenskild" class="vz-ta">' + esc(s.tpl_livsEnskild || TPL.livsEnskild || '') + '</textarea>'
+    + '<label for="vz-tpl-uppfoljning" class="vz-sub">Uppföljningssamtal – om Malin VAR med på kursveckan</label>'
+    + '<textarea id="vz-tpl-uppfoljning" class="vz-ta">' + esc(s.tpl_uppfoljning || TPL.uppfoljning || '') + '</textarea>'
+    + '<label for="vz-tpl-uppfoljningb" class="vz-sub">Uppföljningssamtal – om Malin INTE var med</label>'
+    + '<textarea id="vz-tpl-uppfoljningb" class="vz-ta">' + esc(s.tpl_uppfoljningB || TPL.uppfoljningB || '') + '</textarea>'
+    + '<p class="hint">Rätt uppföljnings-mall väljs automatiskt utifrån om Malin finns som "Vitaliseraperson på plats" i gruppledar-listan.</p>'
     + '</div>'
 
     + '<div class="vz-actions">'
@@ -104,9 +111,10 @@ function render(s) {
       testRedirectEmail: redirect,
       senderName: (document.getElementById('vz-sendername').value || '').trim(),
       replyTo: replyTo,
-      tpl_livsAlla: document.getElementById('vz-tpl-livsalla').value || '',
-      tpl_livsEnskild: document.getElementById('vz-tpl-livsenskild').value || '',
-      tpl_uppfoljning: document.getElementById('vz-tpl-uppfoljning').value || '',
+      tpl_livsAlla: tplVal('vz-tpl-livsalla', TPL.livsAlla),
+      tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
+      tpl_uppfoljning: tplVal('vz-tpl-uppfoljning', TPL.uppfoljning),
+      tpl_uppfoljningB: tplVal('vz-tpl-uppfoljningb', TPL.uppfoljningB),
     };
     btn.disabled = true; saved.style.color = '#437a3a'; saved.textContent = '⏳ Sparar…';
     t.set('board', 'shared', KEY, next).then(function () {

@@ -73,3 +73,38 @@ window.NYA_ZAPIER_FLOW = [
   { key: 'slut_betald',    phase: 'Slutbetalning & uppföljning', title: 'Slutbetalning – betald',  desc: 'Slutbetalning betald (label + checklista synkas; label-namn ej satt i config än)', checkItem: 'Faktura för slutbetalning betald' },
   { key: 'uppfoljning',    phase: 'Slutbetalning & uppföljning', title: 'Uppföljningssamtal',      desc: 'Uppföljningssamtal utfört (manuell bock; ev. automatiseras framöver)', checkItem: 'Uppföljningssamtal utfört' },
 ];
+
+// Default-mallar för gruppledar-mejlen — DELAD källa (course.js genererar, settings.js förifyller rutorna).
+// Tokens: {ANTAL} {TILLDELNING} {GRUPPLEDARE} {DELTAGARE} {SAMMANFATTNINGSLÄNK}. Signatur ingår; inget
+// värdeomdöme om gruppstorlek. {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid utskick;
+// {SAMMANFATTNINGSLÄNK} fylls av "Skapa sammanfattningsdok"-knappen.
+window.NYA_ZAPIER_TPL = {
+  livsAlla:
+    'Hej på Er!\n\n'
+    + 'Idag är sista inlämningsdag för deltagare att lämna in sina livsberättelser. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
+    + 'Vi är {ANTAL} denna gång. Vi hoppas kanske på någon till innan kursen startar.\n\n'
+    + 'Jag delar upp livsberättelserna enligt följande, och skickar länkarna till er enskilt:\n\n'
+    + '{TILLDELNING}\n\n'
+    + 'Varma hälsningar\nMalin',
+  livsEnskild:
+    'Hej {GRUPPLEDARE}!\n\n'
+    + 'Här kommer länkarna till formulären som du har fått i uppdrag att läsa:\n\n'
+    + '{DELTAGARE}\n\n'
+    + 'Kram\nMalin',
+  uppfoljning:
+    'Hej Alla!\n\n'
+    + 'Tack för en väldigt fin vecka!\n\n'
+    + 'Det är nu dags för uppföljningssamtal. Jag har delat upp deltagarna enligt följande:\n\n'
+    + '{TILLDELNING}\n\n'
+    + 'Här är länken till dokumentet där ni skriver en sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
+    + 'Försök gärna att hålla tidsspannet att de ska få ett samtal inom cirka tio dagar.\n\n'
+    + 'Önskar er en fin helg ❤️\nMalin',
+  uppfoljningB:
+    'Hej!\n\n'
+    + 'Hoppas ni har haft en fin vecka 🌞\n\n'
+    + 'Jag har gjort en uppdelning för uppföljningssamtal enligt nedan, och lägger länken till dokumentet där ni skriver in en liten sammanfattning av samtalet.\n\n'
+    + '{TILLDELNING}\n\n'
+    + 'Länk till uppföljningssamtalen: {SAMMANFATTNINGSLÄNK}\n\n'
+    + 'Försök gärna att få till samtalen inom två veckor.\n\n'
+    + 'Kram och ha en fin helg!\nMalin',
+};

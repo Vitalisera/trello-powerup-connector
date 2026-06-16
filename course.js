@@ -807,40 +807,8 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   setTimeout(fit, 0);
   return wrap;
 }
-// Default-mallar (redigerbara i Inställningar via vz_settings.tpl_*). Tokens: {ANTAL} {TILLDELNING}
-// {GRUPPLEDARE} {DELTAGARE} {SAMMANFATTNINGSLÄNK}. Signatur ingår (ej rumphugget); inget värdeomdöme om
-// gruppstorlek (Robert 2026-06-16: "18 ≠ liten grupp"). {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid
-// utskick; {SAMMANFATTNINGSLÄNK} fylls av "Skapa sammanfattningsdok"-knappen.
-var DEFAULT_TPL = {
-  livsAlla:
-    'Hej på Er!\n\n'
-    + 'Idag är sista inlämningsdag för deltagare att lämna in sina livsberättelser. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
-    + 'Vi är {ANTAL} denna gång. Vi hoppas kanske på någon till innan kursen startar.\n\n'
-    + 'Jag delar upp livsberättelserna enligt följande, och skickar länkarna till er enskilt:\n\n'
-    + '{TILLDELNING}\n\n'
-    + 'Varma hälsningar\nMalin',
-  livsEnskild:
-    'Hej {GRUPPLEDARE}!\n\n'
-    + 'Här kommer länkarna till formulären som du har fått i uppdrag att läsa:\n\n'
-    + '{DELTAGARE}\n\n'
-    + 'Kram\nMalin',
-  uppfoljning:
-    'Hej Alla!\n\n'
-    + 'Tack för en väldigt fin vecka!\n\n'
-    + 'Det är nu dags för uppföljningssamtal. Jag har delat upp deltagarna enligt följande:\n\n'
-    + '{TILLDELNING}\n\n'
-    + 'Här är länken till dokumentet där ni skriver en sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
-    + 'Försök gärna att hålla tidsspannet att de ska få ett samtal inom cirka tio dagar.\n\n'
-    + 'Önskar er en fin helg ❤️\nMalin',
-  uppfoljningB:
-    'Hej!\n\n'
-    + 'Hoppas ni har haft en fin vecka 🌞\n\n'
-    + 'Jag har gjort en uppdelning för uppföljningssamtal enligt nedan, och lägger länken till dokumentet där ni skriver in en liten sammanfattning av samtalet.\n\n'
-    + '{TILLDELNING}\n\n'
-    + 'Länk till uppföljningssamtalen: {SAMMANFATTNINGSLÄNK}\n\n'
-    + 'Försök gärna att få till samtalen inom två veckor.\n\n'
-    + 'Kram och ha en fin helg!\nMalin',
-};
+// Default-mallar = DELAD källa i config.js (window.NYA_ZAPIER_TPL) → samma text som settings.js förifyller.
+var DEFAULT_TPL = (typeof window !== 'undefined' && window.NYA_ZAPIER_TPL) || {};
 // Ersätt {TOKEN} ur map. OKÄND token lämnas ORÖRD (t.ex. {SAMMANFATTNINGSLÄNK} fylls senare, {GRUPPLEDARE}/
 // {DELTAGARE} fylls per gruppledare vid utskick). Ren funktion. @param {string} tpl @param {Object} map
 function applyTokens(tpl, map) {
@@ -858,8 +826,10 @@ function livsAllaText(tpl, total, men, women, assignLines) {
 function livsEnskildMall(tpl) {
   return tpl || DEFAULT_TPL.livsEnskild;  // {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid utskick
 }
-function uppfoljningText(tpl, assignLines) {
-  var base = tpl || (MALIN_PRESENT ? DEFAULT_TPL.uppfoljning : DEFAULT_TPL.uppfoljningB);
+// Två redigerbara mallar: tplA = Malin VAR med, tplB = Malin INTE med. Auto-välj efter MALIN_PRESENT
+// (= finns som "Vitaliseraperson på plats" i gruppledar-listan). Tom override → default-varianten.
+function uppfoljningText(tplA, tplB, assignLines) {
+  var base = MALIN_PRESENT ? (tplA || DEFAULT_TPL.uppfoljning) : (tplB || DEFAULT_TPL.uppfoljningB);
   return applyTokens(base, { TILLDELNING: assignLines });  // {SAMMANFATTNINGSLÄNK} lämnas → fylls av knappen
 }
 
@@ -1111,7 +1081,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           s = s || {};
           if (opts.kind === 'uppfoljning') {
             mailOut.innerHTML = '';
-            mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(s.tpl_uppfoljning, assignLines), key + '_mailU', cfgUppf, docCfgUppf));
+            mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(s.tpl_uppfoljning, s.tpl_uppfoljningB, assignLines), key + '_mailU', cfgUppf, docCfgUppf));
             return;
           }
           // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
