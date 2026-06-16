@@ -312,7 +312,9 @@ function renderStaffPanel(groups, courseName) {
   sec.innerHTML = '<div class="vz-panel-title">Personal på kursen</div>' + cards;
   host.appendChild(sec);
 
-  // #14: fyll personal-raden i summary-kortet (totalt + underkategorier). Async, fail-soft.
+  // #14: fyll EGEN Personal-ruta i summary (siffra + underkategorier). Async, fail-soft.
+  var staffCountEl = document.getElementById('vz-cv-staff-count');
+  if (staffCountEl) { staffCountEl.textContent = STAFF_COUNT > 0 ? String(STAFF_COUNT) : '–'; }
   var staffEl = document.getElementById('vz-cv-staff');
   if (staffEl && STAFF_COUNT > 0) {
     var noun = { gruppledare: ['gruppledare', 'gruppledare'], assistenter: ['assistent', 'assistenter'], kockar: ['kock', 'kockar'] };
@@ -322,8 +324,7 @@ function renderStaffPanel(groups, courseName) {
       var nm = noun[g.cfg.key] || [g.cfg.label, g.cfg.label];
       return n + ' ' + (n === 1 ? nm[0] : nm[1]);
     }).filter(Boolean);
-    staffEl.innerHTML = '<b>' + STAFF_COUNT + '</b> personal'
-      + (parts.length ? ' · ' + parts.map(esc).join(' · ') : '');
+    staffEl.innerHTML = parts.map(esc).join(' · ');
   }
 
   // "Alla emailadresser": hämta assistent-listans kort med desc skarpt via REST,
