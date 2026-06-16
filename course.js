@@ -916,53 +916,59 @@ function withTimeout(p, ms, label) {
 // async-arbete renderar Trello den inte → knappen fastnade på "Förbereder…". Allt async sker i onConfirm.
 function runSendGroupLeaderMail(opts) {
   var note = opts.note, btn = opts.btn;
-  t.popup({
-    type: 'confirm', title: 'Skicka gruppledar-mejl', confirmText: 'Skicka', confirmStyle: 'primary',
-    message: 'Skicka gruppledar-mejlen? Utskicket följer test-läget i Inställningar: i TESTLÄGE går allt till '
-      + 'testmottagaren (aldrig riktiga gruppledare), i SKARPT läge till de riktiga mottagarna. Resultatet visas efteråt.',
-    onConfirm: function (tt) {
-      return tt.closePopup().then(function () {
-        btn.disabled = true; note.textContent = '⏳ Skickar…';
-        return Promise.all([
-          withTimeout(fetchGroupLeaderContacts(), 15000, 'Trello'),
-          withTimeout(getCourseSettings(), 8000, 'Inställningarna'),
-        ]);
-      }).then(function (r) {
-        var contacts = r[0] || [], settings = r[1] || {}, mode = resolveSendMode(settings);
-        var built = opts.build(contacts) || { emails: [], missing: [] };
-        var emails = (built.emails || []).filter(function (e) { return e && e.to; });
-        var missing = built.missing || [];
-        // Admin-cc (Inställningar.adminEmail): kopia på skarpa utskick. cc rensas av GAS i testläge → admin
-        // får bara kopia på riktiga utskick (avsiktligt). Läggs på ALLA mejl, dedupas mot ev. befintlig cc.
-        var admin = String(settings.adminEmail || '').trim();
-        if (admin) {
-          emails.forEach(function (e) {
-            e.cc = (e.cc || []).slice();
-            if (e.cc.map(function (x) { return String(x).toLowerCase(); }).indexOf(admin.toLowerCase()) === -1) { e.cc.push(admin); }
-          });
-        }
-        if (!emails.length) {
-          note.textContent = '⚠️ Inga mottagar-adresser' + (missing.length ? ' (saknas: ' + missing.join(', ') + ')' : '') + '. Fyll i "Kontaktuppgifter Gruppledare".';
-          btn.disabled = false; return;
-        }
-        if (!mode.live && !mode.redirect) {
-          note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare i Inställningar (kugghjul) först.';
-          btn.disabled = false; return;
-        }
-        return postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails }).then(function (res) {
-          if (res && res.ok) {
-            var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
-            var failN = (res.sent || []).length - okN;
-            note.textContent = '✓ ' + okN + ' skickat' + (failN ? ', ⚠️ ' + failN + ' misslyckades' : '')
-              + (missing.length ? ' · saknad adress: ' + missing.join(', ') : '')
-              + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
-          } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel'); }
-          btn.disabled = false;
-        });
+  btn.disabled = true; note.textContent = '⏳ Förbereder…';
+  Promise.all([
+    withTimeout(fetchGroupLeaderContacts(), 15000, 'Trello'),
+    withTimeout(getCourseSettings(), 8000, 'Inställningarna'),
+  ]).then(function (r) {
+    var contacts = r[0] || [], settings = r[1] || {}, mode = resolveSendMode(settings);
+    var built = opts.build(contacts) || { emails: [], missing: [] };
+    var emails = (built.emails || []).filter(function (e) { return e && e.to; });
+    var missing = built.missing || [];
+    // Admin-cc (Inställningar.adminEmail): kopia på skarpa utskick. cc rensas av GAS i testläge → admin
+    // får bara kopia på riktiga utskick (avsiktligt). Läggs på ALLA mejl, dedupas mot ev. befintlig cc.
+    var admin = String(settings.adminEmail || '').trim();
+    if (admin) {
+      emails.forEach(function (e) {
+        e.cc = (e.cc || []).slice();
+        if (e.cc.map(function (x) { return String(x).toLowerCase(); }).indexOf(admin.toLowerCase()) === -1) { e.cc.push(admin); }
+      });
+    }
+    if (!emails.length) {
+      note.textContent = '⚠️ Inga mottagar-adresser' + (missing.length ? ' (saknas: ' + missing.join(', ') + ')' : '') + '. Fyll i "Kontaktuppgifter Gruppledare".';
+      btn.disabled = false; return;
+    }
+    if (!mode.live && !mode.redirect) {
+      note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare i Inställningar (kugghjul) först.';
+      btn.disabled = false; return;
+    }
+    // IN-MODAL bekräftelse — t.popup renderar INTE inifrån en fullscreen t.modal (känd Trello-begränsning,
+    // verifierad live: knappen blev "stum"). Vi äger modalens DOM → rendera confirm där, garanterat synligt.
+    var recN = countRecipients(emails);
+    note.textContent = '';
+    var q = document.createElement('span');
+    q.textContent = (mode.live ? '⚠️ SKARPT — ' + recN + ' riktig(a) mottagare. ' : 'Testläge → allt till ' + mode.redirect + '. ')
+      + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '') + 'Skicka?';
+    var yes = document.createElement('button'); yes.className = 'vz-btn vz-btn--send'; yes.textContent = 'Bekräfta';
+    yes.style.cssText = 'margin-left:6px;padding:4px 11px;font-size:12px';
+    var no = document.createElement('button'); no.className = 'vz-btn'; no.textContent = 'Avbryt';
+    no.style.cssText = 'margin-left:5px;padding:4px 11px;font-size:12px;background:#7a8a91';
+    note.appendChild(q); note.appendChild(yes); note.appendChild(no);
+    no.addEventListener('click', function () { note.textContent = ''; btn.disabled = false; });
+    yes.addEventListener('click', function () {
+      note.textContent = '⏳ Skickar…';
+      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails }).then(function (res) {
+        if (res && res.ok) {
+          var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
+          var failN = (res.sent || []).length - okN;
+          note.textContent = '✓ ' + okN + ' skickat' + (failN ? ', ⚠️ ' + failN + ' misslyckades' : '')
+            + (missing.length ? ' · saknad adress: ' + missing.join(', ') : '')
+            + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
+        } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel'); }
+        btn.disabled = false;
       }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
-    },
-    onCancel: function (tt) { return tt.closePopup(); },
-  });
+    });
+  }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
 }
 
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
