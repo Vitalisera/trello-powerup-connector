@@ -807,40 +807,60 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   setTimeout(fit, 0);
   return wrap;
 }
-function livsAllaText(assignLines, total, men, women) {
-  var antal = (men != null && women != null)
-    ? ('Just nu är de bara ' + total + ', ' + men + ' män och ' + women + ' kvinnor.')
-    : ('Just nu är de bara ' + total + ' deltagare.');
-  return 'Hej på Er!\n\n'
+// Default-mallar (redigerbara i Inställningar via vz_settings.tpl_*). Tokens: {ANTAL} {TILLDELNING}
+// {GRUPPLEDARE} {DELTAGARE} {SAMMANFATTNINGSLÄNK}. Signatur ingår (ej rumphugget); inget värdeomdöme om
+// gruppstorlek (Robert 2026-06-16: "18 ≠ liten grupp"). {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid
+// utskick; {SAMMANFATTNINGSLÄNK} fylls av "Skapa sammanfattningsdok"-knappen.
+var DEFAULT_TPL = {
+  livsAlla:
+    'Hej på Er!\n\n'
     + 'Idag är sista inlämningsdag för deltagare att lämna in sina livsberättelser. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
-    + 'Det blir en liten grupp denna gång. ' + antal + ' Men vi hoppas på en eller två till innan kursen startar, så håll tummarna för det!\n\n'
+    + 'Vi är {ANTAL} denna gång. Vi hoppas kanske på någon till innan kursen startar.\n\n'
     + 'Jag delar upp livsberättelserna enligt följande, och skickar länkarna till er enskilt:\n\n'
-    + assignLines;
-}
-function livsEnskildMall() {
-  return 'Hej {GRUPPLEDARE}!\n\n'
+    + '{TILLDELNING}\n\n'
+    + 'Varma hälsningar\nMalin',
+  livsEnskild:
+    'Hej {GRUPPLEDARE}!\n\n'
     + 'Här kommer länkarna till formulären som du har fått i uppdrag att läsa:\n\n'
     + '{DELTAGARE}\n\n'
-    + 'Kram';
-}
-function uppfoljningText(assignLines) {
-  if (MALIN_PRESENT) {
-    return 'Hej Alla!\n\n'
-      + 'Tack för en väldigt fin vecka!\n\n'
-      + 'Det är nu dags för uppföljningssamtal. Jag har delat upp deltagarna enligt följande:\n\n'
-      + assignLines + '\n\n'
-      + 'Här är länken till dokumentet där ni skriver en sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
-      + 'Försök gärna att hålla tidsspannet att de ska få ett samtal inom 10 dagar.\n\n'
-      + 'Önskar er en fin helg ❤️';
-  }
-  return 'Hej!\n\n'
+    + 'Kram\nMalin',
+  uppfoljning:
+    'Hej Alla!\n\n'
+    + 'Tack för en väldigt fin vecka!\n\n'
+    + 'Det är nu dags för uppföljningssamtal. Jag har delat upp deltagarna enligt följande:\n\n'
+    + '{TILLDELNING}\n\n'
+    + 'Här är länken till dokumentet där ni skriver en sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
+    + 'Försök gärna att hålla tidsspannet att de ska få ett samtal inom cirka tio dagar.\n\n'
+    + 'Önskar er en fin helg ❤️\nMalin',
+  uppfoljningB:
+    'Hej!\n\n'
     + 'Hoppas ni har haft en fin vecka 🌞\n\n'
-    + 'Jag har gjort en uppdelning för uppföljningssamtal enligt nedan. Och jag lägger också länken till dokumentet där ni skriver in en liten sammanfattning av samtalet nedan.\n\n'
-    + 'Jag skickar separata email med kontaktuppgifter till er.\n\n'
-    + 'Försök gärna att få till samtalen inom två veckor:\n\n'
-    + assignLines + '\n\n'
+    + 'Jag har gjort en uppdelning för uppföljningssamtal enligt nedan, och lägger länken till dokumentet där ni skriver in en liten sammanfattning av samtalet.\n\n'
+    + '{TILLDELNING}\n\n'
     + 'Länk till uppföljningssamtalen: {SAMMANFATTNINGSLÄNK}\n\n'
-    + 'Kram och ha en fin helg!';
+    + 'Försök gärna att få till samtalen inom två veckor.\n\n'
+    + 'Kram och ha en fin helg!\nMalin',
+};
+// Ersätt {TOKEN} ur map. OKÄND token lämnas ORÖRD (t.ex. {SAMMANFATTNINGSLÄNK} fylls senare, {GRUPPLEDARE}/
+// {DELTAGARE} fylls per gruppledare vid utskick). Ren funktion. @param {string} tpl @param {Object} map
+function applyTokens(tpl, map) {
+  return String(tpl == null ? '' : tpl).replace(/\{([A-ZÅÄÖ_]+)\}/g, function (m, k) {
+    return (map && map[k] != null) ? map[k] : m;
+  });
+}
+// tpl = settings-override (eller tom → default). assignLines → {TILLDELNING}; antal → {ANTAL} (neutralt, utan omdöme).
+function livsAllaText(tpl, total, men, women, assignLines) {
+  var antal = (men != null && women != null)
+    ? (total + ', ' + men + (men === 1 ? ' man' : ' män') + ' och ' + women + (women === 1 ? ' kvinna' : ' kvinnor'))
+    : (total + ' deltagare');
+  return applyTokens(tpl || DEFAULT_TPL.livsAlla, { ANTAL: antal, TILLDELNING: assignLines });
+}
+function livsEnskildMall(tpl) {
+  return tpl || DEFAULT_TPL.livsEnskild;  // {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid utskick
+}
+function uppfoljningText(tpl, assignLines) {
+  var base = tpl || (MALIN_PRESENT ? DEFAULT_TPL.uppfoljning : DEFAULT_TPL.uppfoljningB);
+  return applyTokens(base, { TILLDELNING: assignLines });  // {SAMMANFATTNINGSLÄNK} lämnas → fylls av knappen
 }
 
 /* ---------- Gruppledar-mejl: SKICKA (Inc2) ----------
@@ -995,7 +1015,7 @@ function runSendMail(opts) {
     no.addEventListener('click', function () { note.textContent = ''; btn.disabled = false; });
     yes.addEventListener('click', function () {
       note.textContent = '⏳ Skickar…';
-      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails }).then(function (res) {
+      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo }).then(function (res) {
         if (res && res.ok) {
           var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
           var failN = (res.sent || []).length - okN;
@@ -1086,23 +1106,26 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           return firstNameOf(a.leaderName) + ': ' + swedishList(a.participants.map(firstNameOf));
         }).join('\n');
         var MALL_LBL = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
-        if (opts.kind === 'uppfoljning') {
-          mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU', cfgUppf, docCfgUppf));
-          mailBtn.disabled = false;
-          return;
-        }
-        // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
-        var firstNames = participants.map(function (p) { return firstNameOf(p.name); }).filter(Boolean);
-        postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
-          var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
-          mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K), key + '_mailA', cfgAlla));
-          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB', cfgEnskild));
-        }).catch(function () {
-          mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null), key + '_mailA', cfgAlla));
-          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB', cfgEnskild));
+        // Läs ev. redigerade malltexter ur Inställningar (vz_settings.tpl_*); tomt → default-mall.
+        getCourseSettings().then(function (s) {
+          s = s || {};
+          if (opts.kind === 'uppfoljning') {
+            mailOut.innerHTML = '';
+            mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(s.tpl_uppfoljning, assignLines), key + '_mailU', cfgUppf, docCfgUppf));
+            return;
+          }
+          // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
+          var firstNames = participants.map(function (p) { return firstNameOf(p.name); }).filter(Boolean);
+          return postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
+            var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
+            mailOut.innerHTML = '';
+            mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(s.tpl_livsAlla, participants.length, c.M, c.K, assignLines), key + '_mailA', cfgAlla));
+            mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(s.tpl_livsEnskild), key + '_mailB', cfgEnskild));
+          }).catch(function () {
+            mailOut.innerHTML = '';
+            mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(s.tpl_livsAlla, participants.length, null, null, assignLines), key + '_mailA', cfgAlla));
+            mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(s.tpl_livsEnskild), key + '_mailB', cfgEnskild));
+          });
         }).then(function () { mailBtn.disabled = false; });
       });
     }

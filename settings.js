@@ -57,6 +57,29 @@ function render(s) {
     + '<input type="email" id="vz-testredirect" style="margin-top:9px" placeholder="test-mottagare@vitalisera.se" value="' + esc(s.testRedirectEmail || '') + '">'
     + '</div>'
 
+    + '<div class="vz-field">'
+    + '<label for="vz-sendername">Avsändarnamn</label>'
+    + '<p class="hint">Visas som avsändare på gruppledar-/kock-mejlen. Tom = "Vitalisera AB".</p>'
+    + '<input type="text" id="vz-sendername" placeholder="Vitalisera AB" value="' + esc(s.senderName || '') + '">'
+    + '</div>'
+
+    + '<div class="vz-field">'
+    + '<label for="vz-replyto">Svara-till (reply-to)</label>'
+    + '<p class="hint">Svar på utskicken går hit, t.ex. malin.kraft@vitalisera.se. Tom = sändande kontot. (Rensas i testläge.)</p>'
+    + '<input type="email" id="vz-replyto" placeholder="malin.kraft@vitalisera.se" value="' + esc(s.replyTo || '') + '">'
+    + '</div>'
+
+    + '<div class="vz-field">'
+    + '<label>Mall-texter för gruppledar-mejlen</label>'
+    + '<p class="hint">Redigera mejltexterna fritt. Lämna en ruta TOM för standardmall. Dessa tokens fylls automatiskt vid generering/utskick: <b>{ANTAL}</b>, <b>{TILLDELNING}</b>, <b>{GRUPPLEDARE}</b>, <b>{DELTAGARE}</b>, <b>{SAMMANFATTNINGSLÄNK}</b>.</p>'
+    + '<label for="vz-tpl-livsalla" class="vz-sub">Livsberättelser – till alla</label>'
+    + '<textarea id="vz-tpl-livsalla" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_livsAlla || '') + '</textarea>'
+    + '<label for="vz-tpl-livsenskild" class="vz-sub">Livsberättelser – enskild mall</label>'
+    + '<textarea id="vz-tpl-livsenskild" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_livsEnskild || '') + '</textarea>'
+    + '<label for="vz-tpl-uppfoljning" class="vz-sub">Uppföljningssamtal – till alla</label>'
+    + '<textarea id="vz-tpl-uppfoljning" class="vz-ta" placeholder="Lämna tom = standardmall">' + esc(s.tpl_uppfoljning || '') + '</textarea>'
+    + '</div>'
+
     + '<div class="vz-actions">'
     + '<button class="vz-btn" id="vz-save">Spara</button>'
     + '<span class="vz-note" id="vz-saved"></span>'
@@ -70,13 +93,20 @@ function render(s) {
     var admin = (document.getElementById('vz-admin').value || '').trim();
     var redirect = (document.getElementById('vz-testredirect').value || '').trim();
     if (doctor && !isEmail(doctor)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Läkar-e-posten ser inte giltig ut.'; return; }
+    var replyTo = (document.getElementById('vz-replyto').value || '').trim();
     if (admin && !isEmail(admin)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Admin-e-posten ser inte giltig ut.'; return; }
     if (redirect && !isEmail(redirect)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Test-mottagarens e-post ser inte giltig ut.'; return; }
+    if (replyTo && !isEmail(replyTo)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Svara-till-adressen ser inte giltig ut.'; return; }
     var next = {
       doctorEmail: doctor,
       adminEmail: admin,
       testMode: !!document.getElementById('vz-testmode').checked,
       testRedirectEmail: redirect,
+      senderName: (document.getElementById('vz-sendername').value || '').trim(),
+      replyTo: replyTo,
+      tpl_livsAlla: document.getElementById('vz-tpl-livsalla').value || '',
+      tpl_livsEnskild: document.getElementById('vz-tpl-livsenskild').value || '',
+      tpl_uppfoljning: document.getElementById('vz-tpl-uppfoljning').value || '',
     };
     btn.disabled = true; saved.style.color = '#437a3a'; saved.textContent = '⏳ Sparar…';
     t.set('board', 'shared', KEY, next).then(function () {
