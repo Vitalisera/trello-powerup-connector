@@ -783,7 +783,7 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
     docBtn.style.marginLeft = '6px';
     docBtn.addEventListener('click', function () {
       docBtn.disabled = true; note.textContent = '⏳ Skapar dokument…';
-      postToGas('createSummaryDoc', { dryRun: false, courseName: docCfg.courseName }).then(function (res) {
+      postToGas('createSummaryDoc', { dryRun: false, courseName: docCfg.courseName, groups: docCfg.getGroups ? docCfg.getGroups() : [] }).then(function (res) {
         if (res && res.ok && res.url) {
           if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, res.url); }
           else { ta.value = ta.value + '\n\n' + res.url; }
@@ -791,8 +791,12 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
           fit();
           note.textContent = res.existed ? '✓ Länk infogad (dokumentet fanns redan)' : '✓ Dokument skapat + länk infogad';
         } else {
-          var err = res && res.error;
-          note.textContent = '⚠️ ' + (err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + docCfg.courseName + '" (parent-mappen).' : (err || 'kunde ej skapa dokument'));
+          var err = (res && res.error) || 'kunde ej skapa dokument';
+          var msg = err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + docCfg.courseName + '".'
+            : err === 'no_assignments' ? 'Bocka minst en deltagare per gruppledare i matrisen först.'
+            : err;
+          if (res && res.detail) { msg += ' — ' + res.detail; }   // #7: visa det faktiska felet för felsökning
+          note.textContent = '⚠️ ' + msg;
         }
         docBtn.disabled = false;
       }).catch(function (e) { note.textContent = '⚠️ ' + e.message; docBtn.disabled = false; });
@@ -988,11 +992,12 @@ function runSendMail(opts) {
       postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo }).then(function (res) {
         if (res && res.ok) {
           var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
-          var failN = (res.sent || []).length - okN;
-          note.textContent = '✓ ' + okN + ' skickat' + (failN ? ', ⚠️ ' + failN + ' misslyckades' : '')
+          var failed = (res.sent || []).filter(function (s) { return !s.ok; });
+          note.textContent = '✓ ' + okN + ' skickat'
+            + (failed.length ? ', ⚠️ ' + failed.length + ' misslyckades (' + ((failed[0] && failed[0].error) || 'okänt') + ')' : '')
             + (missing.length ? ' · saknad adress: ' + missing.join(', ') : '')
             + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
-        } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel'); }
+        } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel') + (res && res.detail ? ' — ' + res.detail : ''); }
         btn.disabled = false;
       }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
     });
@@ -1038,7 +1043,15 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
   } };
   // Inc3: "Skapa sammanfattningsdokument"-knapp bara på uppföljnings-rutan (fyller {SAMMANFATTNINGSLÄNK}).
-  var docCfgUppf = (opts.kind === 'uppfoljning' && opts.courseName) ? { courseName: opts.courseName } : null;
+  // getGroups() ger gruppledare→deltagare ur matrisen (förnamn, som doket) → GAS bygger tabellerna.
+  var docCfgUppf = (opts.kind === 'uppfoljning' && opts.courseName) ? {
+    courseName: opts.courseName,
+    getGroups: function () {
+      return buildLeaderAssignments(sel, participants, leaders).map(function (a) {
+        return { leader: firstNameOf(a.leaderName), deltagare: a.participants.map(firstNameOf) };
+      });
+    },
+  } : null;
   function paint() {
     var ths = leaders.map(function (l) { return '<th class="vz-story-leader"><span class="vz-story-leader-label">' + esc(l) + '</span></th>'; }).join('');
     var trs = participants.map(function (p) {
