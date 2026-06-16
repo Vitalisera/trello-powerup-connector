@@ -107,4 +107,12 @@ window.NYA_ZAPIER_TPL = {
     + 'Länk till uppföljningssamtalen: {SAMMANFATTNINGSLÄNK}\n\n'
     + 'Försök gärna att få till samtalen inom två veckor.\n\n'
     + 'Kram och ha en fin helg!\nMalin',
+  // Enskilt kontaktmejl per gruppledare (#10). Tokens: {GRUPPLEDARE}, {DELTAGARKONTAKTER} (namn/tel/epost-block
+  // per tilldelad deltagare, fylls vid utskick), {SAMMANFATTNINGSLÄNK}.
+  uppfoljningEnskild:
+    'Hej {GRUPPLEDARE}!\n\n'
+    + 'Här är kontaktuppgifterna till deltagarna du har uppföljningssamtal med:\n\n'
+    + '{DELTAGARKONTAKTER}\n\n'
+    + 'Här är länken till dokumentet där du skriver en kort sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
+    + 'Kram\nMalin',
 };

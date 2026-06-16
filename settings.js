@@ -85,6 +85,9 @@ function render(s) {
     + '<label for="vz-tpl-uppfoljningb" class="vz-sub">Uppföljningssamtal – om Malin INTE var med</label>'
     + '<textarea id="vz-tpl-uppfoljningb" class="vz-ta">' + esc(s.tpl_uppfoljningB || TPL.uppfoljningB || '') + '</textarea>'
     + '<p class="hint">Rätt uppföljnings-mall väljs automatiskt utifrån om Malin finns som "Vitaliseraperson på plats" i gruppledar-listan.</p>'
+    + '<label for="vz-tpl-uppfenskild" class="vz-sub">Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)</label>'
+    + '<textarea id="vz-tpl-uppfenskild" class="vz-ta">' + esc(s.tpl_uppfoljningEnskild || TPL.uppfoljningEnskild || '') + '</textarea>'
+    + '<p class="hint">Token <b>{DELTAGARKONTAKTER}</b> fylls med namn/telefon/epost per tilldelad deltagare.</p>'
     + '</div>'
 
     + '<div class="vz-actions">'
@@ -115,6 +118,7 @@ function render(s) {
       tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
       tpl_uppfoljning: tplVal('vz-tpl-uppfoljning', TPL.uppfoljning),
       tpl_uppfoljningB: tplVal('vz-tpl-uppfoljningb', TPL.uppfoljningB),
+      tpl_uppfoljningEnskild: tplVal('vz-tpl-uppfenskild', TPL.uppfoljningEnskild),
     };
     btn.disabled = true; saved.style.color = '#437a3a'; saved.textContent = '⏳ Sparar…';
     t.set('board', 'shared', KEY, next).then(function () {

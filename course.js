@@ -26,6 +26,22 @@ function esc(s) {
 /* E-post ur ett kort-desc. Föredrar markdown-mönstret "**Epost:** [x](mailto:x)"
  * eller "**Epost:** x", faller tillbaka till första rena adressen. Ren funktion. */
 var STAFF_EMAIL_RE = /\*\*Epost:\*\*\s*(?:\[(.*?)\]\(mailto:[^)]+\)|([\w.\-+]+@[\w.\-+]+\.\w+))/i;
+
+// Parsar deltagarkortets desc → {namn, telefon, epost} (porterat från dashboard.js parseDesc: strippar
+// markdown-fetstil + mailto-länkad e-post). Ren funktion. För uppföljningens enskilda kontaktmejl (#10).
+function parseContactFromDesc(desc) {
+  var out = {};
+  String(desc || '').split('\n').forEach(function (line) {
+    var clean = line.replace(/\*+/g, '').trim();
+    var m = clean.match(/^([^:]{2,30}):\s*(.+?)\s*$/);
+    if (!m) { return; }
+    var val = m[2].trim();
+    var link = val.match(/^\[([^\]]+)\]\([^)]*\)$/);
+    if (link) { val = link[1].trim(); }
+    out[norm(m[1])] = val;
+  });
+  return { namn: out['namn'] || '', telefon: out['telefonnummer'] || out['telefon'] || '', epost: out['epost'] || '' };
+}
 var ANY_EMAIL_RE = /[\w.\-+]+@[\w.\-]+\.\w+/;
 function extractStaffEmail(desc) {
   var s = String(desc || '');
@@ -665,9 +681,9 @@ function loadStoryMatrix(courseName, participants, cards) {
   var slug = norm(courseName).replace(/[^a-z0-9]+/g, '_');
   var key = 'vz_story_' + slug;
   var followKey = 'vz_followup_' + slug;
-  // Livsberättelse-länk per deltagare ur kort-kommentar.
-  var storyLinks = {};
-  (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); });
+  // Livsberättelse-länk per deltagare ur kort-kommentar + kontaktuppgifter ur kort-desc (#10 uppf-enskild).
+  var storyLinks = {}, contactByKey = {};
+  (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); contactByKey[c.id] = parseContactFromDesc(c.desc); });
   var GL = STAFF_BOARDS[0];
   function asObj(x) { return (x && typeof x === 'object') ? x : {}; }
   t.getRestApi().getToken().then(function (token) {
@@ -700,7 +716,7 @@ function loadStoryMatrix(courseName, participants, cards) {
       note: 'Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.',
     });
     renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
-      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName,
+      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName, contacts: contactByKey,
       note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
     });
   }).catch(function () {});
@@ -901,6 +917,19 @@ function leaderParticipantLinks(sel, participants, leaderName, storyLinks) {
   return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
     .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '' }; });
 }
+// Per-gruppledare deltagare + kontakt (#10): ur urvalskartan + contactByKey. Ren funktion.
+function leaderParticipantContacts(sel, participants, leaderName, contactByKey) {
+  sel = sel || {}; contactByKey = contactByKey || {};
+  return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
+    .map(function (p) { return { name: p.name, contact: contactByKey[p.key] || {} }; });
+}
+// Kontaktblock (plaintext) för uppföljnings-enskild-mejlet. items = [{name, contact:{telefon,epost}}]. Ren funktion.
+function kontaktBlockText(items) {
+  return (items || []).map(function (it) {
+    var c = it.contact || {};
+    return 'Namn: ' + it.name + '\nTelefonnummer: ' + (c.telefon || '') + '\nEpost: ' + (c.epost || '');
+  }).join('\n\n');
+}
 // Fritext (Malins ruta) → inre HTML: escape, gör markdown-länkar [text](url) + bara-URL:er klickbara, radbrytningar.
 // Ren funktion. (esc körs FÖRST → []() överlever; url:en escapas men &amp; m.m. är giltigt i href.)
 function plainToHtml(text) {
@@ -1054,6 +1083,18 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     var r = leaderEmailsFor(contacts);
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
+  // #10: uppföljning enskilt kontaktmejl per gruppledare (kontaktuppgifter + sammanfattningslänk).
+  var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Skicka enskilt', build: function (contacts, taVal) {
+    var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
+    asg.forEach(function (a) {
+      var em = glContactEmail(a.leaderName, contacts);
+      if (!em) { missing.push(a.leaderName); return; }
+      var items = leaderParticipantContacts(sel, participants, a.leaderName, opts.contacts);
+      var filled = applyTokens(String(taVal == null ? '' : taVal), { GRUPPLEDARE: firstNameOf(a.leaderName), DELTAGARKONTAKTER: kontaktBlockText(items) });
+      emails.push({ to: em, cc: cc, subject: 'Kontaktuppgifter uppföljningssamtal', bodyHtml: plainToHtml(filled), bodyText: mdToPlain(filled) });
+    });
+    return { emails: emails, missing: missing };
+  } };
   // Inc3: "Skapa sammanfattningsdokument"-knapp bara på uppföljnings-rutan (fyller {SAMMANFATTNINGSLÄNK}).
   // getGroups() ger gruppledare→deltagare ur matrisen (förnamn, som doket) → GAS bygger tabellerna.
   var docCfgUppf = (opts.kind === 'uppfoljning' && opts.courseName) ? {
@@ -1107,6 +1148,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           if (opts.kind === 'uppfoljning') {
             mailOut.innerHTML = '';
             mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(s.tpl_uppfoljning, s.tpl_uppfoljningB, assignLines), key + '_mailU', cfgUppf, docCfgUppf));
+            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', s.tpl_uppfoljningEnskild || DEFAULT_TPL.uppfoljningEnskild, key + '_mailUE', cfgUppfEnskild, docCfgUppf));
             return;
           }
           // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
@@ -1128,8 +1170,14 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     if (mailOut) {
       var MALL_LBL2 = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
       if (opts.kind === 'uppfoljning') {
-        t.get('board', 'shared', key + '_mailU').then(function (v) {
-          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU', cfgUppf, docCfgUppf)); }
+        Promise.all([
+          t.get('board', 'shared', key + '_mailU').catch(function () { return null; }),
+          t.get('board', 'shared', key + '_mailUE').catch(function () { return null; }),
+        ]).then(function (r) {
+          if ((r[0] || r[1]) && !mailOut.children.length) {
+            mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(r[0] || ''), key + '_mailU', cfgUppf, docCfgUppf));
+            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', String(r[1] || DEFAULT_TPL.uppfoljningEnskild), key + '_mailUE', cfgUppfEnskild, docCfgUppf));
+          }
         }).catch(function () {});
       } else {
         Promise.all([
