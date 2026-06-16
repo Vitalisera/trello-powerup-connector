@@ -61,7 +61,7 @@ window.NYA_ZAPIER_FLOW = [
   { key: 'antagen',  phase: 'Anmälan & antagning', title: 'Antagen till kurs', desc: '"Du har fått en plats"-mejl; labeln kryssar även checklistan', checkItem: 'Antagen till kurs', triggerLabel: 'Skicka mail - "Du har fått en plats"', automation: 'Skicka Du har fått en plats' },
   // ── Förberedelse inför kurs ──
   { key: 'avgift_faktura', phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift – faktura', desc: 'Faktura för anmälningsavgift skickad (manuell bock)', checkItem: 'Faktura för anmälningsavgift skickad' },
-  { key: 'avgift',         phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift – betald',  desc: 'Avgiften betald (label + checklista, ingen automation)', checkItem: 'Anmälningsavgift betald', triggerLabel: 'Anm. avgift betald' },
+  { key: 'avgift',         phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift – betald',  desc: 'Avgiften betald (label + checklista, ingen automation)', checkItem: 'Anmälningsavgift betald', triggerLabel: 'Anm. avgift betald', implies: ['avgift_faktura'] }, // #15: betald ⇒ faktura var skickad
   { key: 'praktisk',       phase: 'Förberedelse inför kurs', title: 'Praktisk info',             desc: 'Praktisk information skickad (manuell bock)', checkItem: 'Praktisk info skickat' },
   { key: 'steg1',          phase: 'Förberedelse inför kurs', title: 'Steg 1 – formulär',         desc: 'Label triggar nya-zapier som skickar formuläret och kryssar checklistan', checkItem: 'Fått formulär', triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
   { key: 'hf_klart',       phase: 'Förberedelse inför kurs', title: 'Hälsoformulär klart',       desc: 'Deltagarens hälsoformulär ifyllt (manuell bock; ska autobockas framöver)', checkItem: 'Hälsoformulär klart' },
@@ -70,7 +70,7 @@ window.NYA_ZAPIER_FLOW = [
   { key: 'livs_delad',     phase: 'Förberedelse inför kurs', title: 'Livsberättelse → kursledare', desc: 'Livsberättelse delad till kursledare (manuell bock; autobockas när Power-Up-funktionen finns)', checkItem: 'Delat Levnadsbeskrivning till kursledare' },
   // ── Slutbetalning & uppföljning ──
   { key: 'slut_faktura',   phase: 'Slutbetalning & uppföljning', title: 'Slutbetalning – faktura', desc: 'Faktura för slutbetalning skickad (manuell bock)', checkItem: 'Faktura för slutbetalning skickad' },
-  { key: 'slut_betald',    phase: 'Slutbetalning & uppföljning', title: 'Slutbetalning – betald',  desc: 'Slutbetalning betald (label + checklista synkas; label-namn ej satt i config än)', checkItem: 'Faktura för slutbetalning betald' },
+  { key: 'slut_betald',    phase: 'Slutbetalning & uppföljning', title: 'Slutbetalning – betald',  desc: 'Slutbetalning betald (label + checklista synkas; label-namn ej satt i config än)', checkItem: 'Faktura för slutbetalning betald', implies: ['slut_faktura', 'avgift', 'avgift_faktura'] }, // #15: slutbetalning betald ⇒ faktura skickad + avgifts-stegen ej längre aktuella
   { key: 'uppfoljning',    phase: 'Slutbetalning & uppföljning', title: 'Uppföljningssamtal',      desc: 'Uppföljningssamtal utfört (manuell bock; ev. automatiseras framöver)', checkItem: 'Uppföljningssamtal utfört' },
 ];
 
