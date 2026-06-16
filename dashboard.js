@@ -174,30 +174,37 @@ function doTick(s) {
   }).catch(function (err) { notify('⚠️ ' + err.message, 'error'); });
 }
 
+// IN-MODAL bekräftelse — t.popup renderar INTE inifrån en fullscreen t.modal (känd Trello-begränsning;
+// gav stum knapp i kursvyns Skicka). Vi äger modalens DOM → en egen overlay-dialog, garanterat synlig.
+function inModalConfirm(message, confirmText, onYes) {
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,68,92,.35);display:flex;align-items:center;justify-content:center;font-family:Calibri,system-ui,sans-serif';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;max-width:420px;margin:16px;padding:20px 22px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);color:#0d3142';
+  var p = document.createElement('div'); p.style.cssText = 'font-size:14.5px;line-height:1.5;margin-bottom:16px'; p.textContent = message;
+  var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+  var no = document.createElement('button'); no.textContent = 'Avbryt'; no.style.cssText = 'border:none;cursor:pointer;background:#7a8a91;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
+  var yes = document.createElement('button'); yes.textContent = confirmText || 'Bekräfta'; yes.style.cssText = 'border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
+  row.appendChild(no); row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
+  (document.body || document.documentElement).appendChild(ov);
+  function close() { ov.remove(); }
+  no.addEventListener('click', close);
+  ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
+  yes.addEventListener('click', function () { close(); onYes(); });
+}
+
 var handlers = {
   onSelectStep: function () {},
   onRunLabel: function (s) {
     if (!s.triggerLabel) { return; }
     if (s.labelSet) { notify('Labeln "' + s.triggerLabel + '" är redan satt.', 'info'); return; }
-    t.popup({
-      type: 'confirm',
-      title: 'Sätt label & starta steg',
-      message: 'Sätter labeln "' + s.triggerLabel + '" på kortet, vilket startar automationen "' + (s.automation || '') + '" (kan skicka mejl till deltagaren). Fortsätt?',
-      confirmText: 'Sätt label', confirmStyle: 'primary',
-      onConfirm: function (tt) { return tt.closePopup().then(function () { return doRunLabel(s); }); },
-    });
+    inModalConfirm('Sätter labeln "' + s.triggerLabel + '" på kortet, vilket startar automationen "' + (s.automation || '') + '" (kan skicka mejl till deltagaren). Fortsätt?', 'Sätt label', function () { doRunLabel(s); });
   },
   onTickChecklist: function (s) {
     if (!s.checkItemName) { notify('Det här steget har ingen checklistepunkt.', 'info'); return; }
     if (s.checklistDone) { notify('"' + s.checkItemName + '" är redan bockad.', 'info'); return; }
     if (!s.checkItemId) { notify('Hittar inte checklistepunktens id — bocka i kortet manuellt.', 'error'); return; }
-    t.popup({
-      type: 'confirm',
-      title: 'Bocka av checklistepunkt',
-      message: 'Bockar av "' + s.checkItemName + '" i kortets checklista. Fortsätt?',
-      confirmText: 'Bocka av', confirmStyle: 'primary',
-      onConfirm: function (tt) { return tt.closePopup().then(function () { return doTick(s); }); },
-    });
+    inModalConfirm('Bockar av "' + s.checkItemName + '" i kortets checklista. Fortsätt?', 'Bocka av', function () { doTick(s); });
   },
 };
 

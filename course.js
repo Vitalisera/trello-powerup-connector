@@ -588,9 +588,8 @@ function renderHfPanel(rows, courseName) {
     });
   }
 
-  // ── Skicka till kock: öppna ett mejludkast till kocken med sammanställningen.
-  //    Malin granskar och skickar själv (inget auto-utskick). Kopierar även till urklipp
-  //    som fallback ifall mejlklienten klipper av en lång body.
+  // ── Skicka till kock: riktig send via samma väg som gruppledar-mejlen (GAS, brandat, fail-closed,
+  //    in-modal bekräftelse, admin-cc). Body = matallergi-sammanställningen (allergiOut). Malins knapptryck.
   var kockBtn = sec.querySelector('#vz-allergi-kock');
   var kockOut = sec.querySelector('#vz-allergi-kock-out');
   if (kockBtn && kockOut) {
@@ -601,30 +600,17 @@ function renderHfPanel(rows, courseName) {
         kockOut.textContent = 'Sammanställ matallergierna först (klicka "Sammanställ matallergier").';
         return;
       }
-      kockBtn.disabled = true;
-      kockOut.textContent = '⏳ Hämtar kockens e-postadress…';
-      var emailP = KOCK_LIST_ID
-        ? t.getRestApi().getToken().then(function (token) {
-            if (!token) { return ''; }
-            return restGet(token, 'lists/' + KOCK_LIST_ID + '/cards?fields=name,desc').then(function (cards) {
-              var e = '';
-              (cards || []).some(function (c) { var x = extractStaffEmail(c.desc); if (x) { e = x; return true; } return false; });
-              return e;
-            });
-          }).catch(function () { return ''; })
-        : Promise.resolve('');
-      emailP.then(function (email) {
-        var subject = 'Matallergier – ' + (courseName || 'kursen');
-        var mailto = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject)
-          + '&body=' + encodeURIComponent(text);
-        copyTextToClipboard(text);
-        try { var a = document.createElement('a'); a.href = mailto; document.body.appendChild(a); a.click(); a.remove(); } catch (e) {}
-        kockOut.textContent = email
-          ? 'Öppnade ett mejludkast till kocken (' + email + '). Sammanställningen är även kopierad till urklipp — granska och skicka.'
-          : 'Ingen e-post hittades i kockkortet. Sammanställningen är kopierad till urklipp — klistra in i ett mejl till kocken (ett tomt utkast öppnades).';
-      }).catch(function (err) {
-        kockOut.textContent = '⚠️ ' + err.message;
-      }).then(function () { kockBtn.disabled = false; });
+      runSendMail({
+        kind: 'kock', btn: kockBtn, note: kockOut, emptyHint: '. Ingen e-post hittades i kockkortet.',
+        prepare: function () {
+          return fetchKockEmail().then(function (email) {
+            return {
+              emails: email ? [{ to: email, subject: 'Matallergier – ' + (courseName || 'kursen'), bodyHtml: plainToHtml(text), bodyText: text }] : [],
+              missing: email ? [] : ['kockens e-post'],
+            };
+          });
+        },
+      });
     });
   }
 
@@ -776,8 +762,8 @@ function mailBox(label, value, pkey, sendCfg) {
     var sendBtn = document.createElement('button'); sendBtn.className = 'vz-btn vz-btn--send';
     sendBtn.textContent = sendCfg.btnLabel || 'Skicka'; sendBtn.style.marginLeft = '6px';
     sendBtn.addEventListener('click', function () {
-      runSendGroupLeaderMail({ kind: sendCfg.kind, btn: sendBtn, note: note,
-        build: function (contacts) { return sendCfg.build(contacts, ta.value); } });
+      runSendMail({ kind: sendCfg.kind, btn: sendBtn, note: note, emptyHint: '. Fyll i "Kontaktuppgifter Gruppledare".',
+        prepare: function () { return fetchGroupLeaderContacts().then(function (contacts) { return sendCfg.build(contacts, ta.value); }); } });
     });
     row.appendChild(sendBtn);
   }
@@ -850,6 +836,18 @@ function fetchGroupLeaderContacts() {
     });
   }).catch(function () { return []; });
 }
+// Kockens e-post ur kock-listans kort (desc "**Epost:** x"). '' om ingen/ingen token. Fail-soft.
+function fetchKockEmail() {
+  if (!KOCK_LIST_ID) { return Promise.resolve(''); }
+  return t.getRestApi().getToken().then(function (token) {
+    if (!token) { return ''; }
+    return restGet(token, 'lists/' + KOCK_LIST_ID + '/cards?fields=name,desc').then(function (cards) {
+      var e = '';
+      (cards || []).some(function (c) { var x = extractStaffEmail(c.desc); if (x) { e = x; return true; } return false; });
+      return e;
+    });
+  }).catch(function () { return ''; });
+}
 // Slå upp en persons mejl ur kontaktlistan (fuzzy, samma namn-match som allergierna). '' om ingen träff.
 function glContactEmail(name, contacts) {
   var hit = (contacts || []).filter(function (c) { return glNameMatch(name, c.name); })[0];
@@ -914,15 +912,16 @@ function withTimeout(p, ms, label) {
 // opts: { kind, btn, note, build(contacts) -> {emails, missing} }
 // ⚠️ t.popup MÅSTE öppnas SYNKRONT i klick-gesten (som dashboard.js gap-stängning). Öppnas den EFTER
 // async-arbete renderar Trello den inte → knappen fastnade på "Förbereder…". Allt async sker i onConfirm.
-function runSendGroupLeaderMail(opts) {
+// opts: { kind, btn, note, prepare() -> {emails,missing}|Promise<...>, emptyHint }. Källan (kontakter/kock-mejl)
+// hämtas i prepare() → samma orkestrering för gruppledar- OCH kock-mejl. FAIL-CLOSED + in-modal bekräftelse.
+function runSendMail(opts) {
   var note = opts.note, btn = opts.btn;
   btn.disabled = true; note.textContent = '⏳ Förbereder…';
   Promise.all([
-    withTimeout(fetchGroupLeaderContacts(), 15000, 'Trello'),
+    withTimeout(Promise.resolve(opts.prepare()), 15000, 'Förberedelsen'),
     withTimeout(getCourseSettings(), 8000, 'Inställningarna'),
   ]).then(function (r) {
-    var contacts = r[0] || [], settings = r[1] || {}, mode = resolveSendMode(settings);
-    var built = opts.build(contacts) || { emails: [], missing: [] };
+    var built = r[0] || { emails: [], missing: [] }, settings = r[1] || {}, mode = resolveSendMode(settings);
     var emails = (built.emails || []).filter(function (e) { return e && e.to; });
     var missing = built.missing || [];
     // Admin-cc (Inställningar.adminEmail): kopia på skarpa utskick. cc rensas av GAS i testläge → admin
@@ -935,7 +934,7 @@ function runSendGroupLeaderMail(opts) {
       });
     }
     if (!emails.length) {
-      note.textContent = '⚠️ Inga mottagar-adresser' + (missing.length ? ' (saknas: ' + missing.join(', ') + ')' : '') + '. Fyll i "Kontaktuppgifter Gruppledare".';
+      note.textContent = '⚠️ Inga mottagar-adresser' + (missing.length ? ' (saknas: ' + missing.join(', ') + ')' : '') + (opts.emptyHint || '.');
       btn.disabled = false; return;
     }
     if (!mode.live && !mode.redirect) {
