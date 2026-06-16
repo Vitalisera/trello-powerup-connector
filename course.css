@@ -527,6 +527,10 @@
   transition:background .15s ease,box-shadow .15s ease;
 }
 .vz-course .vz-btn:hover{background:#2c5f73;box-shadow:var(--shadow-sm)}
+/* Skicka-knapp (personal-mejl): grön → tydligt skild från neutrala "Kopiera text". */
+.vz-course .vz-btn--send{background:#1f7a53}
+.vz-course .vz-btn--send:hover{background:#19663f}
+.vz-course .vz-btn--send:disabled{opacity:.55;cursor:default}
 .vz-course .vz-input,.vz-course .vz-textarea{
   display:block;width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;
   padding:9px 11px;border:1px solid #cfe0e2;border-radius:8px;color:var(--ink);background:#fff;

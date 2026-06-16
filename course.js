@@ -174,6 +174,7 @@ var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Ski
 var STAFF_COUNT = 0;       // total personal (gruppledare + assistenter + kockar), satt av renderStaffPanel
 var KOCK_NAME = '';        // kockens förnamn (för hälsning "Hej Arpan,")
 var COURSE_GL_NAMES = [];  // kursens gruppledar/VP-namn → matcha mot "Matallergier Gruppledare/VP"-listan
+var COURSE_LEADERS = [];   // kursens gruppledar-personer {name, role} → cc kursledare/bitr i gruppledar-mejl
 var MALIN_PRESENT = false; // Malin var med på kursveckan = finns som "Vitaliseraperson på plats" i gruppledar-listan
 // Samma kurs = samma listnamn ELLER samma startdatum (datum-namngivna listor).
 function sameCourse(a, b) {
@@ -247,6 +248,7 @@ function renderStaffPanel(groups, courseName) {
   var glGroup = (groups || []).filter(function (g) { return g.cfg.key === 'gruppledare'; })[0];
   var glPeople = (glGroup && glGroup.people) || [];
   COURSE_GL_NAMES = glPeople.map(function (p) { return p.name; }).filter(Boolean);
+  COURSE_LEADERS = glPeople.slice();   // {name, role} → cc kursledare/bitr vid gruppledar-mejl
   // Malin var med på kursveckan = hon finns som "Vitaliseraperson på plats" i gruppledar-listan (Robert).
   MALIN_PRESENT = glPeople.some(function (p) { return p.role === 'Vitaliseraperson på plats' && /malin/i.test(p.name || ''); });
   var host = vzRegion('aside');
@@ -736,7 +738,7 @@ function swedishList(arr) {
 }
 // Redigerbar mejl-ruta (rubrik + auto-växande textarea). pkey = pluginData-nyckel → Malins
 // redigeringar persisteras board-shared (överlever stäng/öppna), som övriga textfält.
-function mailBox(label, value, pkey) {
+function mailBox(label, value, pkey, sendCfg) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-mailbox';
   var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
@@ -750,7 +752,18 @@ function mailBox(label, value, pkey) {
       else { ta.select(); document.execCommand('copy'); note.textContent = '✓ Kopierat'; }
     } catch (e) { note.textContent = '⚠️ Kunde ej kopiera — markera och kopiera manuellt.'; }
   });
-  row.appendChild(btn); row.appendChild(note);
+  row.appendChild(btn);
+  // Valfri Skicka-knapp (personal-mejl via GAS, fail-closed + bekräfta-dialog). build får aktuell ta.value.
+  if (sendCfg) {
+    var sendBtn = document.createElement('button'); sendBtn.className = 'vz-btn vz-btn--send';
+    sendBtn.textContent = sendCfg.btnLabel || 'Skicka'; sendBtn.style.marginLeft = '6px';
+    sendBtn.addEventListener('click', function () {
+      runSendGroupLeaderMail({ kind: sendCfg.kind, btn: sendBtn, note: note,
+        build: function (contacts) { return sendCfg.build(contacts, ta.value); } });
+    });
+    row.appendChild(sendBtn);
+  }
+  row.appendChild(note);
   wrap.appendChild(lbl); wrap.appendChild(ta); wrap.appendChild(row);
   function fit() { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
   ta.addEventListener('input', function () { fit(); if (pkey) { persistText(pkey, ta.value); } });
@@ -794,6 +807,129 @@ function uppfoljningText(assignLines) {
     + 'Kram och ha en fin helg!';
 }
 
+/* ---------- Gruppledar-mejl: SKICKA (Inc2) ----------
+ * Personal-mejl (gruppledare/kursledare), brandat, via GAS. INGEN deltagar-kommunikation den här vägen.
+ * INGEN auto-send: bara Malins knapptryck + bekräfta-dialog. FAIL-CLOSED: skarpt BARA om
+ * vz_settings.testMode === false (explicit); allt annat → redirect till testRedirectEmail.
+ */
+// Mottagar-adresserna: "Kontaktuppgifter Gruppledare"-listan på Gruppledare-boarden (kort: namn=person,
+// desc="**Epost:** x"). Samma board-/mejl-mönster som fetchGroupLeaderAllergies/extractStaffEmail. Fail-soft.
+function fetchGroupLeaderContacts() {
+  return t.getRestApi().getToken().then(function (token) {
+    if (!token) { return []; }
+    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+      var b = (boards || []).filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
+      if (!b) { return []; }
+      return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
+        var lst = (lists || []).filter(function (l) { return /kontaktuppgifter.*(gruppled|ledare)/i.test(l.name || ''); })[0];
+        if (!lst) { return []; }
+        return restGet(token, 'lists/' + lst.id + '/cards?fields=name,desc').then(function (cs) {
+          return (cs || []).map(function (c) {
+            return { name: cleanStaffName(c.name), email: extractStaffEmail(c.desc) };
+          }).filter(function (x) { return x.name && x.email; });
+        });
+      });
+    });
+  }).catch(function () { return []; });
+}
+// Slå upp en persons mejl ur kontaktlistan (fuzzy, samma namn-match som allergierna). '' om ingen träff.
+function glContactEmail(name, contacts) {
+  var hit = (contacts || []).filter(function (c) { return glNameMatch(name, c.name); })[0];
+  return hit ? hit.email : '';
+}
+// Kursledare + biträdande kursledares mejl (cc på enskilda läs-mejl). Ur COURSE_LEADERS-rollerna + kontakter.
+function leaderCcEmails(contacts) {
+  return (COURSE_LEADERS || [])
+    .filter(function (p) { return /kursledare/i.test(p.role || ''); })   // "Kursledare" + "Biträdande kursledare"
+    .map(function (p) { return glContactEmail(p.name, contacts); })
+    .filter(Boolean);
+}
+// Per-gruppledare deltagare + livsberättelse-länk (ur urvalskartan + storyLinks). Ren funktion.
+function leaderParticipantLinks(sel, participants, leaderName, storyLinks) {
+  sel = sel || {}; storyLinks = storyLinks || {};
+  return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
+    .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '' }; });
+}
+// Fritext (Malins ruta) → inre HTML: escape + radbrytningar. Ren funktion.
+function plainToHtml(text) {
+  return esc(String(text == null ? '' : text)).replace(/\n/g, '<br>');
+}
+// Enskild-mall → inre HTML per gruppledare: {GRUPPLEDARE}=förnamn, {DELTAGARE}=namn (länkade om länk finns).
+// Mallen escapas (platshållarna saknar specialtecken → överlever), platshållare ersätts med säker HTML.
+function enskildBodyHtml(template, leaderName, items) {
+  var namesHtml = (items || []).map(function (it) {
+    var n = esc(it.name);
+    // Länka BARA http(s)-URL:er (defense-in-depth mot javascript:/data:-scheman, utöver att
+    // storyLinks redan är domän-begränsade vid källan via STORY_LINK_RES).
+    return (it.link && /^https?:\/\//i.test(it.link)) ? '<a href="' + esc(it.link) + '">' + n + '</a>' : n;
+  }).join('<br>');
+  return esc(String(template == null ? '' : template))
+    .replace(/\{GRUPPLEDARE\}/g, esc(firstNameOf(leaderName)))
+    .replace(/\{DELTAGARE\}/g, namesHtml)
+    .replace(/\n/g, '<br>');
+}
+// Enskild-mall → plaintext per gruppledare: namn + ev. länk på egen rad.
+function enskildBodyText(template, leaderName, items) {
+  var namesTxt = (items || []).map(function (it) { return it.link ? (it.name + ' — ' + it.link) : it.name; }).join('\n');
+  return String(template == null ? '' : template)
+    .replace(/\{GRUPPLEDARE\}/g, firstNameOf(leaderName))
+    .replace(/\{DELTAGARE\}/g, namesTxt);
+}
+// FAIL-CLOSED läges-resolvering: skarpt (live) ENBART om testMode === false (explicit). {} / undefined /
+// trasig läsning → testläge (redirect). Ren funktion. @return {{live, redirect}}
+function resolveSendMode(settings) {
+  settings = settings || {};
+  return { live: settings.testMode === false, redirect: String(settings.testRedirectEmail || '').trim() };
+}
+function getCourseSettings() { return t.get('board', 'shared', 'vz_settings').then(function (s) { return s || {}; }).catch(function () { return {}; }); }
+// Räknar faktiska mottagare (to kan vara komma-separerad för "till alla"). Ren funktion.
+function countRecipients(emails) {
+  return (emails || []).reduce(function (n, e) { return n + String(e.to || '').split(',').filter(function (x) { return x.trim(); }).length; }, 0);
+}
+// Orkestrering: hämta kontakter + settings → bygg emails → bekräfta-dialog → GAS-send. FAIL-CLOSED.
+// opts: { kind, btn, note, build(contacts) -> {emails, missing} }
+function runSendGroupLeaderMail(opts) {
+  var note = opts.note, btn = opts.btn;
+  btn.disabled = true; note.textContent = '⏳ Förbereder…';
+  Promise.all([fetchGroupLeaderContacts(), getCourseSettings()]).then(function (r) {
+    var contacts = r[0] || [], mode = resolveSendMode(r[1]);
+    var built = opts.build(contacts) || { emails: [], missing: [] };
+    var emails = (built.emails || []).filter(function (e) { return e && e.to; });
+    var missing = built.missing || [];
+    if (!emails.length) {
+      note.textContent = '⚠️ Inga mottagar-adresser' + (missing.length ? ' (saknas: ' + missing.join(', ') + ')' : '') + '. Fyll i "Kontaktuppgifter Gruppledare".';
+      btn.disabled = false; return;
+    }
+    if (!mode.live && !mode.redirect) {
+      note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare i Inställningar (kugghjul) först.';
+      btn.disabled = false; return;
+    }
+    var recN = countRecipients(emails);
+    var dest = mode.live ? (recN + (recN === 1 ? ' mottagare' : ' mottagare')) : ('test-mottagaren ' + mode.redirect);
+    var msg = (mode.live ? '⚠️ SKARPT: ' : 'Testläge: ') + 'skickar ' + emails.length + ' utskick till ' + dest + '.'
+      + (missing.length ? ' Saknad adress (hoppas över): ' + missing.join(', ') + '.' : '')
+      + (mode.live ? ' Detta går till riktiga personer. Fortsätt?' : ' Inget når riktiga gruppledare. Fortsätt?');
+    t.popup({
+      type: 'confirm', title: (mode.live ? 'Skicka skarpt' : 'Skicka (testläge)'),
+      message: msg, confirmText: (mode.live ? 'Skicka skarpt' : 'Skicka test'), confirmStyle: (mode.live ? 'danger' : 'primary'),
+      onConfirm: function (tt) {
+        return tt.closePopup().then(function () {
+          note.textContent = '⏳ Skickar…';
+          return postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails });
+        }).then(function (res) {
+          if (res && res.ok) {
+            var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
+            var failN = (res.sent || []).length - okN;
+            note.textContent = '✓ ' + okN + ' skickat' + (failN ? ', ⚠️ ' + failN + ' misslyckades' : '') + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
+          } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel'); }
+          btn.disabled = false;
+        }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
+      },
+      onCancel: function (tt) { note.textContent = ''; btn.disabled = false; return tt.closePopup(); },
+    });
+  }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
+}
+
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
   opts = opts || {}; sel = sel || {};
   var storyLinks = opts.storyLinks || {};
@@ -808,6 +944,30 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     host.appendChild(sec); return;
   }
   function cellKey(pk, ld) { return pk + '||' + ld; }
+  // ── Skicka-cfg per mejl-ruta (personal-mejl via GAS). build(contacts, taVal) → {emails, missing}. ──
+  function leaderEmailsFor(contacts) {
+    var asg = buildLeaderAssignments(sel, participants, leaders), tos = [], missing = [];
+    asg.forEach(function (a) { var em = glContactEmail(a.leaderName, contacts); if (em) { tos.push(em); } else { missing.push(a.leaderName); } });
+    return { tos: tos, missing: missing };
+  }
+  var cfgAlla = { kind: 'livsberattelse', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
+    var r = leaderEmailsFor(contacts);
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Livsberättelser inför kursen', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
+  } };
+  var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', build: function (contacts, taVal) {
+    var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
+    asg.forEach(function (a) {
+      var em = glContactEmail(a.leaderName, contacts);
+      if (!em) { missing.push(a.leaderName); return; }
+      var items = leaderParticipantLinks(sel, participants, a.leaderName, storyLinks);
+      emails.push({ to: em, cc: cc, subject: 'Livsberättelser att läsa', bodyHtml: enskildBodyHtml(taVal, a.leaderName, items), bodyText: enskildBodyText(taVal, a.leaderName, items) });
+    });
+    return { emails: emails, missing: missing };
+  } };
+  var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
+    var r = leaderEmailsFor(contacts);
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
+  } };
   function paint() {
     var ths = leaders.map(function (l) { return '<th class="vz-story-leader"><span class="vz-story-leader-label">' + esc(l) + '</span></th>'; }).join('');
     var trs = participants.map(function (p) {
@@ -847,7 +1007,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         var MALL_LBL = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
         if (opts.kind === 'uppfoljning') {
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU'));
+          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU', cfgUppf));
           mailBtn.disabled = false;
           return;
         }
@@ -856,12 +1016,12 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
           var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K), key + '_mailA'));
-          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB'));
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, c.M, c.K), key + '_mailA', cfgAlla));
+          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB', cfgEnskild));
         }).catch(function () {
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null), key + '_mailA'));
-          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB'));
+          mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(assignLines, participants.length, null, null), key + '_mailA', cfgAlla));
+          mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(), key + '_mailB', cfgEnskild));
         }).then(function () { mailBtn.disabled = false; });
       });
     }
@@ -870,7 +1030,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var MALL_LBL2 = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
       if (opts.kind === 'uppfoljning') {
         t.get('board', 'shared', key + '_mailU').then(function (v) {
-          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU')); }
+          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU', cfgUppf)); }
         }).catch(function () {});
       } else {
         Promise.all([
@@ -878,8 +1038,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           t.get('board', 'shared', key + '_mailB').catch(function () { return null; }),
         ]).then(function (r) {
           if ((r[0] || r[1]) && !mailOut.children.length) {
-            mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', String(r[0] || ''), key + '_mailA'));
-            mailOut.appendChild(mailBox(MALL_LBL2, String(r[1] || ''), key + '_mailB'));
+            mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', String(r[0] || ''), key + '_mailA', cfgAlla));
+            mailOut.appendChild(mailBox(MALL_LBL2, String(r[1] || ''), key + '_mailB', cfgEnskild));
           }
         }).catch(function () {});
       }
