@@ -785,8 +785,10 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
       docBtn.disabled = true; note.textContent = '⏳ Skapar dokument…';
       postToGas('createSummaryDoc', { dryRun: false, courseName: docCfg.courseName, groups: docCfg.getGroups ? docCfg.getGroups() : [] }).then(function (res) {
         if (res && res.ok && res.url) {
-          if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, res.url); }
-          else { ta.value = ta.value + '\n\n' + res.url; }
+          // Etiketterad markdown-länk → blir en snygg <a> i mejlet (plainToHtml), inte en rå URL.
+          var mdLink = '[länk till sammanfattningsdokumentet](' + res.url + ')';
+          if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, mdLink); }
+          else { ta.value = ta.value + '\n\n' + mdLink; }
           if (pkey) { persistText(pkey, ta.value); }
           fit();
           note.textContent = res.existed ? '✓ Länk infogad (dokumentet fanns redan)' : '✓ Dokument skapat + länk infogad';
@@ -899,9 +901,19 @@ function leaderParticipantLinks(sel, participants, leaderName, storyLinks) {
   return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
     .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '' }; });
 }
-// Fritext (Malins ruta) → inre HTML: escape + radbrytningar. Ren funktion.
+// Fritext (Malins ruta) → inre HTML: escape, gör markdown-länkar [text](url) + bara-URL:er klickbara, radbrytningar.
+// Ren funktion. (esc körs FÖRST → []() överlever; url:en escapas men &amp; m.m. är giltigt i href.)
 function plainToHtml(text) {
-  return esc(String(text == null ? '' : text)).replace(/\n/g, '<br>');
+  var s = esc(String(text == null ? '' : text));
+  // [etikett](https://url) → <a href="url">etikett</a>  (snygg länk, som enskild-mejlets deltagarlänkar)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label, url) { return '<a href="' + url + '">' + label + '</a>'; });
+  // bara-URL (ej redan i en href) → klickbar
+  s = s.replace(/(^|[\s>])(https?:\/\/[^\s<]+)/g, function (m, pre, url) { return pre + '<a href="' + url + '">' + url + '</a>'; });
+  return s.replace(/\n/g, '<br>');
+}
+// Markdown-länk → läsbar plaintext "etikett: url" (för plaintext-fallbacken). Ren funktion.
+function mdToPlain(text) {
+  return String(text == null ? '' : text).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1: $2');
 }
 // Enskild-mall → inre HTML per gruppledare: {GRUPPLEDARE}=förnamn, {DELTAGARE}=namn (länkade om länk finns).
 // Mallen escapas (platshållarna saknar specialtecken → överlever), platshållare ersätts med säker HTML.
@@ -1026,7 +1038,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   }
   var cfgAlla = { kind: 'livsberattelse', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
     var r = leaderEmailsFor(contacts);
-    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Livsberättelser inför kursen', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Livsberättelser inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
@@ -1040,7 +1052,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   } };
   var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
     var r = leaderEmailsFor(contacts);
-    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   // Inc3: "Skapa sammanfattningsdokument"-knapp bara på uppföljnings-rutan (fyller {SAMMANFATTNINGSLÄNK}).
   // getGroups() ger gruppledare→deltagare ur matrisen (förnamn, som doket) → GAS bygger tabellerna.
