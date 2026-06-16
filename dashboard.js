@@ -246,8 +246,9 @@ function restGet(token, path) {
   return fetch('https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token))
     .then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
-// Metadata-brus att gömma (faktura/betalning) → fram med mänskliga noteringar.
-var META_RE = /faktura|betal[dt]|\bfakt\b|\d{3,}\s*kr|\bkr\b/i;
+// Metadata-brus att gömma → fram med mänskliga noteringar. Inkluderar bot-postade länk-kommentarer
+// ("Länk till mappen/Hälsoformuläret/Livsberättelsen/Nulägesbeskrivningen") som EJ är mänskliga (#12, Robert 2026-06-16).
+var META_RE = /faktura|betal[dt]|\bfakt\b|\d{3,}\s*kr|\bkr\b|l[äa]nk till (mappen|h[äa]lsoformul|livsber|nul[äa]gesbeskriv)/i;
 function loadComments(cardId) {
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }

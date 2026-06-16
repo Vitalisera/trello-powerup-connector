@@ -739,6 +739,13 @@ function buildLeaderAssignments(sel, participants, leaders) {
 }
 
 /* ---------- Gruppledar-mejl: textgenerering (Malins mallar) ---------- */
+// #13: deltagare som INTE tilldelats någon gruppledare i matrisen (glömd bock). Ren funktion → testbar.
+function unassignedParticipants(sel, participants, leaders) {
+  sel = sel || {}; leaders = leaders || [];
+  return (participants || []).filter(function (p) {
+    return !leaders.some(function (l) { return sel[p.key + '||' + l]; });
+  }).map(function (p) { return p.name; });
+}
 function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
 // "A" / "A och B" / "A, B och C"
 function swedishList(arr) {
@@ -774,14 +781,17 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
   var ta = document.createElement('textarea'); ta.className = 'vz-textarea'; ta.value = value;
   var row = document.createElement('div'); row.className = 'vz-mailbox-actions';
-  var btn = document.createElement('button'); btn.className = 'vz-btn'; btn.textContent = 'Kopiera text';
   var note = document.createElement('span'); note.className = 'vz-stub-note';
-  btn.addEventListener('click', function () {
-    copyTextToClipboard(ta.value).then(function (okCopy) {
-      note.textContent = okCopy ? '✓ Kopierat' : '⚠️ Kunde ej kopiera — markera texten i rutan och tryck Cmd+C.';
+  // "Kopiera text" är meningslös på en MALL med platshållare (enskild-rutorna) → dölj där (#20).
+  if (!(sendCfg && sendCfg.hideCopy)) {
+    var btn = document.createElement('button'); btn.className = 'vz-btn'; btn.textContent = 'Kopiera text';
+    btn.addEventListener('click', function () {
+      copyTextToClipboard(ta.value).then(function (okCopy) {
+        note.textContent = okCopy ? '✓ Kopierat' : '⚠️ Kunde ej kopiera — markera texten i rutan och tryck Cmd+C.';
+      });
     });
-  });
-  row.appendChild(btn);
+    row.appendChild(btn);
+  }
   // Valfri Skicka-knapp (personal-mejl via GAS, fail-closed + bekräfta-dialog). build får aktuell ta.value.
   if (sendCfg) {
     var sendBtn = document.createElement('button'); sendBtn.className = 'vz-btn vz-btn--send';
@@ -1087,7 +1097,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     var r = leaderEmailsFor(contacts);
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Livsberättelser inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
-  var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', build: function (contacts, taVal) {
+  var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
     asg.forEach(function (a) {
       var em = glContactEmail(a.leaderName, contacts);
@@ -1102,7 +1112,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   // #10: uppföljning enskilt kontaktmejl per gruppledare (kontaktuppgifter + sammanfattningslänk).
-  var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Skicka enskilt', build: function (contacts, taVal) {
+  var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
     asg.forEach(function (a) {
       var em = glContactEmail(a.leaderName, contacts);
@@ -1140,18 +1150,27 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       + '<div class="vz-stub-row">'
       + '<button class="vz-btn" id="vz-mail-btn">Skapa mejltext</button>'
       + '<span class="vz-stub-note">genererar redigerbar text — du granskar och skickar själv</span></div>'
+      + '<div id="vz-mail-warn" class="vz-panel-note" style="color:#b5710b"></div>'
       + '<div id="vz-mail-out"></div>';
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
     var mailBtn = sec.querySelector('#vz-mail-btn');
     var mailOut = sec.querySelector('#vz-mail-out');
+    var mailWarn = sec.querySelector('#vz-mail-warn');
     if (mailBtn) {
       mailBtn.addEventListener('click', function () {
         var assignments = buildLeaderAssignments(sel, participants, leaders);
         if (!assignments.length) {
           mailOut.innerHTML = '<div class="vz-panel-note">Bocka minst en deltagare per gruppledare först.</div>';
           return;
+        }
+        // #13: varna (icke-blockerande) för deltagare som inte tilldelats någon gruppledare (glömd bock).
+        if (mailWarn) {
+          var oassigned = unassignedParticipants(sel, participants, leaders);
+          mailWarn.textContent = oassigned.length
+            ? '⚠️ ' + oassigned.length + ' deltagare saknar gruppledare och är INTE med: ' + oassigned.join(', ') + '. Bocka dem om de ska ingå.'
+            : '';
         }
         mailBtn.disabled = true;
         mailOut.innerHTML = '<div class="vz-panel-note">⏳ Skapar mejltext…</div>';
