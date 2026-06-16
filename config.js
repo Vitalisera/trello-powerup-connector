@@ -24,6 +24,9 @@ window.NYA_ZAPIER_CONFIG = {
   // ABSOLUT URL (ej relativ): board-/kort-knapparnas ikon renderas av Trello i trello.com-kontext →
   // en relativ './icons/...' 404:ar där (trasig bild). Absolut funkar både i Trello-chrome och i modalerna.
   MARK_URL: 'https://vitalisera.github.io/trello-powerup-connector/icons/vitalisera-mark.png',
+  // VIT emblem-version — för board-knappens `light`-slot (Trello visar den på MÖRK bakgrund, t.ex. en
+  // färgad board-header). Mörka marken var osynlig mot magenta-headern (Robert 2026-06-16).
+  MARK_WHITE_URL: 'https://vitalisera.github.io/trello-powerup-connector/icons/vitalisera-mark-white.png',
 
   // ⚠️ FYLL I: Trello API-nyckel för REST-klienten (t.getRestApi).
   //   Genereras i https://trello.com/power-ups/admin → din Power-Up → fliken

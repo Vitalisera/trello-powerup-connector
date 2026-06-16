@@ -173,6 +173,7 @@ var ASSIST_LIST_ID = null; // assistent-listans id, satt av renderStaffPanel →
 var KOCK_LIST_ID = null;   // kock-listans id, satt av renderStaffPanel → "Skicka till kock" (kockens mejl)
 var STAFF_COUNT = 0;       // total personal (gruppledare + assistenter + kockar), satt av renderStaffPanel
 var KOCK_NAME = '';        // kockens förnamn (för hälsning "Hej Arpan,")
+var COURSE_KOCK_NAMES = []; // kursens kock-namn → matcha mot "Kontaktuppgifter kockar" för e-post
 var COURSE_GL_NAMES = [];  // kursens gruppledar/VP-namn → matcha mot "Matallergier Gruppledare/VP"-listan
 var COURSE_LEADERS = [];   // kursens gruppledar-personer {name, role} → cc kursledare/bitr i gruppledar-mejl
 var MALIN_PRESENT = false; // Malin var med på kursveckan = finns som "Vitaliseraperson på plats" i gruppledar-listan
@@ -245,6 +246,7 @@ function renderStaffPanel(groups, courseName) {
   var kockGroup = (groups || []).filter(function (g) { return g.cfg.key === 'kockar'; })[0];
   KOCK_NAME = (kockGroup && kockGroup.people && kockGroup.people[0])
     ? ((kockGroup.people[0].name || '').trim().split(/\s+/)[0] || '') : '';
+  COURSE_KOCK_NAMES = ((kockGroup && kockGroup.people) || []).map(function (p) { return p.name; }).filter(Boolean);
   var glGroup = (groups || []).filter(function (g) { return g.cfg.key === 'gruppledare'; })[0];
   var glPeople = (glGroup && glGroup.people) || [];
   COURSE_GL_NAMES = glPeople.map(function (p) { return p.name; }).filter(Boolean);
@@ -601,12 +603,19 @@ function renderHfPanel(rows, courseName) {
         return;
       }
       runSendMail({
-        kind: 'kock', btn: kockBtn, note: kockOut, emptyHint: '. Ingen e-post hittades i kockkortet.',
+        kind: 'kock', btn: kockBtn, note: kockOut, emptyHint: '. Fyll i "Kontaktuppgifter kockar".',
         prepare: function () {
-          return fetchKockEmail().then(function (email) {
+          return fetchKockContacts().then(function (contacts) {
+            var names = COURSE_KOCK_NAMES.length ? COURSE_KOCK_NAMES : (KOCK_NAME ? [KOCK_NAME] : []);
+            var tos = [], missing = [], seen = {};
+            names.forEach(function (n) {
+              var em = glContactEmail(n, contacts);
+              if (em) { var k = em.toLowerCase(); if (!seen[k]) { seen[k] = true; tos.push(em); } }
+              else { missing.push(n); }
+            });
             return {
-              emails: email ? [{ to: email, subject: 'Matallergier – ' + (courseName || 'kursen'), bodyHtml: plainToHtml(text), bodyText: text }] : [],
-              missing: email ? [] : ['kockens e-post'],
+              emails: tos.length ? [{ to: tos.join(','), subject: 'Matallergier – ' + (courseName || 'kursen'), bodyHtml: plainToHtml(text), bodyText: text }] : [],
+              missing: missing,
             };
           });
         },
@@ -691,7 +700,7 @@ function loadStoryMatrix(courseName, participants, cards) {
       note: 'Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.',
     });
     renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
-      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning',
+      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName,
       note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
     });
   }).catch(function () {});
@@ -743,7 +752,7 @@ function copyTextToClipboard(text) {
   if (navigator.clipboard) { return navigator.clipboard.writeText(String(text == null ? '' : text)).then(function () { return true; }).catch(function () { return false; }); }
   return Promise.resolve(false);
 }
-function mailBox(label, value, pkey, sendCfg) {
+function mailBox(label, value, pkey, sendCfg, docCfg) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-mailbox';
   var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
@@ -766,6 +775,29 @@ function mailBox(label, value, pkey, sendCfg) {
         prepare: function () { return fetchGroupLeaderContacts().then(function (contacts) { return sendCfg.build(contacts, ta.value); }); } });
     });
     row.appendChild(sendBtn);
+  }
+  // Valfri "Skapa sammanfattningsdokument"-knapp (Inc3): GAS kopierar mallen till kursmappen + delar,
+  // returnerar länken som ersätter {SAMMANFATTNINGSLÄNK} i rutan. Idempotent (server-sidan).
+  if (docCfg) {
+    var docBtn = document.createElement('button'); docBtn.className = 'vz-btn'; docBtn.textContent = 'Skapa sammanfattningsdok';
+    docBtn.style.marginLeft = '6px';
+    docBtn.addEventListener('click', function () {
+      docBtn.disabled = true; note.textContent = '⏳ Skapar dokument…';
+      postToGas('createSummaryDoc', { dryRun: false, courseName: docCfg.courseName }).then(function (res) {
+        if (res && res.ok && res.url) {
+          if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, res.url); }
+          else { ta.value = ta.value + '\n\n' + res.url; }
+          if (pkey) { persistText(pkey, ta.value); }
+          fit();
+          note.textContent = res.existed ? '✓ Länk infogad (dokumentet fanns redan)' : '✓ Dokument skapat + länk infogad';
+        } else {
+          var err = res && res.error;
+          note.textContent = '⚠️ ' + (err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + docCfg.courseName + '" (parent-mappen).' : (err || 'kunde ej skapa dokument'));
+        }
+        docBtn.disabled = false;
+      }).catch(function (e) { note.textContent = '⚠️ ' + e.message; docBtn.disabled = false; });
+    });
+    row.appendChild(docBtn);
   }
   row.appendChild(note);
   wrap.appendChild(lbl); wrap.appendChild(ta); wrap.appendChild(row);
@@ -836,17 +868,24 @@ function fetchGroupLeaderContacts() {
     });
   }).catch(function () { return []; });
 }
-// Kockens e-post ur kock-listans kort (desc "**Epost:** x"). '' om ingen/ingen token. Fail-soft.
-function fetchKockEmail() {
-  if (!KOCK_LIST_ID) { return Promise.resolve(''); }
+// Kock-kontakter ur listan "Kontaktuppgifter kockar" på Kockar-boarden (kort: namn=person, desc="**Epost:** x").
+// Samma mönster som fetchGroupLeaderContacts (kockarna har en EGEN kontaktlista, Robert 2026-06-16). Fail-soft.
+function fetchKockContacts() {
   return t.getRestApi().getToken().then(function (token) {
-    if (!token) { return ''; }
-    return restGet(token, 'lists/' + KOCK_LIST_ID + '/cards?fields=name,desc').then(function (cards) {
-      var e = '';
-      (cards || []).some(function (c) { var x = extractStaffEmail(c.desc); if (x) { e = x; return true; } return false; });
-      return e;
+    if (!token) { return []; }
+    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+      var b = (boards || []).filter(function (bd) { return /kock/i.test(bd.name || ''); })[0];
+      if (!b) { return []; }
+      return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
+        var lst = (lists || []).filter(function (l) { return /kontaktuppgifter.*kock/i.test(l.name || ''); })[0];
+        if (!lst) { return []; }
+        return restGet(token, 'lists/' + lst.id + '/cards?fields=name,desc').then(function (cs) {
+          return (cs || []).map(function (c) { return { name: cleanStaffName(c.name), email: extractStaffEmail(c.desc) }; })
+            .filter(function (x) { return x.name && x.email; });
+        });
+      });
     });
-  }).catch(function () { return ''; });
+  }).catch(function () { return []; });
 }
 // Slå upp en persons mejl ur kontaktlistan (fuzzy, samma namn-match som allergierna). '' om ingen träff.
 function glContactEmail(name, contacts) {
@@ -1008,6 +1047,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     var r = leaderEmailsFor(contacts);
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: taVal }] : [], missing: r.missing };
   } };
+  // Inc3: "Skapa sammanfattningsdokument"-knapp bara på uppföljnings-rutan (fyller {SAMMANFATTNINGSLÄNK}).
+  var docCfgUppf = (opts.kind === 'uppfoljning' && opts.courseName) ? { courseName: opts.courseName } : null;
   function paint() {
     var ths = leaders.map(function (l) { return '<th class="vz-story-leader"><span class="vz-story-leader-label">' + esc(l) + '</span></th>'; }).join('');
     var trs = participants.map(function (p) {
@@ -1047,7 +1088,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         var MALL_LBL = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
         if (opts.kind === 'uppfoljning') {
           mailOut.innerHTML = '';
-          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU', cfgUppf));
+          mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(assignLines), key + '_mailU', cfgUppf, docCfgUppf));
           mailBtn.disabled = false;
           return;
         }
@@ -1070,7 +1111,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var MALL_LBL2 = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
       if (opts.kind === 'uppfoljning') {
         t.get('board', 'shared', key + '_mailU').then(function (v) {
-          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU', cfgUppf)); }
+          if (v && !mailOut.children.length) { mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(v), key + '_mailU', cfgUppf, docCfgUppf)); }
         }).catch(function () {});
       } else {
         Promise.all([
