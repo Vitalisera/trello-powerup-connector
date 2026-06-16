@@ -273,7 +273,9 @@
   transition:transform .25s cubic-bezier(.22,1,.36,1);
 }
 .vz-cv-phasehead.is-collapsed .ph-line .vz-cv-chev{transform:rotate(-90deg)}
-.vz-cv-phasehead .ph-name{white-space:nowrap}
+/* fas-titeln får wrappa (min-width:0 så flex-itemet kan krympa) → en smal 3-stegs-fas tvingas EJ
+   bredare av sin långa rubrik; höjden finns redan tack vare de höga stegcellerna (Robert 2026-06-16) */
+.vz-cv-phasehead .ph-name{white-space:normal;min-width:0;line-height:1.25}
 .vz-cv-phasehead .ph-count{
   font-size:10px;font-weight:800;letter-spacing:.04em;
   background:var(--lightmint);color:var(--dark);
