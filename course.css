@@ -311,6 +311,10 @@
 }
 .vz-cv-collapsed-cell .cc-dash{color:#9bbcc6;font-size:14px;font-weight:700}
 
+/* #17b: "Alla emailadresser"-rad som sista rad i deltagartabellen (tfoot) */
+.vz-cv-emailfoot td{padding:12px 16px;background:#fff;border-top:1.5px solid var(--hairline-strong)}
+.vz-cv-emailrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
 /* delningslinje mellan faserna i hela kolumn-höjden */
 .vz-cv-table td.phase-edge,
 .vz-cv-table th.phase-edge{border-left:1px dashed var(--hairline-strong)}

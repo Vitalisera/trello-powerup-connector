@@ -357,24 +357,28 @@ function renderStaffPanel(groups, courseName) {
   }
 }
 
-// #17b: "Alla emailadresser" för DELTAGARNA (som assistent-knappen, men deltagar-mejlen finns
-// redan i de inlästa kortens desc → parseContactFromDesc; ingen extra REST behövs). Read-only,
-// kopierbar ruta, persist board-shared. Placering: below-regionen, under matrisen (Roberts val).
+// #17b: "Alla emailadresser" för DELTAGARNA som SISTA RAD i deltagartabellen (Robert 2026-06-16 —
+// en below-panel knuffade om disposition; en tfoot-rad ligger i tabellen och överlever sortering/sök
+// (paintBody rör bara tbody)). Deltagar-mejlen finns i kortens desc → parseContactFromDesc; ingen extra REST.
 function renderParticipantEmails(cards, courseName) {
-  var host = vzRegion('below');
-  if (!host) { return; }
+  var table = document.querySelector('.vz-cv-table[data-cv-table]') || document.querySelector('.vz-cv-table');
+  if (!table) { return; }
   var emailsKey = 'vz_pemails_' + courseSlug(courseName);
-  var sec = document.createElement('section');
-  sec.className = 'vz-panel vz-panel--below';
-  sec.innerHTML = '<div class="vz-panel-title">Deltagare</div>'
-    + '<div class="vz-stub-row">'
+  var old = table.querySelector('tfoot.vz-cv-emailfoot');   // idempotent
+  if (old) { old.parentNode.removeChild(old); }
+  var tfoot = document.createElement('tfoot');
+  tfoot.className = 'vz-cv-emailfoot';
+  tfoot.innerHTML = '<tr><td colspan="99">'
+    + '<div class="vz-cv-emailrow">'
     + '<button class="vz-btn" id="vz-part-emails">Alla emailadresser</button>'
-    + '<span class="vz-stub-note">ur kortens kontaktuppgifter (read-only)</span></div>'
-    + '<textarea id="vz-part-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>';
-  host.appendChild(sec);
+    + '<span class="vz-stub-note">deltagarnas mejl ur korten (read-only)</span>'
+    + '</div>'
+    + '<textarea id="vz-part-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>'
+    + '</td></tr>';
+  table.appendChild(tfoot);
 
-  var btn = sec.querySelector('#vz-part-emails');
-  var out = sec.querySelector('#vz-part-emails-out');
+  var btn = tfoot.querySelector('#vz-part-emails');
+  var out = tfoot.querySelector('#vz-part-emails-out');
   if (!btn || !out) { return; }
   t.get('board', 'shared', emailsKey).then(function (saved) {
     if (saved && !out.value) { out.style.display = ''; out.value = String(saved); }
