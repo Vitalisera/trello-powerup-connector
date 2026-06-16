@@ -192,7 +192,9 @@
       // när den faktiskt körts (klar), annars markeras att den väntar.
       chips += '<span class="vz-chip-mini lbl' + (step.status === 'done' ? ' on' : '') + '">Auto ' + (step.status === 'done' ? '✓' : '·') + '</span>';
     } else {
-      chips += '<span class="vz-chip-mini">Återstår</span>';
+      // inget label/automation = manuellt bock-steg. Visa "Manuellt" även när det är klart
+      // (tidigare "Återstår" var motsägelsefullt bredvid "Bock ✓" på en bockad rad).
+      chips += '<span class="vz-chip-mini">Manuellt</span>';
     }
     if (step.checklistDone) chips += '<span class="vz-chip-mini chk on">Bock ✓</span>';
     else if (step.status === 'gap') chips += '<span class="vz-chip-mini chk off">Bock ⚠</span>';
