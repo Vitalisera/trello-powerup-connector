@@ -8,6 +8,7 @@
  *
  * Fält (MVP):
  *   - doctorEmail        : läkarens e-post (HF-mappen delas hit; fast adress, B1)
+ *   - adminEmail         : cc på skarpa utskick (gruppledar-mejl) → admin får kopia
  *   - testMode           : test-läge på/av (fail-closed grind för skarpa mutationer/utskick)
  *   - testRedirectEmail  : i test-läge går utskick/delning HIT istället för skarp mottagare
  *
@@ -42,6 +43,12 @@ function render(s) {
     + '</div>'
 
     + '<div class="vz-field">'
+    + '<label for="vz-admin">Admin-e-post (cc)</label>'
+    + '<p class="hint">Läggs som cc på skarpa utskick (t.ex. gruppledar-mejl) så admin får en kopia. Lämna tom för ingen cc. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>'
+    + '<input type="email" id="vz-admin" placeholder="admin@vitalisera.se" value="' + esc(s.adminEmail || '') + '">'
+    + '</div>'
+
+    + '<div class="vz-field">'
     + '<label>Test-läge</label>'
     + '<p class="hint">När test-läge är på går skarpa utskick och mapp-delningar till test-mottagaren nedan i stället för riktig mottagare. Säkerhetsspärr vid provkörning.</p>'
     + '<div class="vz-row"><input type="checkbox" id="vz-testmode"' + (s.testMode ? ' checked' : '') + '>'
@@ -60,11 +67,14 @@ function render(s) {
   var saved = document.getElementById('vz-saved');
   btn.addEventListener('click', function () {
     var doctor = (document.getElementById('vz-doctor').value || '').trim();
+    var admin = (document.getElementById('vz-admin').value || '').trim();
     var redirect = (document.getElementById('vz-testredirect').value || '').trim();
     if (doctor && !isEmail(doctor)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Läkar-e-posten ser inte giltig ut.'; return; }
+    if (admin && !isEmail(admin)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Admin-e-posten ser inte giltig ut.'; return; }
     if (redirect && !isEmail(redirect)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Test-mottagarens e-post ser inte giltig ut.'; return; }
     var next = {
       doctorEmail: doctor,
+      adminEmail: admin,
       testMode: !!document.getElementById('vz-testmode').checked,
       testRedirectEmail: redirect,
     };
