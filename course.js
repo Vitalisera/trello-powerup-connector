@@ -940,6 +940,18 @@ function plainToHtml(text) {
   s = s.replace(/(^|[\s>])(https?:\/\/[^\s<]+)/g, function (m, pre, url) { return pre + '<a href="' + url + '">' + url + '</a>'; });
   return s.replace(/\n/g, '<br>');
 }
+// FAILSAFE: hitta orenderade VERSAL-platshållare ({SAMMANFATTNINGSLÄNK}, {GRUPPLEDARE}…) i utskicken — ett mejl
+// får ALDRIG gå med synlig token (Robert 2026-06-16). Skannar subject/bodyText/bodyHtml. Ren funktion → testbar.
+function findUnrenderedTokens(emails) {
+  var found = {};
+  (emails || []).forEach(function (e) {
+    [e && e.subject, e && e.bodyText, e && e.bodyHtml].forEach(function (s) {
+      var re = /\{[A-ZÅÄÖ_]{2,}\}/g, m;
+      while ((m = re.exec(String(s == null ? '' : s)))) { found[m[0]] = true; }
+    });
+  });
+  return Object.keys(found);
+}
 // Markdown-länk → läsbar plaintext "etikett: url" (för plaintext-fallbacken). Ren funktion.
 function mdToPlain(text) {
   return String(text == null ? '' : text).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1: $2');
@@ -1013,6 +1025,12 @@ function runSendMail(opts) {
     }
     if (!mode.live && !mode.redirect) {
       note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare i Inställningar (kugghjul) först.';
+      btn.disabled = false; return;
+    }
+    // FAILSAFE: blockera om någon platshållare är ofylld (t.ex. {SAMMANFATTNINGSLÄNK} — doc-knappen ej klickad).
+    var leftover = findUnrenderedTokens(emails);
+    if (leftover.length) {
+      note.textContent = '⚠️ Ofylld platshållare: ' + leftover.join(', ') + ' — fyll den först (t.ex. klicka "Skapa sammanfattningsdok") innan du skickar.';
       btn.disabled = false; return;
     }
     // IN-MODAL bekräftelse — t.popup renderar INTE inifrån en fullscreen t.modal (känd Trello-begränsning,
