@@ -139,6 +139,7 @@
       + '      <span class="big" data-count="' + (s.total || 0) + '">0</span>'
       + '      <span class="lbl"><span class="ic">' + ic.people + '</span>Deltagare</span>'
       + '      <span class="vz-cv-gender" id="vz-cv-gender"></span>'
+      + '      <span class="vz-cv-staff" id="vz-cv-staff"></span>'   // #14: personal-antal m. underkategorier (fylls av course.js renderStaffPanel)
       + '    </div>'
       + '    <div class="vz-cv-stat is-gap' + ((s.withGaps || 0) > 0 ? ' has-gaps' : '') + '">'
       + '      <span class="big" data-count="' + (s.withGaps || 0) + '">0</span>'
@@ -221,9 +222,14 @@
         }
         return;
       }
-      stepRow += '<th class="vz-cv-stephead' + edge + '" data-phase-key="' + esc(pk) + '" title="' + esc(s.title) + '">'
+      // #16: full titel (ej kryptisk s.short) roterad 45° (förebild: gruppledarnamnen,
+      // .vz-story-leader-label) → smal kolumn. Badge nederst (horisontell), titel stiger diagonalt.
+      // Fallande inline-z (vänster över höger) så en etiketts diagonala svans ej döljs av nästa
+      // kolumns opaka th-bakgrund. Inline slår .vz-cv-table thead th{z-index} (specificitet).
+      stepRow += '<th class="vz-cv-stephead' + edge + '" data-phase-key="' + esc(pk) + '"'
+        + ' style="z-index:' + (40 - n) + '" title="' + esc(s.title) + '">'
+        + '<span class="stitle">' + esc(s.title) + '</span>'
         + '<span class="sidx">' + n + '</span>'
-        + '<span class="stitle">' + esc(s.short || s.title) + '</span>'
         + '</th>';
     });
     stepRow += '</tr>';

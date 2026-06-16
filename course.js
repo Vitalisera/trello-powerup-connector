@@ -312,6 +312,20 @@ function renderStaffPanel(groups, courseName) {
   sec.innerHTML = '<div class="vz-panel-title">Personal på kursen</div>' + cards;
   host.appendChild(sec);
 
+  // #14: fyll personal-raden i summary-kortet (totalt + underkategorier). Async, fail-soft.
+  var staffEl = document.getElementById('vz-cv-staff');
+  if (staffEl && STAFF_COUNT > 0) {
+    var noun = { gruppledare: ['gruppledare', 'gruppledare'], assistenter: ['assistent', 'assistenter'], kockar: ['kock', 'kockar'] };
+    var parts = (groups || []).map(function (g) {
+      var n = (g.people && g.people.length) || 0;
+      if (!n) { return null; }
+      var nm = noun[g.cfg.key] || [g.cfg.label, g.cfg.label];
+      return n + ' ' + (n === 1 ? nm[0] : nm[1]);
+    }).filter(Boolean);
+    staffEl.innerHTML = '<b>' + STAFF_COUNT + '</b> personal'
+      + (parts.length ? ' · ' + parts.map(esc).join(' · ') : '');
+  }
+
   // "Alla emailadresser": hämta assistent-listans kort med desc skarpt via REST,
   // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
   var emBtn = sec.querySelector('#vz-asst-emails');
@@ -340,6 +354,38 @@ function renderStaffPanel(groups, courseName) {
       }).then(function () { emBtn.disabled = false; });
     });
   }
+}
+
+// #17b: "Alla emailadresser" för DELTAGARNA (som assistent-knappen, men deltagar-mejlen finns
+// redan i de inlästa kortens desc → parseContactFromDesc; ingen extra REST behövs). Read-only,
+// kopierbar ruta, persist board-shared. Placering: below-regionen, under matrisen (Roberts val).
+function renderParticipantEmails(cards, courseName) {
+  var host = vzRegion('below');
+  if (!host) { return; }
+  var emailsKey = 'vz_pemails_' + courseSlug(courseName);
+  var sec = document.createElement('section');
+  sec.className = 'vz-panel vz-panel--below';
+  sec.innerHTML = '<div class="vz-panel-title">Deltagare</div>'
+    + '<div class="vz-stub-row">'
+    + '<button class="vz-btn" id="vz-part-emails">Alla emailadresser</button>'
+    + '<span class="vz-stub-note">ur kortens kontaktuppgifter (read-only)</span></div>'
+    + '<textarea id="vz-part-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>';
+  host.appendChild(sec);
+
+  var btn = sec.querySelector('#vz-part-emails');
+  var out = sec.querySelector('#vz-part-emails-out');
+  if (!btn || !out) { return; }
+  t.get('board', 'shared', emailsKey).then(function (saved) {
+    if (saved && !out.value) { out.style.display = ''; out.value = String(saved); }
+  }).catch(function () {});
+  btn.addEventListener('click', function () {
+    out.style.display = '';
+    var emails = (cards || []).map(function (c) { return parseContactFromDesc(c.desc).epost; }).filter(Boolean);
+    var seen = {}, uniq = [];
+    emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
+    out.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i deltagarkortens beskrivningar.';
+    if (uniq.length) { persistText(emailsKey, out.value); }
+  });
 }
 
 /* ---------- Kursnivå-checklista (#3) — GLOBAL per kurssteg (Malins beslut) ----------
@@ -1350,6 +1396,8 @@ function loadCourse(listId, listName) {
     loadHfPanel(res[1] || [], res[0]);
     loadStoryMatrix(res[0], model.participants, res[1] || []);
     loadCourseChecklist(res[0]);
+    renderParticipantEmails(res[1] || [], res[0]);   // #17b
+
   }).catch(function (err) {
     var diag;
     if (err.message === 'no-token') {
