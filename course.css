@@ -115,7 +115,8 @@
 
 /* ===== SAMMANFATTNINGSRAD (X deltagare · Y luckor · Z åtgärder) ===== */
 .vz-cv-summary{
-  display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;
+  /* stapla: stats-rad överst (alla 4 rutor på SAMMA rad, lika höjd), headline+sök under (Robert 2026-06-16) */
+  display:grid;grid-template-columns:1fr;gap:16px;
   padding:20px 26px 22px;
   background:
     linear-gradient(120deg, rgba(181,113,11,.08), transparent 52%),
@@ -129,7 +130,7 @@
 }
 .vz-cv-summary.all-clear::before{background:linear-gradient(180deg,var(--success),#2c9468)}
 
-.vz-cv-stats{display:flex;align-items:stretch;gap:14px;padding-left:8px;flex-wrap:wrap}
+.vz-cv-stats{display:flex;align-items:stretch;gap:14px;padding-left:8px;flex-wrap:nowrap}
 .vz-cv-stat{
   display:flex;flex-direction:column;justify-content:center;
   padding:8px 18px 8px 16px;border-radius:14px;min-width:128px;
@@ -169,7 +170,7 @@
 .vz-cv-stat.is-clear .lbl{color:var(--success)}
 
 /* sammanfattningens högersida: rubrik + kontroller */
-.vz-cv-sumside{display:flex;flex-direction:column;align-items:flex-end;gap:10px;text-align:right}
+.vz-cv-sumside{display:flex;flex-direction:column;align-items:flex-start;gap:10px;text-align:left}
 .vz-cv-sumside .head{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--ink);line-height:1.15}
 .vz-cv-sumside .head .hl{color:var(--amber)}
 .vz-cv-sumside .head.clear .hl{color:var(--success)}
@@ -645,6 +646,7 @@
 @media (max-width:1080px){
   .vz-course{padding:14px}
   .vz-cv-summary{grid-template-columns:1fr;gap:16px}
+  .vz-cv-stats{flex-wrap:wrap}   /* trång skärm: låt rutorna wrappa istället för att spilla över */
   .vz-cv-sumside{align-items:flex-start;text-align:left}
   .vz-cv-controls{justify-content:flex-start}
   /* stapla: matris överst, Personal-aside under (full bredd) */

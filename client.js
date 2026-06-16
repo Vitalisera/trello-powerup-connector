@@ -20,27 +20,39 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '61';
+var V = '62';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
+// Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
+// ser att inget går skarpt. Board-shared, fail-soft (saknad/ogiltig → inget suffix).
+function resolveTestSuffix(t) {
+  return t.get('board', 'shared', 'vz_settings').then(function (s) {
+    return (s && s.testMode === true) ? ' - TEST' : '';
+  }).catch(function () { return ''; });
+}
+
 function openDashboard(t) {
-  return t.modal({ url: vurl('./dashboard.html'), fullscreen: true, title: CFG.APP_NAME + ' – Deltagarstatus', accentColor: '#08445c' });
+  return resolveTestSuffix(t).then(function (suf) {
+    return t.modal({ url: vurl('./dashboard.html'), fullscreen: true, title: CFG.APP_NAME + ' – Deltagarstatus' + suf, accentColor: '#08445c' });
+  });
 }
 
 // Kursöversikt för DENNA deltagares kurs (kortets lista).
 function openCourseFromCard(t) {
-  return t.card('idList').then(function (c) {
+  return Promise.all([t.card('idList'), resolveTestSuffix(t)]).then(function (r) {
     return t.modal({
       url: vurl('./course.html'), fullscreen: true,
-      title: CFG.APP_NAME + ' – Kursöversikt', accentColor: '#08445c',
-      args: { listId: c.idList },
+      title: CFG.APP_NAME + ' – Kursöversikt' + r[1], accentColor: '#08445c',
+      args: { listId: r[0].idList },
     });
   });
 }
 
 // Kursöversikt från board (list-väljare i vyn).
 function openCourseFromBoard(t) {
-  return t.modal({ url: vurl('./course.html'), fullscreen: true, title: CFG.APP_NAME + ' – Kursöversikt', accentColor: '#08445c' });
+  return resolveTestSuffix(t).then(function (suf) {
+    return t.modal({ url: vurl('./course.html'), fullscreen: true, title: CFG.APP_NAME + ' – Kursöversikt' + suf, accentColor: '#08445c' });
+  });
 }
 
 // Inställningar (kugghjul) — konfig som annars vore hårdkodad (läkar-mejl, test-läge…).
