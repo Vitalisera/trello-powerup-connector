@@ -185,6 +185,11 @@
 }
 .vz-cv-seg button:hover{color:var(--ink)}
 .vz-cv-seg button.active{background:#fff;color:var(--accent);box-shadow:var(--shadow-sm)}
+/* P1.6: sök-räknare "Visar X av Y" */
+.vz-cv-count{font-size:11.5px;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;align-self:center}
+.vz-cv-count:empty{display:none}
+/* P2.6: synlig fokusring på knappar/segment för tangentbordsanvändare */
+.vz-course .vz-btn:focus-visible,.vz-cv-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .vz-cv-search{
   display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--hairline-strong);
   border-radius:10px;padding:7px 11px;box-shadow:var(--shadow-sm);
@@ -532,7 +537,7 @@
 .vz-course .vz-tbl-statuscell{padding:8px 0;text-align:right;white-space:nowrap;width:1%}
 .vz-course .vz-col-status{width:130px}
 
-.vz-course .vz-tbl-link{color:#0c66e4;text-decoration:none;font-size:14px}
+.vz-course .vz-tbl-link{color:var(--accent);text-decoration:none;font-size:14px}  /* P2.3: teal (paletten) ist. för Trello-blå #0c66e4 */
 .vz-course .vz-tbl-link:hover{text-decoration:underline}
 .vz-course .vz-tbl-link .vz-ext{font-size:12px;opacity:.8}
 .vz-course .vz-tbl-name{font-size:14px}
@@ -601,6 +606,9 @@
 .vz-course .vzchk-row.is-done .vzchk-text{text-decoration:line-through;color:#8aa3ac}
 .vz-course .vzchk-del{border:none;background:none;cursor:pointer;color:#b23a2e;font-size:15px;padding:2px 6px;flex:none;border-radius:6px}
 .vz-course .vzchk-del:hover{background:rgba(178,58,46,.1)}
+.vz-course .vzchk-del:focus-visible{outline:2px solid #b23a2e;outline-offset:1px}
+/* P2.4: armerat (bekräfta-radera) läge */
+.vz-course .vzchk-del.is-arm{background:#b23a2e;color:#fff;font-size:11.5px;font-weight:800;padding:3px 9px;letter-spacing:.02em}
 .vz-course .vzchk-add-row{margin-top:12px;border-top:1px solid #eef3f4;padding-top:12px}
 .vz-course .vzchk-add-row .vz-btn{margin-top:8px}
 

@@ -471,8 +471,20 @@ function renderChecklistPanel(key, items, courseName) {
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { items[+cb.getAttribute('data-i')].done = cb.checked; persistChecklist(key, items); paint(); });
     });
+    // P2.4: 2-klicks-bekräftelse (board-delad lista = lätt att råka radera). 1:a klick "armar"
+    // (✕ → "Ta bort?"), återställs efter 3s; 2:a klick raderar. Ingen overlay, självständigt.
     Array.prototype.forEach.call(sec.querySelectorAll('button[data-del]'), function (b) {
-      b.addEventListener('click', function (e) { e.preventDefault(); items.splice(+b.getAttribute('data-del'), 1); persistChecklist(key, items); paint(); });
+      var armed = false, timer = null;
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (!armed) {
+          armed = true; b.classList.add('is-arm'); b.textContent = 'Ta bort?';
+          timer = setTimeout(function () { armed = false; b.classList.remove('is-arm'); b.textContent = '✕'; }, 3000);
+          return;
+        }
+        if (timer) { clearTimeout(timer); }
+        items.splice(+b.getAttribute('data-del'), 1); persistChecklist(key, items); paint();
+      });
     });
     var add = sec.querySelector('#vzchk-add'), inp = sec.querySelector('#vzchk-new');
     function addItem() { var v = (inp.value || '').trim(); if (!v) { return; } items.push({ text: v, done: false }); persistChecklist(key, items); paint(); }

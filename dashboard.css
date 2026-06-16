@@ -160,6 +160,8 @@
 }
 .vz-btn-cmd:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(181,113,11,.38), inset 0 1px 0 rgba(255,255,255,.3)}
 .vz-btn-cmd:active{transform:translateY(0)}
+/* P2.6: synlig fokusring för tangentbordsanvändare (ljus ring mot mörk knapp) */
+.vz-btn-cmd:focus-visible{outline:3px solid rgba(255,255,255,.65);outline-offset:2px}
 .vz-btn-cmd.is-accent{background:linear-gradient(180deg,var(--accent),#235468);box-shadow:0 8px 20px rgba(53,112,135,.30), inset 0 1px 0 rgba(255,255,255,.22)}
 .vz-btn-cmd.is-accent:hover{box-shadow:0 12px 26px rgba(53,112,135,.38), inset 0 1px 0 rgba(255,255,255,.28)}
 .vz-btn-cmd svg{width:19px;height:19px}

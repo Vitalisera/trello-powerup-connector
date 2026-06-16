@@ -165,6 +165,7 @@
       + '        <button data-sort="progress" class="' + (state.sort === 'progress' ? 'active' : '') + '">Minst klar</button>'
       + '        <button data-sort="name" class="' + (state.sort === 'name' ? 'active' : '') + '">Namn</button>'
       + '      </div>'
+      + '      <span class="vz-cv-count" data-cv-count></span>'   // P1.6: "Visar X av Y" vid filtrering
       + '    </div>'
       + '  </div>'
       + '</section>';
@@ -499,6 +500,11 @@
 
     function paintBody(stagger) {
       var list = visibleParticipants();
+      // P1.6: "Visar X av Y" när sökfiltret är aktivt (annars tomt).
+      var countEl = rootEl.querySelector('[data-cv-count]');
+      if (countEl) {
+        countEl.textContent = state.query.trim() ? ('Visar ' + list.length + ' av ' + participants.length) : '';
+      }
       if (!list.length) {
         body.innerHTML = emptyHtml(state.query);
         return;

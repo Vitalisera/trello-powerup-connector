@@ -180,6 +180,7 @@ function inModalConfirm(message, confirmText, onYes) {
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,68,92,.35);display:flex;align-items:center;justify-content:center;font-family:Calibri,system-ui,sans-serif';
   var box = document.createElement('div');
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');   // P1.7: a11y på mutations-grinden
   box.style.cssText = 'background:#fff;max-width:420px;margin:16px;padding:20px 22px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);color:#0d3142';
   var p = document.createElement('div'); p.style.cssText = 'font-size:14.5px;line-height:1.5;margin-bottom:16px'; p.textContent = message;
   var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
@@ -187,10 +188,17 @@ function inModalConfirm(message, confirmText, onYes) {
   var yes = document.createElement('button'); yes.textContent = confirmText || 'Bekräfta'; yes.style.cssText = 'border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
   row.appendChild(no); row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
   (document.body || document.documentElement).appendChild(ov);
-  function close() { ov.remove(); }
+  function close() { document.removeEventListener('keydown', onKey, true); ov.remove(); }
+  // P1.7: Esc avbryter, Enter bekräftar (capture så den fångas oavsett fokus i dialogen).
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); close(); onYes(); }
+  }
+  document.addEventListener('keydown', onKey, true);
   no.addEventListener('click', close);
   ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
   yes.addEventListener('click', function () { close(); onYes(); });
+  yes.focus();   // P1.7: autofokus på bekräfta så tangentbordsvägen är direkt
 }
 
 var handlers = {
@@ -297,7 +305,7 @@ function bootCompact() {
       + '<span style="font-weight:700;font-size:13px">' + pr.done + '/' + pr.total + '</span>'
       + '<div style="flex:1 1 auto;height:8px;border-radius:6px;background:#bcd9db;overflow:hidden"><i style="display:block;height:100%;width:' + pr.pct + '%;background:linear-gradient(90deg,#357087,#1f7a53)"></i></div>'
       + (gaps ? '<span style="font-size:12px;color:#b5710b;font-weight:700;white-space:nowrap">⚠ ' + gaps + ' att bocka</span>' : '')
-      + '<span style="font-size:12.5px;color:#4d7c8e;white-space:nowrap">' + (next ? 'Nästa: ' + esc(next.title) : 'Allt klart 🎉') + '</span>'
+      + '<span style="font-size:12.5px;color:#4d7c8e;white-space:nowrap">' + (next ? 'Nästa: ' + esc(next.title) : 'Allt klart') + '</span>'
       + '<button id="vzopen" style="border:none;cursor:pointer;background:#08445c;color:#fff;font-weight:700;font-size:12.5px;padding:6px 12px;border-radius:8px;font-family:inherit;white-space:nowrap">Öppna</button>'
       + '</div>';
     document.getElementById('vzopen').addEventListener('click', function () {
