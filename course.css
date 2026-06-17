@@ -248,11 +248,12 @@
 .vz-cv-matrixwrap{
   flex:1;min-height:0;overflow:auto;position:relative;
   background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
+  padding-right:120px;   /* #16: plats för sista stegtitelns diagonala svans ("Uppföljningssamtal") */
 }
 .vz-cv-table{
-  /* #16: width:auto → smala kolumner packade till vänster (som gruppledar-matrisen); tomrum till
-     höger ger plats för sista stegtitelns diagonala svans. Fyller alltså EJ hela regionen (Roberts val). */
-  border-collapse:separate;border-spacing:0;width:auto;
+  /* #16: width:100% → kolumnerna sprids och fyller matris-regionen (Robert 2026-06-17: tabellen var för smal).
+     Sista rubrikens diagonala svans ryms i matrixwrappens padding-right. */
+  border-collapse:separate;border-spacing:0;width:100%;
 }
 
 /* --- huvud: fas-rubriker (rad 1) + steg-rubriker (rad 2) --- */
