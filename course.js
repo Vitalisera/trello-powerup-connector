@@ -167,6 +167,31 @@ function deadlineDateInfo(listName, daysBefore) {
   return { label: label, passed: diff < 0, today: diff === 0 };
 }
 
+// Praktisk info-tokens ur kursnamnet (bild: "24 juni - 2 juli 2026 (Steg 1)"). STARTTID hårdkodad till
+// standardtiden 19:00 (kvällsfika). Ren funktion → proof-bar. Plats är hårdkodad i mallen (ingen token).
+var WEEKDAYS_SV = ['söndagen', 'måndagen', 'tisdagen', 'onsdagen', 'torsdagen', 'fredagen', 'lördagen'];
+var MONTHS_SV_FULL = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
+function courseEndDate(listName) {
+  var s = String(listName || '');
+  var ym = s.match(/(\d{4})/); if (!ym) { return null; }
+  var year = parseInt(ym[1], 10);
+  var dm = [], re = /(\d{1,2})\s+([a-zåäö]+)/gi, m;
+  while ((m = re.exec(s))) { var mon = MONTHS[norm(m[2])]; if (mon !== undefined) { dm.push({ d: parseInt(m[1], 10), mon: mon }); } }
+  if (!dm.length) { return null; }
+  var last = dm[dm.length - 1];
+  return new Date(year, last.mon, last.d);
+}
+function practicalTokens(courseName) {
+  var start = courseStartDate(courseName), end = courseEndDate(courseName);
+  function fmt(d) { return d.getDate() + ' ' + MONTHS_SV_FULL[d.getMonth()]; }
+  return {
+    KURSDATUM: String(courseName == null ? '' : courseName).trim(),
+    STARTDAG: start ? (WEEKDAYS_SV[start.getDay()] + ' den ' + fmt(start)) : '',
+    STARTTID: '19:00',
+    SLUTDAG: end ? fmt(end) : '',
+  };
+}
+
 function buildCourseModel(listName, cards) {
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
     return { key: s.key, title: s.title, short: s.title.split(' ')[0], phase: s.phase };
@@ -186,6 +211,7 @@ function buildCourseModel(listName, cards) {
 // Inline steg-detalj (Robert 2026-06-17: klick på cell → expandera rad med stegets Fas1/Fas2 + noteringar;
 // porterar Vy1:s detalj in i Vy2 → gör deltagarstatus-vyn överflödig). COURSE_CARDS_BY_ID fylls i loadCourse.
 var COURSE_CARDS_BY_ID = {};
+var COURSE_NAME = '';   // kursens listnamn (för fold-out-actions, t.ex. enstaka praktisk-info-utskick)
 var DOC_BYKEY = {};   // #11/bild14: senaste dok-statusen (per kort-id → {hf,livs}), läses av inline-detaljen för steg 8/9
 
 var handlers = {
@@ -274,7 +300,14 @@ function renderInlineStepDetail(host, p, stepKey, card) {
   }
 
   var fas2;
-  if (d.always) {
+  if (stepKey === 'praktisk' && !d.checklistDone) {
+    // Steg 7: skicka praktisk info-PDF till DENNA deltagare (+ bocka) direkt ur fold-out.
+    var piEmail = parseContactFromDesc(card.desc).epost || '';
+    var piAction = !piEmail ? '<span class="vz-pd-note">deltagaren saknar e-post i kortet</span>'
+      : (!d.checkItemId ? '<span class="vz-pd-note">checkItem "Praktisk info skickat" saknas — bocka i kortet</span>'
+        : '<button class="vz-btn vz-pd-act" data-act="sendpi">Skicka praktisk info</button>');
+    fas2 = vzPhaseCard_('2', 'Skicka', 'Praktisk info som PDF', '<span class="vz-pd-note">Mejlar den kursgemensamma PDF:en till deltagaren och bockar steget (fail-closed i testläge).</span>', piAction);
+  } else if (d.always) {
     fas2 = vzPhaseCard_('2', 'Bock', 'Klart', '<span class="vz-pd-ok">Steget är alltid klart.</span>', '');
   } else if (!d.checkItemName) {
     fas2 = vzPhaseCard_('2', 'Bock', '—', '<span class="vz-pd-note">Ingen checklistpunkt för detta steg.</span>', '');
@@ -292,6 +325,16 @@ function renderInlineStepDetail(host, p, stepKey, card) {
   var lb = host.querySelector('[data-act="label"]'); if (lb) { lb.addEventListener('click', function () { inlineSetLabel(card.id, d, lb); }); }
   var tb = host.querySelector('[data-act="tick"]'); if (tb) { tb.addEventListener('click', function () { inlineTick(card.id, d, tb); }); }
   var nb = host.querySelector('[data-act="notes"]'); if (nb) { nb.addEventListener('click', function () { showParticipantNotes(p, card); }); }
+  var pib = host.querySelector('[data-act="sendpi"]');
+  if (pib) {
+    pib.addEventListener('click', function () {
+      var row = { code: card.id, name: p.name, email: parseContactFromDesc(card.desc).epost || '', cardId: card.id, checkItemId: d.checkItemId, done: !!d.checklistDone };
+      sendPracticalInfoFlow([row], COURSE_NAME, pib, 'enstaka', function (sent) {
+        sent.forEach(function (r) { applyStepChange_(r.cardId, d, 'tick'); });   // uppdatera matriscell + kortdata
+        renderInlineStepDetail(host, p, stepKey, COURSE_CARDS_BY_ID[card.id] || card);   // visa "Bockad ✓"
+      });
+    });
+  }
 }
 
 // Efter lyckad bock/label: mutera kortdatan lokalt + uppdatera matriscellerna (inkl. implies-kaskad) utan omladdning.
@@ -855,6 +898,127 @@ function maybeAutoBock(cards, byKey) {
         }
       });
     }).catch(function () {});
+  });
+}
+
+/* ---------- Praktisk info-utskick (PDF-bilaga per deltagare, bockar steg 7 "Praktisk info skickat") ----------
+ * Mall + kurs-Tokens → PDF (GAS createPracticalInfoDoc). Mejl per deltagare (GAS sendPracticalInfo, fail-closed).
+ * Batch = alla som ej fått (steg 7 obockat). Enstaka = en rad / fold-out-knapp. Steg 7 bockas BARA vid live+lyckat. */
+function loadPracticalInfoPanel(cards, courseName) {
+  var ciName = flowCheckItem_('praktisk');   // "Praktisk info skickat"
+  var rows = (cards || []).map(function (c, i) {
+    var ci = findCheckItemByName_(c, ciName);
+    return {
+      code: 'P' + (i + 1), name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
+      email: parseContactFromDesc(c.desc).epost || '',
+      cardId: c.id, checkItemId: ci ? ci.id : null, done: !!(ci && ci.complete),
+    };
+  });
+  renderPracticalInfoPanel(rows, courseName);
+}
+function practicalRowAction_(r) {
+  if (!r.email) { return '<span class="vz-status vz-status--missing">– e-post saknas i kortet</span>'; }
+  if (!r.checkItemId) { return '<span class="vz-status vz-status--missing">– "Praktisk info skickat" saknas i checklistan</span>'; }
+  if (r.done) { return '<button class="vz-hf-share is-done" disabled>✓ Skickad</button>'; }
+  return '<button class="vz-hf-share vz-pi-send" data-code="' + esc(r.code) + '">Skicka</button>';
+}
+function renderPracticalInfoPanel(rows, courseName) {
+  var host = vzRegion('below');
+  if (!host) { return; }
+  var sec = document.createElement('section');
+  sec.className = 'vz-panel vz-panel--below';
+  var byCode = {}; rows.forEach(function (r) { byCode[r.code] = r; });
+  var tokens = practicalTokens(courseName);
+  function pending() { return rows.filter(function (r) { return r.email && r.checkItemId && !r.done; }); }
+  function paint() {
+    var done = rows.filter(function (r) { return r.done; }).length;
+    var sendable = rows.filter(function (r) { return r.email && r.checkItemId; }).length;
+    var nPending = pending().length;
+    var bodyRows = rows.map(function (r) {
+      return '<tr data-code="' + esc(r.code) + '"><td class="vz-tbl-namecell"><span class="vz-tbl-name">' + esc(r.name) + '</span>'
+        + (r.email ? '<span class="vz-pi-email">' + esc(r.email) + '</span>' : '') + '</td>'
+        + '<td class="vz-tbl-statuscell">' + practicalRowAction_(r) + '</td></tr>';
+    }).join('');
+    var table = rows.length
+      ? '<table class="vz-tbl vz-tbl--hf"><colgroup><col class="vz-col-name"><col class="vz-col-status"></colgroup><tbody>' + bodyRows + '</tbody></table>'
+      : '<div class="vz-panel-empty">Inga deltagare.</div>';
+    sec.innerHTML = '<div class="vz-panel-head"><div class="vz-panel-title">Praktisk information till deltagare</div>'
+      + '<div class="vz-panel-meta">' + done + ' av ' + sendable + ' skickade</div></div>'
+      + '<div class="vz-panel-note">Skickar den <b>kursgemensamma praktiska informationen</b> som <b>PDF-bilaga</b> per deltagare och bockar steg 7 "Praktisk info skickat". Verifiera kursdatumen nedan innan du skickar.</div>'
+      + '<div class="vz-pi-tokens"><span>Kursdatum: <b>' + esc(tokens.KURSDATUM || '–') + '</b></span>'
+      + '<span>Start: <b>' + esc((tokens.STARTDAG || '–') + (tokens.STARTTID ? ' kl. ' + tokens.STARTTID : '')) + '</b></span>'
+      + '<span>Slut: <b>' + esc(tokens.SLUTDAG || '–') + '</b></span></div>'
+      + table
+      + '<div class="vz-stub-row" style="margin-top:12px"><button class="vz-btn" id="vz-pi-batch"' + (nPending ? '' : ' disabled') + '>Skicka till alla som inte fått (' + nPending + ')</button>'
+      + '<span class="vz-stub-note">skapar/återanvänder kurs-PDF:en, mejlar per deltagare (fail-closed i testläge), bockar steg 7</span></div>';
+    Array.prototype.forEach.call(sec.querySelectorAll('.vz-pi-send'), function (btn) {
+      btn.addEventListener('click', function () { var r = byCode[btn.getAttribute('data-code')]; if (r) { sendPracticalInfoFlow([r], courseName, btn, 'enstaka', onSent); } });
+    });
+    var batch = sec.querySelector('#vz-pi-batch');
+    if (batch) { batch.addEventListener('click', function () { sendPracticalInfoFlow(pending(), courseName, batch, 'alla som inte fått', onSent); }); }
+  }
+  // efter lyckat live-utskick: markera raderna som skickade (in-place) + uppdatera matriscellen, utan full reload.
+  function onSent(sentRows) {
+    sentRows.forEach(function (r) { r.done = true; try { if (window.CourseView && CourseView.setCellStatus) { CourseView.setCellStatus(r.cardId, 'praktisk', 'done'); } } catch (e) {} });
+    paint();
+  }
+  paint();
+  host.appendChild(sec);
+}
+/* Orkestrering: bekräfta (visa tokens + läges-varning) → createPracticalInfoDoc → sendPracticalInfo → bocka steg 7
+ * (BARA vid live + lyckat utskick; testläge redirectar och bockar INTE). onSent(rader[]) uppdaterar UI in-place. */
+function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
+  targets = (targets || []).filter(function (r) { return r.email && r.checkItemId && !r.done; });
+  if (!targets.length) { try { t.alert({ message: 'Inga mottagare som saknar utskick.', duration: 6, display: 'info' }); } catch (e) {} return; }
+  getCourseSettings().then(function (settings) {
+    var mode = resolveSendMode(settings);
+    var tokens = practicalTokens(courseName);
+    var tokenLines = 'Kursdatum: ' + (tokens.KURSDATUM || '–') + '\nStart: ' + (tokens.STARTDAG || '–') + ' kl. ' + tokens.STARTTID + '\nSlut: ' + (tokens.SLUTDAG || '–');
+    var modeWarn = mode.live
+      ? '⚠️ SKARPT LÄGE — PDF:en mejlas till ' + targets.length + ' RIKTIGA deltagare.'
+      : 'TESTLÄGE — mejlen redirectas till ' + (mode.redirect || '(ingen redirect satt!)') + '. Inga deltagare nås, steg 7 bockas ej.';
+    courseInModalConfirm(
+      'Skicka praktisk information (' + label + ') till ' + targets.length + ' deltagare?\n\n' + tokenLines + '\n\n' + modeWarn + '\n\nVerifiera datumen ovan innan du skickar.',
+      'Skicka', function () {
+        if (!mode.live && !mode.redirect) { try { t.alert({ message: 'Testläge utan redirect-adress — sätt en i Inställningar. Inget skickades.', duration: 8, display: 'error' }); } catch (e) {} return; }
+        var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Skapar dok…';
+        postToGas('createPracticalInfoDoc', { dryRun: false, courseName: courseName, tokens: tokens }).then(function (doc) {
+          if (!doc || !doc.ok || !doc.docId) { throw new Error('Kunde inte skapa PDF-underlaget (' + ((doc && doc.error) || 'okänt') + ').'); }
+          btn.textContent = '⏳ Skickar…';
+          return postToGas('sendPracticalInfo', {
+            dryRun: false, live: mode.live === true, redirectEmail: mode.redirect, courseName: courseName, docId: doc.docId,
+            recipients: targets.map(function (r) { return { code: r.code, email: r.email }; }),
+            senderName: settings.senderName, replyTo: settings.replyToEmail,
+          });
+        }).then(function (res) {
+          if (!res || !res.ok) { throw new Error('Utskick misslyckades (' + ((res && res.error) || 'okänt') + ').'); }
+          var okCodes = {}; (res.sent || []).forEach(function (s) { if (s.ok) { okCodes[s.code] = true; } });
+          var okTargets = targets.filter(function (r) { return okCodes[r.code]; });
+          if (!res.live) {   // testläge: redirectat, bocka INTE (deltagaren fick inget)
+            btn.disabled = false; btn.textContent = orig;
+            try { t.alert({ message: 'Testläge: ' + okTargets.length + ' mejl gick till redirect (' + mode.redirect + '). Inga deltagare nåddes, steg 7 ej bockat.', duration: 10, display: 'info' }); } catch (e) {}
+            return;
+          }
+          // live: bocka steg 7 för lyckade utskick (Malins token), seriellt.
+          t.getRestApi().getToken().then(function (token) {
+            if (!token) { throw new Error('Ingen Trello-token för att bocka steg 7.'); }
+            return okTargets.reduce(function (p, r) {
+              return p.then(function () { return restWrite(token, 'PUT', 'cards/' + r.cardId + '/checkItem/' + r.checkItemId + '?state=complete').catch(function () {}); });
+            }, Promise.resolve());
+          }).then(function () {
+            btn.disabled = false; btn.textContent = orig;
+            if (onSent) { onSent(okTargets); }
+            try { t.alert({ message: '✓ Skickade praktisk info till ' + okTargets.length + ' deltagare och bockade steg 7.', duration: 9, display: 'success' }); } catch (e) {}
+          }).catch(function (err) {
+            btn.disabled = false; btn.textContent = orig;
+            try { t.alert({ message: '⚠️ Mejlen gick men steg 7 kunde inte bockas: ' + ((err && err.message) || err), duration: 10, display: 'error' }); } catch (e) {}
+          });
+        }).catch(function (err) {
+          btn.disabled = false; btn.textContent = orig;
+          try { t.alert({ message: '⚠️ ' + ((err && err.message) || err), duration: 10, display: 'error' }); } catch (e) {}
+        });
+      }
+    );
   });
 }
 
@@ -1821,6 +1985,7 @@ function loadCourse(listId, listName) {
     return Promise.all([nameP, cardsP]);
   }).then(function (res) {
     COURSE_CARDS_BY_ID = {};
+    COURSE_NAME = res[0] || '';
     (res[1] || []).forEach(function (c) { COURSE_CARDS_BY_ID[c.id] = c; });   // för inline steg-detalj (klick på cell)
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
@@ -1829,6 +1994,7 @@ function loadCourse(listId, listName) {
     loadHfPanel(res[1] || [], res[0]);
     loadStoryMatrix(res[0], model.participants, res[1] || []);
     loadCourseChecklist(res[0]);
+    loadPracticalInfoPanel(res[1] || [], res[0]);    // Praktisk info-utskick (PDF per deltagare + bock steg 7)
     renderParticipantEmails(res[1] || [], res[0]);   // #17b
     loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus)
 

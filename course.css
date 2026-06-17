@@ -598,6 +598,12 @@
 .vz-course .vz-tbl-link:hover{text-decoration:underline}
 .vz-course .vz-tbl-link .vz-ext{font-size:12px;opacity:.8}
 .vz-course .vz-tbl-name{font-size:14px}
+/* Praktisk info-panel: härledda kurs-tokens (verifiera-rutan) + e-post under namn */
+.vz-course .vz-pi-tokens{display:flex;flex-direction:column;gap:3px;margin:0 0 12px;padding:9px 12px;
+  background:rgba(53,112,135,.06);border:1px solid var(--hairline);border-radius:9px;font-size:12px;color:var(--muted)}
+@media (min-width:900px){ .vz-course .vz-pi-tokens{flex-direction:row;flex-wrap:wrap;gap:6px 22px} }
+.vz-course .vz-pi-tokens b{color:var(--ink);font-weight:600}
+.vz-course .vz-pi-email{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
 
 /* status-etiketter — bryter ALDRIG rad */
 .vz-course .vz-status{font-weight:700;white-space:nowrap;font-size:13.5px}
