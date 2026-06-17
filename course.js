@@ -500,6 +500,76 @@ function cleanStaffName(n) {
   var parts = s.split(' - ');
   return (parts.length > 1 ? parts.slice(1).join(' - ') : s).trim();
 }
+
+/* ── Flyttbara below-paneler: dra-handtag (⠿) + board-delad ordning (vz_panel_order) ──────────────
+ * Varje below-panel wrappas i .vz-panel-wrap (handtaget överlever panelens egna innerHTML-repaints).
+ * Ordningen sparas board-delat → deterministisk över sessioner; nya moduler hamnar sist tills de flyttas. */
+var PANEL_ORDER = [];
+function loadPanelOrder() {
+  return t.get('board', 'shared', 'vz_panel_order').then(function (o) { PANEL_ORDER = Array.isArray(o) ? o : []; return PANEL_ORDER; }).catch(function () { PANEL_ORDER = []; return []; });
+}
+function panelRank_(key) { var i = PANEL_ORDER.indexOf(key); return i === -1 ? 999 : i; }
+function savePanelOrder_() {
+  var host = vzRegion('below'); if (!host) { return; }
+  PANEL_ORDER = [].map.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'), function (w) { return w.getAttribute('data-panel'); });
+  try { t.set('board', 'shared', 'vz_panel_order', PANEL_ORDER).catch(function () {}); } catch (e) {}
+}
+// Sortera om befintliga wrappar enligt sparad rank (eventually-consistent om ordningen kommer efter panelerna).
+function reorderBelowPanels_() {
+  var host = vzRegion('below'); if (!host) { return; }
+  var wraps = [].slice.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'));
+  wraps.sort(function (a, b) { return panelRank_(a.getAttribute('data-panel')) - panelRank_(b.getAttribute('data-panel')); });
+  wraps.forEach(function (w) { host.appendChild(w); });   // appendChild flyttar (ej duplicerar) → DOM hamnar i rank-ordning
+}
+// Vilken wrap pekaren ligger FÖRE (vertikal närmast-mitt-heuristik; tät 2-kol → approximativt men funkar).
+function dragAfterElement_(host, y) {
+  var els = [].slice.call(host.querySelectorAll('.vz-panel-wrap:not(.is-dragging)'));
+  var closest = -Infinity, found = null;
+  for (var i = 0; i < els.length; i++) {
+    var box = els[i].getBoundingClientRect();
+    var offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest) { closest = offset; found = els[i]; }
+  }
+  return found;
+}
+function ensureBelowDnd_(host) {
+  if (host.getAttribute('data-dnd') === '1') { return; }
+  host.setAttribute('data-dnd', '1');
+  host.addEventListener('dragover', function (e) {
+    var dragging = host.querySelector('.vz-panel-wrap.is-dragging');
+    if (!dragging) { return; }
+    e.preventDefault();
+    var after = dragAfterElement_(host, e.clientY);
+    if (after == null) { host.appendChild(dragging); }
+    else if (after !== dragging) { host.insertBefore(dragging, after); }
+  });
+  host.addEventListener('drop', function (e) { e.preventDefault(); });
+}
+// Wrappa en below-panel + sätt in på rätt plats + koppla drag (handtag-initierat).
+function placeBelowPanel(sec, key) {
+  var host = vzRegion('below'); if (!host) { host = null; }
+  if (!host) { return; }
+  ensureBelowDnd_(host);
+  var wrap = document.createElement('div');
+  wrap.className = 'vz-panel-wrap'; wrap.setAttribute('data-panel', key); wrap.setAttribute('draggable', 'false');
+  var grip = document.createElement('span');
+  grip.className = 'vz-panel-drag'; grip.title = 'Dra för att flytta modulen'; grip.setAttribute('aria-label', 'Flytta modul'); grip.textContent = '⠿';
+  wrap.appendChild(grip); wrap.appendChild(sec);
+  // dra BARA via handtaget: draggable togglas på vid grip-mousedown, av efter släpp.
+  grip.addEventListener('mousedown', function () { wrap.setAttribute('draggable', 'true'); });
+  var reset = function () { wrap.setAttribute('draggable', 'false'); };
+  wrap.addEventListener('dragstart', function (e) {
+    wrap.classList.add('is-dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (x) {}
+  });
+  wrap.addEventListener('dragend', function () { wrap.classList.remove('is-dragging'); reset(); savePanelOrder_(); });
+  document.addEventListener('mouseup', reset);
+  // ordnad insättning enligt sparad rank
+  var rank = panelRank_(key);
+  var before = null, sibs = [].slice.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'));
+  for (var i = 0; i < sibs.length; i++) { if (panelRank_(sibs[i].getAttribute('data-panel')) > rank) { before = sibs[i]; break; } }
+  host.insertBefore(wrap, before);
+}
 // Filtrera + rolla ett personalkort enligt board-reglerna. Returnerar {name,role} eller null.
 function staffPerson(card, cfg) {
   var labelNames = (card.labels || []).map(function (l) { return l.name; });
@@ -768,7 +838,7 @@ function renderChecklistPanel(key, items, courseName) {
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
   }
   paint();
-  host.appendChild(sec);
+  placeBelowPanel(sec, 'checklist');
 }
 
 /* ---------- HF-urval (#3): speglar kortets checklist-punkt (skriva senare) ----------
@@ -963,7 +1033,7 @@ function renderPracticalInfoPanel(rows, courseName) {
     paint();
   }
   paint();
-  host.appendChild(sec);
+  placeBelowPanel(sec, 'praktisk');
 }
 /* Orkestrering: bekräfta (visa tokens + läges-varning) → createPracticalInfoDoc → sendPracticalInfo → bocka steg 7
  * (BARA vid live + lyckat utskick; testläge redirectar och bockar INTE). onSent(rader[]) uppdaterar UI in-place. */
@@ -1082,7 +1152,7 @@ function renderHfPanel(rows, courseName) {
     + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div>'
     + '<div id="vz-allergi-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
     + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
-  host.appendChild(sec);
+  placeBelowPanel(sec, 'hf');
 
   // #18: per-rad "Skapa läkarkopia" (bockar hf_delad → anonym kopia i mappen). Bekräftelse + fail-closed test-läge + idempotent.
   Array.prototype.forEach.call(sec.querySelectorAll('.vz-hf-share[data-card]'), function (btn) {
@@ -1792,7 +1862,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   var head = '<div class="vz-panel-title">' + esc(opts.title || 'Matris') + '</div>';
   if (!leaders.length) {
     sec.innerHTML = head + '<div class="vz-panel-empty">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
-    host.appendChild(sec); return;
+    placeBelowPanel(sec, 'storymatris'); return;
   }
   function cellKey(pk, ld) { return pk + '||' + ld; }
   // ── Skicka-cfg per mejl-ruta (personal-mejl via GAS). build(contacts, taVal) → {emails, missing}. ──
@@ -1938,7 +2008,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     }
   }
   paint();
-  host.appendChild(sec);
+  placeBelowPanel(sec, 'storymatris');
 }
 
 // Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,
@@ -2015,10 +2085,14 @@ function loadCourse(listId, listName) {
     window.CourseView.render(ROOT(), model, handlers);
     loadGenderSplit(model.participants);
     loadStaff(res[0]);
-    loadHfPanel(res[1] || [], res[0]);
-    loadStoryMatrix(res[0], model.participants, res[1] || []);
-    loadCourseChecklist(res[0]);
-    loadPracticalInfoPanel(res[1] || [], res[0]);    // Praktisk info-utskick (PDF per deltagare + bock steg 7)
+    // Ladda sparad panel-ordning FÖRST → below-panelerna sätts in i rätt ordning (deterministiskt, ej async-laddningsordning).
+    loadPanelOrder().then(function () {
+      loadHfPanel(res[1] || [], res[0]);
+      loadStoryMatrix(res[0], model.participants, res[1] || []);
+      loadCourseChecklist(res[0]);
+      loadPracticalInfoPanel(res[1] || [], res[0]);    // Praktisk info-utskick (PDF per deltagare + bock steg 7)
+      setTimeout(reorderBelowPanels_, 1500);           // säkerhetsnät: sortera om när alla (även sen-laddade) panelerna landat
+    });
     renderParticipantEmails(res[1] || [], res[0]);   // #17b
     loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus)
 

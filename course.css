@@ -241,11 +241,24 @@
   background:rgba(255,255,255,.4);
   padding:18px 24px 26px;
 }
-/* breda paneler (matriser med många kolumner) tar hela radbredden */
-.vz-course .vz-region-below .vz-panel--wide{grid-column:1 / -1}
+/* grid-items är nu .vz-panel-wrap (för dra-handtag som överlever repaint). breda → hela radbredden. */
+.vz-course .vz-region-below .vz-panel-wrap.is-wide{grid-column:1 / -1}
 /* en ensam smal panel (udda antal) ska inte lämna en tom halva → fyll raden */
-.vz-course .vz-region-below .vz-panel:not(.vz-panel--wide):last-child:nth-child(odd){grid-column:1 / -1}
+.vz-course .vz-region-below .vz-panel-wrap:not(.is-wide):last-child:nth-child(odd){grid-column:1 / -1}
 .vz-region-below:empty,.vz-region-aside:empty{display:none}
+/* ── flyttbara below-paneler: wrap (grid-item) + dra-handtag (⠿) ── */
+.vz-course .vz-panel-wrap{position:relative;min-width:0}
+.vz-course .vz-panel-wrap .vz-panel--below{margin:0;height:100%}
+.vz-course .vz-panel-drag{position:absolute;top:9px;right:11px;z-index:6;cursor:grab;color:#7d97a0;
+  font-size:15px;line-height:1;padding:3px 6px;border-radius:7px;user-select:none;background:rgba(255,255,255,.7);
+  opacity:.4;transition:opacity .15s ease,color .15s ease,background .15s ease}
+.vz-course .vz-panel-wrap:hover .vz-panel-drag,.vz-course .vz-panel-drag:focus-visible{opacity:1}
+.vz-course .vz-panel-drag:hover{color:var(--accent);background:#eef6f6;opacity:1}
+.vz-course .vz-panel-drag:active{cursor:grabbing}
+.vz-course .vz-panel-wrap.is-dragging{opacity:.45}
+.vz-course .vz-panel-wrap.is-dragging .vz-panel--below{outline:2px dashed var(--accent);outline-offset:-2px}
+/* panel-huvudets meta krockar ej med handtaget */
+.vz-course .vz-panel-wrap .vz-panel-head{padding-right:30px}
 
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
