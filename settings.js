@@ -58,16 +58,27 @@ function render(s) {
     + '<div class="vz-set-head"><img src="' + esc(CFG.MARK_URL) + '" alt=""><h1>Inställningar</h1></div>'
     + '<p class="vz-set-sub">Konfiguration för Power-Up:en. Sparas på boarden och delas av alla vyer.</p>'
 
+    + '<div class="vz-fieldgrid">'
     + '<div class="vz-field">'
     + '<label for="vz-doctor">Läkarens e-postadress</label>'
     + '<p class="hint">Hit delas mappen "HF till läkare" (läkaren får läs-åtkomst till de anonymiserade hälsoformulären).</p>'
     + '<input type="email" id="vz-doctor" placeholder="lakare@exempel.se" value="' + esc(s.doctorEmail || '') + '">'
     + '</div>'
-
     + '<div class="vz-field">'
     + '<label for="vz-admin">Admin-e-post (cc)</label>'
     + '<p class="hint">Läggs som cc på skarpa utskick (t.ex. gruppledar-mejl) så admin får en kopia. Lämna tom för ingen cc. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>'
     + '<input type="email" id="vz-admin" placeholder="admin@vitalisera.se" value="' + esc(s.adminEmail || '') + '">'
+    + '</div>'
+    + '<div class="vz-field">'
+    + '<label for="vz-sendername">Avsändarnamn</label>'
+    + '<p class="hint">Visas som avsändare på gruppledar-/kock-mejlen. Tom = "Vitalisera AB".</p>'
+    + '<input type="text" id="vz-sendername" placeholder="Vitalisera AB" value="' + esc(s.senderName || '') + '">'
+    + '</div>'
+    + '<div class="vz-field">'
+    + '<label for="vz-replyto">Svara-till (reply-to)</label>'
+    + '<p class="hint">Svar på utskicken går hit, t.ex. malin.kraft@vitalisera.se. Tom = sändande kontot. (Rensas i testläge.)</p>'
+    + '<input type="email" id="vz-replyto" placeholder="malin.kraft@vitalisera.se" value="' + esc(s.replyTo || '') + '">'
+    + '</div>'
     + '</div>'
 
     + '<div class="vz-field">'
@@ -75,20 +86,8 @@ function render(s) {
     + '<p class="hint">När test-läge är på går skarpa utskick och mapp-delningar till test-mottagaren nedan i stället för riktig mottagare. Säkerhetsspärr vid provkörning.</p>'
     + '<div class="vz-row"><input type="checkbox" id="vz-testmode"' + (s.testMode ? ' checked' : '') + '>'
     + '<label for="vz-testmode" style="margin:0;font-weight:normal">Test-läge på</label>'
-    + (s.testMode ? ' <span class="vz-testbadge">TEST PÅ</span>' : '') + '</div>'
+    + '<span id="vz-testbadge">' + (s.testMode ? ' <span class="vz-testbadge">TEST PÅ</span>' : '') + '</span></div>'
     + '<input type="email" id="vz-testredirect" style="margin-top:9px" placeholder="test-mottagare@vitalisera.se" value="' + esc(s.testRedirectEmail || '') + '">'
-    + '</div>'
-
-    + '<div class="vz-field">'
-    + '<label for="vz-sendername">Avsändarnamn</label>'
-    + '<p class="hint">Visas som avsändare på gruppledar-/kock-mejlen. Tom = "Vitalisera AB".</p>'
-    + '<input type="text" id="vz-sendername" placeholder="Vitalisera AB" value="' + esc(s.senderName || '') + '">'
-    + '</div>'
-
-    + '<div class="vz-field">'
-    + '<label for="vz-replyto">Svara-till (reply-to)</label>'
-    + '<p class="hint">Svar på utskicken går hit, t.ex. malin.kraft@vitalisera.se. Tom = sändande kontot. (Rensas i testläge.)</p>'
-    + '<input type="email" id="vz-replyto" placeholder="malin.kraft@vitalisera.se" value="' + esc(s.replyTo || '') + '">'
     + '</div>'
 
     + '<div class="vz-field">'
@@ -108,53 +107,60 @@ function render(s) {
     + '<p class="hint">Token <b>{DELTAGARKONTAKTER}</b> fylls med namn/telefon/epost per tilldelad deltagare.</p>'
     + '</div>'
 
-    + '<div class="vz-actions">'
-    + '<button class="vz-btn" id="vz-save">Spara</button>'
-    + '<span class="vz-note" id="vz-saved"></span>'
-    + '</div>'
+    + '<div class="vz-autosave"><span class="vz-autosave-txt">Ändringar sparas automatiskt</span><span class="vz-note" id="vz-saved"></span></div>'
     + '</div>';
 
   // bild16: bevara användarens manuellt ändrade textarea-höjd mellan öppningar (per id, localStorage).
   Array.prototype.forEach.call(document.querySelectorAll('textarea.vz-ta'), persistTextareaSize_);
 
-  var btn = document.getElementById('vz-save');
   var saved = document.getElementById('vz-saved');
-  btn.addEventListener('click', function () {
-    var doctor = (document.getElementById('vz-doctor').value || '').trim();
-    var admin = (document.getElementById('vz-admin').value || '').trim();
-    var redirect = (document.getElementById('vz-testredirect').value || '').trim();
-    if (doctor && !isEmail(doctor)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Läkar-e-posten ser inte giltig ut.'; return; }
-    var replyTo = (document.getElementById('vz-replyto').value || '').trim();
-    if (admin && !isEmail(admin)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Admin-e-posten ser inte giltig ut.'; return; }
-    if (redirect && !isEmail(redirect)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Test-mottagarens e-post ser inte giltig ut.'; return; }
-    if (replyTo && !isEmail(replyTo)) { saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Svara-till-adressen ser inte giltig ut.'; return; }
-    var next = {
-      doctorEmail: doctor,
-      adminEmail: admin,
-      testMode: !!document.getElementById('vz-testmode').checked,
-      testRedirectEmail: redirect,
-      senderName: (document.getElementById('vz-sendername').value || '').trim(),
-      replyTo: replyTo,
-      tpl_livsAlla: tplVal('vz-tpl-livsalla', TPL.livsAlla),
-      tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
-      tpl_uppfoljning: tplVal('vz-tpl-uppfoljning', TPL.uppfoljning),
-      tpl_uppfoljningB: tplVal('vz-tpl-uppfoljningb', TPL.uppfoljningB),
+  var savedTimer = null, saveTimer = null;
+  function val(id) { var el = document.getElementById(id); return el ? (el.value || '').trim() : ''; }
+  // Validera e-postfälten → första felet (inline-varning) eller null. Tomt = OK (frivilligt).
+  function validationError() {
+    var checks = [['vz-doctor', 'Läkar-e-posten'], ['vz-admin', 'Admin-e-posten'], ['vz-testredirect', 'Test-mottagarens e-post'], ['vz-replyto', 'Svara-till-adressen']];
+    for (var i = 0; i < checks.length; i++) { var v = val(checks[i][0]); if (v && !isEmail(v)) { return '⚠️ ' + checks[i][1] + ' ser inte giltig ut — sparas ej.'; } }
+    return null;
+  }
+  function payload() {
+    return {
+      doctorEmail: val('vz-doctor'), adminEmail: val('vz-admin'),
+      testMode: !!document.getElementById('vz-testmode').checked, testRedirectEmail: val('vz-testredirect'),
+      senderName: val('vz-sendername'), replyTo: val('vz-replyto'),
+      tpl_livsAlla: tplVal('vz-tpl-livsalla', TPL.livsAlla), tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
+      tpl_uppfoljning: tplVal('vz-tpl-uppfoljning', TPL.uppfoljning), tpl_uppfoljningB: tplVal('vz-tpl-uppfoljningb', TPL.uppfoljningB),
       tpl_uppfoljningEnskild: tplVal('vz-tpl-uppfenskild', TPL.uppfoljningEnskild),
     };
-    btn.disabled = true; saved.style.color = '#437a3a'; saved.textContent = '⏳ Sparar…';
-    t.set('board', 'shared', KEY, next).then(function () {
-      render(next); // rita om → test-badge speglar nytt läge (rebuildar #vz-saved → sätt pill EFTER)
-      // P1.4: tydlig grön pill EFTER ombyggnad (annars wipas bekräftelsen direkt) + auto-blekning så den ej blir vilseledande.
-      var s2 = document.getElementById('vz-saved');
-      if (s2) {
-        s2.className = 'vz-note vz-saved-pill'; s2.textContent = '✓ Sparat';
-        setTimeout(function () { var e = document.getElementById('vz-saved'); if (e) { e.textContent = ''; e.className = 'vz-note'; } }, 4000);
-      }
-    }).catch(function (err) {
-      saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Kunde inte spara: ' + esc(err && err.message || err);
-      btn.disabled = false;
-    });
+  }
+  function flash(text, cls) {
+    if (!saved) { return; }
+    saved.className = 'vz-note' + (cls ? ' ' + cls : ''); saved.style.color = ''; saved.textContent = text;
+    if (savedTimer) { clearTimeout(savedTimer); }
+    if (cls === 'vz-saved-pill') { savedTimer = setTimeout(function () { if (saved) { saved.textContent = ''; saved.className = 'vz-note'; } }, 2500); }
+  }
+  // Auto-save: debouncad (ingen omritning → behåll fokus/cursor). Ogiltig e-post → spara INTE, visa varning.
+  function doSave() {
+    var err = validationError();
+    if (err) { flash(err); saved.style.color = '#b23a2e'; return; }
+    flash('⏳ Sparar…');
+    t.set('board', 'shared', KEY, payload()).then(function () { flash('✓ Sparat', 'vz-saved-pill'); })
+      .catch(function (e) { flash('⚠️ Kunde inte spara: ' + esc(e && e.message || e)); saved.style.color = '#b23a2e'; });
+  }
+  function scheduleSave() { if (saveTimer) { clearTimeout(saveTimer); } saveTimer = setTimeout(doSave, 600); }
+  // Text/e-post-fält + textareas → debouncad auto-save på input.
+  Array.prototype.forEach.call(document.querySelectorAll('#root input[type=email], #root input[type=text], #root textarea'), function (el) {
+    el.addEventListener('input', scheduleSave);
   });
+  // Test-läge (kryssruta) → spara DIREKT + uppdatera TEST-badgen in-place (ingen omritning → behåll scroll/fokus).
+  var tm = document.getElementById('vz-testmode');
+  if (tm) {
+    tm.addEventListener('change', function () {
+      var badge = document.getElementById('vz-testbadge');
+      if (badge) { badge.innerHTML = tm.checked ? ' <span class="vz-testbadge">TEST PÅ</span>' : ''; }
+      if (saveTimer) { clearTimeout(saveTimer); }
+      doSave();
+    });
+  }
 }
 
 t.get('board', 'shared', KEY).then(function (s) { render(s || {}); }).catch(function () { render({}); });

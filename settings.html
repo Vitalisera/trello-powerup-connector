@@ -5,18 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Vitalisera – Inställningar</title>
   <style>
-    /* P1.3: samma visuella identitet som vyerna (mint-bakgrund, mörk head-bar, accent-knapp, matchande radier). */
+    /* Harmoniserad med Vy2 Kursöversikt (mint-bakgrund, mörk head-bar, accent, matchande radier). Fullscreen + bred. */
     html, body { height: 100%; margin: 0; }
     body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
       background: linear-gradient(180deg, #eef6f6, #f3f9f9 220px); }
-    .vz-set { max-width: 560px; margin: 0 auto; padding: 18px 20px 44px; }
-    /* mörk topbar med logga — som Kursöversikt/Deltagarstatus */
-    .vz-set-head { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; padding: 16px 18px;
-      border-radius: 14px; background: linear-gradient(120deg, #08445c, #0d3142);
-      box-shadow: 0 8px 22px rgba(8,68,92,.18); }
-    .vz-set-head img { width: 34px; height: 34px; border-radius: 8px; }
-    .vz-set-head h1 { font-size: 19px; margin: 0; color: #fff; letter-spacing: .01em; }
-    .vz-set-sub { color: #5b6b73; font-size: 13px; margin: -6px 2px 18px; }
+    .vz-set { max-width: 880px; margin: 0 auto; padding: 22px 24px 80px; }
+    /* mörk topbar med logga — som Kursöversikt */
+    .vz-set-head { display: flex; align-items: center; gap: 13px; margin: 0 0 4px; padding: 18px 22px;
+      border-radius: 16px; background: linear-gradient(120deg, #08445c, #0d3142);
+      box-shadow: 0 8px 22px rgba(8,68,92,.18); border-bottom: 3px solid #357087; }
+    .vz-set-head img { width: 36px; height: 36px; border-radius: 9px; }
+    .vz-set-head h1 { font-size: 21px; margin: 0; color: #fff; letter-spacing: .01em; font-weight: 700; }
+    .vz-set-sub { color: #5b6b73; font-size: 13px; margin: 10px 2px 20px; }
+    /* korta fält i 2-kolumnsrutnät på bred skärm (utnyttjar fullscreen-bredden) */
+    .vz-fieldgrid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+    @media (min-width: 720px) { .vz-fieldgrid { grid-template-columns: 1fr 1fr; } }
+    .vz-fieldgrid .vz-field { margin-bottom: 0; }
     .vz-field { background: #fff; border: 1px solid #e1e7ea; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
       box-shadow: 0 1px 2px rgba(13,49,66,.04); }
     .vz-field label { display: block; font-weight: 600; color: #08445c; margin-bottom: 4px; font-size: 14px; }
@@ -36,6 +40,12 @@
     .vz-note { color: #437a3a; font-size: 13px; }
     .vz-saved-pill { background: rgba(31,122,83,.12); color: #1f7a53; border-radius: 20px; padding: 3px 12px; font-weight: 700; }
     .vz-testbadge { display: inline-block; background: #fbe9c6; color: #8a5a00; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+    /* auto-save-bar (sticky botten) — ersätter Spara-knappen */
+    .vz-autosave { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; margin-top: 14px;
+      padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,.92); border: 1px solid #e1e7ea;
+      box-shadow: 0 -4px 16px rgba(8,68,92,.07); backdrop-filter: blur(6px); }
+    .vz-autosave-txt { color: #5b6b73; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+    .vz-autosave-txt::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #1f7a53; flex: none; }
   </style>
 </head>
 <body>
