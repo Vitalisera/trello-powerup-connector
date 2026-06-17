@@ -17,6 +17,12 @@ var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAu
 var ROOT = function () { return document.getElementById('root'); };
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
+// Dedupa e-postlista skiftlägesokänsligt, behåll ordning. Ren funktion (proof-bar). (Granskning 2026-06-18: 3 kopior → en källa.)
+function dedupeEmailsCI_(emails) {
+  var seen = {}, uniq = [];
+  (emails || []).forEach(function (e) { var k = String(e).toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
+  return uniq;
+}
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -740,10 +746,7 @@ function renderStaffPanel(groups, courseName) {
         if (!token) { throw new Error('Ingen Trello-token.'); }
         return restGet(token, 'lists/' + listId + '/cards?fields=name,desc');
       }).then(function (cards) {
-        var emails = (cards || []).map(function (c) { return extractStaffEmail(c.desc); }).filter(Boolean);
-        // Dedupa, behåll ordning.
-        var seen = {}, uniq = [];
-        emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
+        var uniq = dedupeEmailsCI_((cards || []).map(function (c) { return extractStaffEmail(c.desc); }).filter(Boolean));
         emOut.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i assistentkortens beskrivningar.';
         if (uniq.length) { persistText(emailsKey, emOut.value); }   // spara så det överlever stäng/öppna
       }).catch(function (err) {
@@ -793,9 +796,7 @@ function renderParticipantEmails(cards, courseName) {
   }).catch(function () {});
   btn.addEventListener('click', function () {
     out.style.display = '';
-    var emails = (cards || []).map(function (c) { return parseContactFromDesc(c.desc).epost; }).filter(Boolean);
-    var seen = {}, uniq = [];
-    emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
+    var uniq = dedupeEmailsCI_((cards || []).map(function (c) { return parseContactFromDesc(c.desc).epost; }).filter(Boolean));
     out.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i deltagarkortens beskrivningar.';
     if (uniq.length) { persistText(emailsKey, out.value); }
     showCopy(uniq.length > 0);
