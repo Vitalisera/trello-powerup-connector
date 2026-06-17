@@ -662,9 +662,9 @@ function renderHfPanel(rows, courseName) {
     if (!r.exists || !r.checkItemId) {
       action = '<span class="vz-status vz-status--missing">– saknas i checklistan</span>';
     } else if (r.done) {
-      action = '<button class="vz-hf-share is-done" disabled>✓ Delad till läkare</button>';
+      action = '<button class="vz-hf-share is-done" disabled>✓ Läkarkopia skapad</button>';
     } else {
-      action = '<button class="vz-hf-share" data-card="' + esc(r.cardId) + '" data-ci="' + esc(r.checkItemId) + '" data-name="' + esc(r.name) + '">Dela till läkare</button>';
+      action = '<button class="vz-hf-share" data-card="' + esc(r.cardId) + '" data-ci="' + esc(r.checkItemId) + '" data-name="' + esc(r.name) + '">Skapa läkarkopia</button>';
     }
     return '<tr><td class="vz-tbl-namecell">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + action + '</td></tr>';
   }).join('');
@@ -674,9 +674,12 @@ function renderHfPanel(rows, courseName) {
     : '<div class="vz-panel-empty">Inga deltagare.</div>';
   sec.innerHTML = '<div class="vz-panel-head">'
     + '<div class="vz-panel-title">Hälsoformulär till läkare</div>'
-    + '<div class="vz-panel-meta">' + done + ' av ' + sharable + ' delade</div></div>'
-    + '<div class="vz-panel-note">Klicka <b>Dela till läkare</b> för att skapa den anonymiserade kopian i läkarens mapp (bockar "Delat Hälsoformulär till läkare/kursledare"). Här avgör du vilka som går till läkaren. Namn med ↗ öppnar hälsoformuläret.</div>'
+    + '<div class="vz-panel-meta">' + done + ' av ' + sharable + ' läkarkopior skapade</div></div>'
+    + '<div class="vz-panel-note">Klicka <b>Skapa läkarkopia</b> för att skapa den anonymiserade kopian i läkarens mapp (bockar "Delat Hälsoformulär till läkare/kursledare"). Här avgör du vilka som går till läkaren. Dela sedan hela mappen till läkaren med knappen nedan. Namn med ↗ öppnar hälsoformuläret.</div>'
     + table
+    + '<div class="vz-stub-row" style="margin-top:12px">'
+    + '<button class="vz-btn" id="vz-hf-sharefolder">Dela mapp till läkare</button>'
+    + '<span class="vz-stub-note">sätter läsrätt på mappen för läkarens e-post (Inställningar) — läkaren får en Google Drive-notis</span></div>'
     + '<div class="vz-allergi-box">'
     + '<div class="vz-allergi-title">Matallergier</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
@@ -687,10 +690,13 @@ function renderHfPanel(rows, courseName) {
     + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
   host.appendChild(sec);
 
-  // #18: per-rad delning till läkare. Bekräftelse (irreversibel hälsodata-delning) + fail-closed test-läge + idempotent.
+  // #18: per-rad "Skapa läkarkopia" (bockar hf_delad → anonym kopia i mappen). Bekräftelse + fail-closed test-läge + idempotent.
   Array.prototype.forEach.call(sec.querySelectorAll('.vz-hf-share[data-card]'), function (btn) {
     btn.addEventListener('click', function () { shareHfToDoctor(btn.getAttribute('data-card'), btn.getAttribute('data-ci'), btn.getAttribute('data-name'), btn); });
   });
+  // #18: "Dela mapp till läkare" — sätter läsrätt på "HF till läkare - <kurs>" för läkarens e-post (Inställningar).
+  var folderBtn = sec.querySelector('#vz-hf-sharefolder');
+  if (folderBtn) { folderBtn.addEventListener('click', function () { shareDoctorFolder(courseName, folderBtn); }); }
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
   //    ersätt koderna med riktiga namn lokalt i svaret.
@@ -860,23 +866,23 @@ function renderHfPanel(rows, courseName) {
 function shareHfToDoctor(cardId, checkItemId, name, btn) {
   if (!cardId || !checkItemId) { return; }
   courseInModalConfirm(
-    'Dela ' + name + ':s anonymiserade hälsoformulär till läkaren?\n\nDetta bockar "Delat Hälsoformulär till läkare/kursledare", '
+    'Skapa läkarkopian för ' + name + '?\n\nDetta bockar "Delat Hälsoformulär till läkare/kursledare", '
       + 'vilket skapar den anonymiserade kopian i läkarens mapp. Det kan inte ångras härifrån.',
-    'Dela till läkare',
+    'Skapa läkarkopia',
     function () {
       getCourseSettings().then(function (settings) {
-        if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: dela ej i testläge/osäkert läge
-          try { t.alert({ message: 'Testläge: skulle delat ' + name + ':s hälsoformulär (ingen ändring gjordes).', duration: 7, display: 'info' }); } catch (e) {}
+        if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: skapa ej kopia i testläge/osäkert läge
+          try { t.alert({ message: 'Testläge: skulle skapat läkarkopia för ' + name + ' (ingen ändring gjordes).', duration: 7, display: 'info' }); } catch (e) {}
           return;
         }
         var orig = btn.textContent;
-        btn.disabled = true; btn.textContent = '⏳ Delar…';
+        btn.disabled = true; btn.textContent = '⏳ Skapar…';
         t.getRestApi().getToken().then(function (token) {
           if (!token) { throw new Error('Ingen Trello-token — anslut Power-Up:en först.'); }
           return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + checkItemId + '?state=complete');
         }).then(function () {
-          btn.textContent = '✓ Delad till läkare'; btn.classList.add('is-done');
-          try { t.alert({ message: '✓ Delade ' + name + ':s hälsoformulär till läkaren.', duration: 7, display: 'success' }); } catch (e) {}
+          btn.textContent = '✓ Läkarkopia skapad'; btn.classList.add('is-done');
+          try { t.alert({ message: '✓ Skapade läkarkopia för ' + name + '.', duration: 7, display: 'success' }); } catch (e) {}
         }).catch(function (err) {
           btn.disabled = false; btn.textContent = orig;
           try { t.alert({ message: '⚠️ Kunde inte dela: ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {}
@@ -884,6 +890,45 @@ function shareHfToDoctor(cardId, checkItemId, name, btn) {
       });
     }
   );
+}
+
+/* #18: "Dela mapp till läkare" — sätter läsrätt på mappen "HF till läkare - <kurs>" för läkarens e-post
+ * (vz_settings.doctorEmail) via GAS. Läkaren får en Google Drive-notis. Bekräftelse + fail-closed test-läge. */
+function shareDoctorFolder(courseName, btn) {
+  getCourseSettings().then(function (settings) {
+    var doctor = String(settings.doctorEmail || '').trim();
+    if (!doctor) {
+      try { t.alert({ message: 'Sätt läkarens e-postadress i Inställningar (kugghjulet) först.', duration: 8, display: 'error' }); } catch (e) {}
+      return;
+    }
+    courseInModalConfirm(
+      'Dela mappen "HF till läkare - ' + courseName + '" till läkaren (' + doctor + ')?\n\n'
+        + 'Läkaren får läsrätt + ett mejl från Google Drive. Mappen innehåller de anonymiserade läkarkopiorna.',
+      'Dela mapp till läkare',
+      function () {
+        if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: dela ej i testläge
+          try { t.alert({ message: 'Testläge: skulle delat mappen med ' + doctor + ' (ingen ändring gjordes).', duration: 7, display: 'info' }); } catch (e) {}
+          return;
+        }
+        var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Delar mapp…';
+        postToGas('shareDoctorFolder', { courseName: courseName, doctorEmail: doctor }).then(function (data) {
+          btn.disabled = false; btn.textContent = orig;
+          if (data && data.ok) {
+            try { t.alert({ message: '✓ Mappen delad med läkaren (' + doctor + '). Hon får ett mejl från Google Drive.', duration: 9, display: 'success' }); } catch (e) {}
+          } else {
+            var err = (data && data.error) || 'okänt fel';
+            var msg = err === 'folder_not_found'
+              ? 'Hittade ingen mapp "HF till läkare - ' + courseName + '" än. Skapa minst en läkarkopia först (då skapas mappen).'
+              : (err === 'doctor_email_required' ? 'Läkarens e-post saknas.' : 'Kunde inte dela mappen: ' + err);
+            try { t.alert({ message: '⚠️ ' + msg, duration: 9, display: 'error' }); } catch (e) {}
+          }
+        }).catch(function (err) {
+          btn.disabled = false; btn.textContent = orig;
+          try { t.alert({ message: '⚠️ Kunde inte dela mappen: ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {}
+        });
+      }
+    );
+  });
 }
 
 /* In-modal bekräftelse-dialog (t.popup renderar ej i fullscreen t.modal). Esc avbryter, Enter bekräftar,
