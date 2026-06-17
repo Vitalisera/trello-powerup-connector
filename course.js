@@ -554,9 +554,13 @@ function loadDocStatus(courseName, cards) {
   }).filter(function (it) { return it.hfUrl || it.livsUrl; });
   if (!withDocs.length) { return; }
 
+  // visa ⏳ i steg 8/9-cellerna direkt (skanning kan ta ~10-30s första gången, sedan cachat)
+  var byKey = {};
+  withDocs.forEach(function (it) { byKey[it.key] = { hf: it.hfUrl ? { loading: true } : null, livs: it.livsUrl ? { loading: true } : null }; });
+  if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }
+
   var CHUNK = 6, chunks = [];
   for (var i = 0; i < withDocs.length; i += CHUNK) { chunks.push(withDocs.slice(i, i + CHUNK)); }
-  var byKey = {};
   Promise.all(chunks.map(function (grp) {
     return postToGas('courseDocStatus', { items: grp })
       .then(function (data) {

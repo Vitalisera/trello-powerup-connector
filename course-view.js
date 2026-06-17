@@ -86,7 +86,9 @@
     if (!d) { return null; }
     var isLivs = stepKey === 'livs_klar';
     var st = isLivs ? d.livs : d.hf;
-    if (!st || st.ok !== true) { return null; }
+    if (!st) { return null; }
+    if (st.loading) { return { html: '<span class="vz-cv-docpct dp-wait">⏳</span>', title: 'Skannar dokument…' }; }
+    if (st.ok !== true) { return null; }
     var cls = st.ready ? 'dp-done' : (st.pct > 0 ? 'dp-part' : 'dp-empty');
     var img = isLivs ? (st.hasImage ? '<i class="dp-img on">●</i>' : '<i class="dp-img">○</i>') : '';
     var title = (isLivs ? 'Livsberättelse' : 'Hälsoformulär') + ': ' + st.filled + '/' + st.total + ' besvarat'
