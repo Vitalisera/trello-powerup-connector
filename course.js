@@ -1325,7 +1325,8 @@ function shareDoctorFolder(courseName, btn) {
 
 /* In-modal bekräftelse-dialog (t.popup renderar ej i fullscreen t.modal). Esc avbryter, Enter bekräftar,
  * autofokus på bekräfta. Vi äger modalens DOM → egen overlay. */
-function courseInModalConfirm(message, confirmText, onYes) {
+function courseInModalConfirm(message, confirmText, onYes, opts) {
+  opts = opts || {};
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,68,92,.35);display:flex;align-items:center;justify-content:center;font-family:Calibri,system-ui,sans-serif';
   var box = document.createElement('div');
@@ -1333,15 +1334,16 @@ function courseInModalConfirm(message, confirmText, onYes) {
   box.style.cssText = 'background:#fff;max-width:440px;margin:16px;padding:20px 22px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);color:#0d3142';
   var p = document.createElement('div'); p.style.cssText = 'font-size:14.5px;line-height:1.5;margin-bottom:16px;white-space:pre-line'; p.textContent = message;
   var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
-  var no = document.createElement('button'); no.textContent = 'Avbryt'; no.style.cssText = 'border:none;cursor:pointer;background:#7a8a91;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
+  var no = document.createElement('button'); no.textContent = opts.cancelText || 'Avbryt'; no.style.cssText = 'border:none;cursor:pointer;background:#7a8a91;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
   var yes = document.createElement('button'); yes.textContent = confirmText || 'Bekräfta'; yes.style.cssText = 'border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
   row.appendChild(no); row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
   (document.body || document.documentElement).appendChild(ov);
   function close() { document.removeEventListener('keydown', onKey, true); ov.remove(); }
-  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter') { e.preventDefault(); close(); onYes(); } }
+  function cancel() { close(); if (opts.onCancel) { opts.onCancel(); } }
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); cancel(); } else if (e.key === 'Enter') { e.preventDefault(); close(); onYes(); } }
   document.addEventListener('keydown', onKey, true);
-  no.addEventListener('click', close);
-  ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
+  no.addEventListener('click', cancel);
+  ov.addEventListener('click', function (e) { if (e.target === ov) { cancel(); } });
   yes.addEventListener('click', function () { close(); onYes(); });
   yes.focus();
 }
@@ -1491,28 +1493,45 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   if (docCfg) {
     var docBtn = document.createElement('button'); docBtn.className = 'vz-btn'; docBtn.textContent = 'Skapa sammanfattningsdok';
     docBtn.style.marginLeft = '6px';
-    docBtn.addEventListener('click', function () {
-      docBtn.disabled = true; note.textContent = '⏳ Skapar dokument…';
-      postToGas('createSummaryDoc', { dryRun: false, courseName: docCfg.courseName, groups: docCfg.getGroups ? docCfg.getGroups() : [] }).then(function (res) {
+    function insertSummaryLink(url) {
+      var mdLink = '[länk till sammanfattningsdokumentet](' + url + ')';   // etiketterad → snygg <a> i mejlet
+      if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, mdLink); }
+      else { ta.value = ta.value + '\n\n' + mdLink; }
+      if (pkey) { persistText(pkey, ta.value); }
+      fit();
+    }
+    function summaryError_(res) {
+      var err = (res && res.error) || 'kunde ej skapa dokument';
+      var msg = err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + docCfg.courseName + '".'
+        : err === 'no_assignments' ? 'Bocka minst en deltagare per gruppledare i matrisen först.' : err;
+      if (res && res.detail) { msg += ' — ' + res.detail; }
+      return '⚠️ ' + msg;
+    }
+    function createSummary(replace) {
+      docBtn.disabled = true; note.textContent = replace ? '⏳ Ersätter dokument…' : '⏳ Skapar dokument…';
+      postToGas('createSummaryDoc', { dryRun: false, replace: !!replace, courseName: docCfg.courseName, groups: docCfg.getGroups ? docCfg.getGroups() : [] }).then(function (res) {
         if (res && res.ok && res.url) {
-          // Etiketterad markdown-länk → blir en snygg <a> i mejlet (plainToHtml), inte en rå URL.
-          var mdLink = '[länk till sammanfattningsdokumentet](' + res.url + ')';
-          if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, mdLink); }
-          else { ta.value = ta.value + '\n\n' + mdLink; }
-          if (pkey) { persistText(pkey, ta.value); }
-          fit();
-          note.textContent = res.existed ? '✓ Länk infogad (dokumentet fanns redan)' : '✓ Dokument skapat + länk infogad';
+          // Befintligt dok (utan replace) → erbjud ersätt eller använd befintligt (Robert 2026-06-17).
+          if (res.existed && !replace) {
+            docBtn.disabled = false;
+            courseInModalConfirm(
+              'Ett sammanfattningsdok finns redan för kursen.\n\nVill du ersätta det med ett nytt (genereras om från matrisen — det gamla hamnar i papperskorgen) eller använda det befintliga?',
+              'Ersätt med nytt',
+              function () { createSummary(true); },
+              { cancelText: 'Använd befintligt', onCancel: function () { insertSummaryLink(res.url); note.textContent = '✓ Använde befintligt dok + länk infogad'; docBtn.textContent = '✓ Sammanfattningsdok klart'; } }
+            );
+            return;
+          }
+          insertSummaryLink(res.url);
+          note.textContent = replace ? '✓ Ersatt med nytt dok + länk infogad' : '✓ Dokument skapat + länk infogad';
+          docBtn.textContent = '✓ Sammanfattningsdok klart';
         } else {
-          var err = (res && res.error) || 'kunde ej skapa dokument';
-          var msg = err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + docCfg.courseName + '".'
-            : err === 'no_assignments' ? 'Bocka minst en deltagare per gruppledare i matrisen först.'
-            : err;
-          if (res && res.detail) { msg += ' — ' + res.detail; }   // #7: visa det faktiska felet för felsökning
-          note.textContent = '⚠️ ' + msg;
+          note.textContent = summaryError_(res);
         }
         docBtn.disabled = false;
       }).catch(function (e) { note.textContent = '⚠️ ' + e.message; docBtn.disabled = false; });
-    });
+    }
+    docBtn.addEventListener('click', function () { createSummary(false); });
     row.appendChild(docBtn);
   }
   row.appendChild(note);

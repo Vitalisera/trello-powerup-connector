@@ -3,13 +3,14 @@
  * Connector-entrypoint. Registrerar capability-callbacks + REST-klient (appKey).
  *
  * Capabilities (måste även bockas i admin-portalen):
- *   - card-back-section   : deltagar-dashboard (kompakt strip, öppnar fullvy)
- *   - card-buttons        : Deltagarstatus (dashboard) + Kursöversikt (denna kurs)
- *   - card-detail-badges  : status-badge → öppnar dashboard
- *   - board-buttons       : Kursöversikt (board-brett, list-väljare)
+ *   - card-buttons        : Kursöversikt (denna kurs)
+ *   - card-detail-badges  : Kursöversikt-badge på kortet
+ *   - board-buttons       : Kursöversikt (board-brett, list-väljare) + Inställningar
  *
- * Vyer: Vy1 deltagar-dashboard (card-back-section + modal), Vy2 kursöversikt
- * (modal, board-brett). appKey aktiverar t.getRestApi() för Vy2:s checklist-läsning.
+ * Vy2 Kursöversikt (modal, board-brett) är den enda vyn. appKey aktiverar t.getRestApi() för checklist-läsning.
+ * Vy1 Deltagarstatus BORTTAGEN 2026-06-17 (Robert) — all funktionalitet ersatt av Kursöversiktens fold-out
+ * (klick på en stegcell expanderar deltagarraden med Fas 1/Fas 2 + noteringar). dashboard.*-filerna är döda
+ * (kvar tills proof-beroendet städats); registreras ej längre.
  */
 'use strict';
 
@@ -20,7 +21,7 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '84';
+var V = '85';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 // Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
@@ -29,12 +30,6 @@ function resolveTestSuffix(t) {
   return t.get('board', 'shared', 'vz_settings').then(function (s) {
     return (s && s.testMode === true) ? ' - TEST' : '';
   }).catch(function () { return ''; });
-}
-
-function openDashboard(t) {
-  return resolveTestSuffix(t).then(function (suf) {
-    return t.modal({ url: vurl('./dashboard.html'), fullscreen: true, title: CFG.APP_NAME + ' – Deltagarstatus' + suf, accentColor: '#08445c' });
-  });
 }
 
 // Kursöversikt för DENNA deltagares kurs (kortets lista).
@@ -61,25 +56,15 @@ function openSettings(t) {
 }
 
 TrelloPowerUp.initialize({
-  'card-back-section': function (t, opts) {
-    return {
-      title: CFG.APP_NAME + ' – Deltagarstatus',
-      icon: MARK,
-      content: { type: 'iframe', url: t.signUrl('./dashboard.html', { compact: '1', v: V }), height: 56 },
-    };
-  },
-
   'card-buttons': function (t, opts) {
     return [
-      { icon: MARK, text: CFG.APP_NAME + ' – Deltagarstatus', callback: openDashboard, condition: 'edit' },
       { icon: MARK, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromCard, condition: 'edit' },
     ];
   },
 
-  // Inline-badges på kortet (under labels): båda vyerna nås direkt här också.
+  // Inline-badge på kortet (under labels): Kursöversikt nås direkt här också.
   'card-detail-badges': function (t, opts) {
     return [
-      { title: CFG.APP_NAME, text: 'Deltagarstatus', color: 'blue', callback: openDashboard },
       { title: CFG.APP_NAME, text: 'Kursöversikt', color: 'sky', callback: openCourseFromCard },
     ];
   },
