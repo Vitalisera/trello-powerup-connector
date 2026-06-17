@@ -485,6 +485,17 @@
     function paintHead() {
       head.innerHTML = theadHtml(steps, phases, state.collapsed).replace(/^<thead>|<\/thead>$/g, '');
       wireHead();
+      syncStickyOffsets();
+    }
+    // Steg-raden ska frysa UNDER fas-raden vid scroll. Fas-radens höjd är dynamisk (wrap) → mät + sätt
+    // stephead/collapsed-head top i px (inline slår base-regelns top:0). Körs efter varje paint + på resize.
+    function syncStickyOffsets() {
+      var rows = head.querySelectorAll('tr');
+      if (rows.length < 2) { return; }
+      var ph = Math.round(rows[0].getBoundingClientRect().height) - 1;  // -1: överlappa fas-raden så ingen sub-pixel-glipa
+      Array.prototype.forEach.call(head.querySelectorAll('.vz-cv-stephead, .vz-cv-collapsed-head'), function (th) {
+        th.style.top = ph + 'px';
+      });
     }
     function wireHead() {
       // klick/tangent på fas-rubrik eller dess infällda platshållare → fäll in/ut
