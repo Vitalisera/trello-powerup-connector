@@ -56,7 +56,7 @@
   border:1px solid rgba(255,255,255,.7);
   border-radius:22px;
   box-shadow:var(--shadow-lg);
-  overflow:hidden;
+  overflow:visible;   /* V=80: EJ scroll-container → thead fryser mot iframe-body. Hörn-clip flyttat till topbar/regions-radie. */
   backdrop-filter:blur(8px);
   display:flex;
   flex-direction:column;
@@ -71,6 +71,7 @@
   color:#e7f1f3;
   position:relative;
   border-bottom:3px solid var(--accent);
+  border-radius:22px 22px 0 0;   /* V=80: shell ej längre overflow:hidden → topbar rundar egna topphörn */
   flex:none;
 }
 .vz-cv-topbar::after{
@@ -202,11 +203,13 @@
 .vz-cv-search input::placeholder{color:var(--muted)}
 
 /* ===== LAYOUT-REGIONER ===== */
-/* hela region-zonen scrollar vertikalt inuti shellet */
+/* overflow:visible (INGEN inre scroll-container) → thead:s sticky bubblar till iframe-body:n
+   (fullscreen-modal = fast viewport-höjd → body scrollar). thead fryser mot viewport-toppen. (V=80) */
 .vz-cv-regions{
-  flex:1;min-height:0;overflow:auto;
+  flex:1;min-height:0;overflow:visible;
   display:flex;flex-direction:column;
   background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
+  border-radius:0 0 22px 22px;   /* V=80: shell ej overflow:hidden → regions rundar egna bottenhörn */
 }
 /* rad: matris (vänster, flexar) + aside (höger, fast bredd) */
 .vz-cv-row-region{
@@ -246,12 +249,11 @@
 
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
-  flex:1;min-height:0;overflow:auto;position:relative;
+  flex:1;min-height:0;overflow:visible;position:relative;
   background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
   padding-right:120px;   /* #16: plats för sista stegtitelns diagonala svans ("Uppföljningssamtal") */
-  /* egen scroll-container med höjdtak → thead fryser INOM matrisen + släpper vid tabellslut + clippar
-     (ingen överlappning av aside/below). Page body-scrollar resten. (V=79, ersätter trasiga V=75-sticky.) */
-  max-height:calc(100vh - 118px);
+  /* overflow:visible (INGEN fast höjd, Robert) → thead:s sticky bubblar till SIDANS scroll (body) och
+     släpper vid tabellens slut (containing block = tabellen) → ingen överlappning av below/aside. (V=80) */
 }
 .vz-cv-table{
   /* #16: width:100% → kolumnerna sprids och fyller matris-regionen (Robert 2026-06-17: tabellen var för smal).
