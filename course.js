@@ -535,6 +535,87 @@ function hfDoneForCard(card) {
   });
   return { exists: exists, done: done };
 }
+
+/* ---------- #11 Dokumentstatus (Fas 1, READ-ONLY): skanna HF + livsberättelse via GAS ----------
+ * Per kort: HF-länk + livsberättelse-länk ur kommentarerna → GAS courseDocStatus skannar (% besvarat,
+ * tecken, bild). Visar en panel sorterad minst-klar-först så Malin ser vem hon ska påminna. Chunkar
+ * (parallella 6-grupper) så första (ocachade) skanningen inte timeoutar. Auto-bockning = Fas 2 m. Robert.
+ */
+function loadDocStatus(courseName, cards) {
+  var items = (cards || []).map(function (c) {
+    return {
+      key: c.id,
+      name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
+      hfUrl: commentLink(c, HF_LINK_RES),
+      livsUrl: commentLink(c, STORY_LINK_RES),
+    };
+  });
+  var withDocs = items.filter(function (it) { return it.hfUrl || it.livsUrl; });
+  renderDocStatusPanel(courseName, items, withDocs.length ? null : {});  // null = laddar
+  if (!withDocs.length) { return; }
+
+  var CHUNK = 6, chunks = [];
+  for (var i = 0; i < withDocs.length; i += CHUNK) { chunks.push(withDocs.slice(i, i + CHUNK)); }
+  var byKey = {};
+  Promise.all(chunks.map(function (grp) {
+    return postToGas('courseDocStatus', { items: grp.map(function (it) { return { key: it.key, hfUrl: it.hfUrl, livsUrl: it.livsUrl }; }) })
+      .then(function (data) { ((data && data.items) || []).forEach(function (r) { byKey[r.key] = r; }); })
+      .catch(function () { /* en chunk kan fela — visa resten */ });
+  })).then(function () { renderDocStatusPanel(courseName, items, byKey); });
+}
+
+// Status-badge för ETT dok: pct-pill färgad (grön ≥85, amber 1-84, grå 0/saknas) + ev. bild-prick.
+function docBadge_(st, hasUrl, isLivs) {
+  if (!hasUrl) { return '<span class="vz-ds-badge vz-ds-na" title="Ingen länk i kortet">–</span>'; }
+  if (!st) { return '<span class="vz-ds-badge vz-ds-wait">⏳</span>'; }
+  if (st.ok !== true) { return '<span class="vz-ds-badge vz-ds-na" title="Kunde inte läsa dokumentet">!</span>'; }
+  var cls = st.ready ? 'vz-ds-done' : (st.pct > 0 ? 'vz-ds-part' : 'vz-ds-empty');
+  var img = (isLivs ? (st.hasImage ? '<span class="vz-ds-img on" title="Bild finns">●</span>' : '<span class="vz-ds-img" title="Bild saknas">○</span>') : '');
+  var tip = st.filled + '/' + st.total + ' besvarat' + (st.chars ? ', ' + st.chars + ' tecken' : '')
+    + (isLivs ? (st.hasImage ? ', bild ✓' : ', bild saknas') : '') + (st.docUpdated ? ' · ändrad ' + st.docUpdated : '');
+  return '<span class="vz-ds-badge ' + cls + '" title="' + esc(tip) + '">' + st.pct + '%' + img + '</span>';
+}
+
+function renderDocStatusPanel(courseName, items, byKey) {
+  var host = vzRegion('below');
+  if (!host) { return; }
+  var prev = host.querySelector('[data-vz-docstatus]');
+  if (prev) { prev.parentNode.removeChild(prev); }   // idempotent
+  var sec = document.createElement('section');
+  sec.className = 'vz-panel vz-panel--below';
+  sec.setAttribute('data-vz-docstatus', '1');
+
+  var loading = (byKey === null);
+  // sortera minst-klar-först (saknad/tom överst); behåll namn-ordning som tie-break
+  var score = function (it) {
+    var r = byKey && byKey[it.key];
+    if (!r) { return -1; }
+    var vals = [];
+    if (it.hfUrl) { vals.push(r.hf && r.hf.ok ? r.hf.pct : 0); }
+    if (it.livsUrl) { vals.push(r.livs && r.livs.ok ? r.livs.pct : 0); }
+    return vals.length ? Math.min.apply(null, vals) : 999;  // ingen dok-länk = längst ner
+  };
+  var rows = items.slice();
+  if (!loading) { rows.sort(function (a, b) { return score(a) - score(b); }); }
+
+  var body = rows.map(function (it) {
+    var r = byKey && byKey[it.key];
+    return '<tr><td class="vz-ds-name">' + esc(it.name || 'Deltagare') + '</td>'
+      + '<td class="vz-ds-cell">' + docBadge_(r && r.hf, !!it.hfUrl, false) + '</td>'
+      + '<td class="vz-ds-cell">' + docBadge_(r && r.livs, !!it.livsUrl, true) + '</td></tr>';
+  }).join('');
+
+  var note = loading
+    ? '<div class="vz-panel-note">⏳ Skannar dokument … (första gången kan ta en stund)</div>'
+    : '<div class="vz-panel-note">% besvarade frågor per dokument. Grön = klar (≥85%' +
+      ', livsberättelse även bild). Hovra för detaljer. Sorterat minst klar först.</div>';
+
+  sec.innerHTML = '<div class="vz-panel-title">Dokumentstatus inför kurs</div>' + note
+    + '<table class="vz-ds-tbl"><thead><tr><th>Deltagare</th><th>Hälsoformulär</th><th>Livsberättelse</th></tr></thead>'
+    + '<tbody>' + body + '</tbody></table>';
+  host.appendChild(sec);
+}
+
 function loadHfPanel(cards, courseName) {
   var rows = (cards || []).map(function (c, i) {
     var hf = hfDoneForCard(c);
@@ -1414,6 +1495,7 @@ function loadCourse(listId, listName) {
     loadStoryMatrix(res[0], model.participants, res[1] || []);
     loadCourseChecklist(res[0]);
     renderParticipantEmails(res[1] || [], res[0]);   // #17b
+    loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus)
 
   }).catch(function (err) {
     var diag;
