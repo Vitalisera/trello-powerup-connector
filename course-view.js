@@ -76,6 +76,27 @@
     return steps.reduce(function (n, s) { return n + (st[s.key] === 'gap' ? 1 : 0); }, 0);
   }
 
+  /* #11: dok-status (HF/livsberättelse-skanning) injiceras i matrisens steg 8/9-celler.
+   * course.js fyller DOC_STATUS via CourseView.applyDocStatus → repaint. Keyat på p.key (kort-id). */
+  var DOC_STATUS = {};
+  var repaintBodyRef = null;
+  function docCellBadge(pkey, stepKey) {
+    if (stepKey !== 'hf_klart' && stepKey !== 'livs_klar') { return null; }
+    var d = DOC_STATUS[pkey];
+    if (!d) { return null; }
+    var isLivs = stepKey === 'livs_klar';
+    var st = isLivs ? d.livs : d.hf;
+    if (!st || st.ok !== true) { return null; }
+    var cls = st.ready ? 'dp-done' : (st.pct > 0 ? 'dp-part' : 'dp-empty');
+    var img = isLivs ? (st.hasImage ? '<i class="dp-img on">●</i>' : '<i class="dp-img">○</i>') : '';
+    var title = (isLivs ? 'Livsberättelse' : 'Hälsoformulär') + ': ' + st.filled + '/' + st.total + ' besvarat'
+      + (st.chars ? ', ' + st.chars + ' tecken' : '')
+      + (isLivs ? (st.hasImage ? ', bild ✓' : ', bild saknas') : '')
+      + (st.docUpdated ? ' · ändrad ' + st.docUpdated : '');
+    return { html: '<span class="vz-cv-docpct ' + cls + '">' + st.pct + '%' + img + '</span>', title: title };
+  }
+  function applyDocStatus(map) { DOC_STATUS = map || {}; if (repaintBodyRef) { repaintBodyRef(false); } }
+
   /* ---------- topbar (kurs + datum + dagar till start) ---------- */
   function countdownHtml(daysToStart) {
     if (daysToStart == null) {
@@ -285,10 +306,11 @@
       }
       var stcode = (p.status && p.status[s.key]) || 'wait';
       var m = meta(stcode);
-      var inner = m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>';
-      cells += '<td class="vz-cv-cell' + edge + (stcode === 'gap' ? ' is-gap' : '') + '"'
-        + ' data-step-key="' + esc(s.key) + '" title="' + esc(s.title + ' — ' + m.word) + '">'
-        + '<span class="vz-cv-dot ' + m.cls + '">' + inner + '</span>'
+      var docB = docCellBadge(p.key, s.key);   // #11: % för steg 8/9 om dok-status finns
+      var cellInner = docB ? docB.html : '<span class="vz-cv-dot ' + m.cls + '">' + (m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>') + '</span>';
+      cells += '<td class="vz-cv-cell' + edge + (stcode === 'gap' && !docB ? ' is-gap' : '') + '"'
+        + ' data-step-key="' + esc(s.key) + '" title="' + esc(docB ? docB.title : (s.title + ' — ' + m.word)) + '">'
+        + cellInner
         + '</td>';
     });
 
@@ -579,6 +601,7 @@
     }
 
     // initial paint
+    repaintBodyRef = paintBody;   // #11: låt applyDocStatus rita om kroppen när dok-status anländer
     paintSummary();
     paintHead();
     paintBody(true);
@@ -697,7 +720,7 @@
   };
 
   /* ---------- expose ---------- */
-  window.CourseView = { render: render, region: region, DEMO_MODEL: DEMO_MODEL };
+  window.CourseView = { render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus };
 
   /* ---------- fristående auto-boot ---------- */
   function autoBoot() {
