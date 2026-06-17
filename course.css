@@ -10,8 +10,6 @@
    Samma varumärke/känsla som deltagar-dashboarden (vz-dash).
    ============================================================================ */
 
-/* höjd-kedja: krävs för att .vz-cv-regions ska scrolla INTERNT (frysta rubriker) ist. för body-scroll */
-html,body,#root{height:100%}
 .vz-course{
   --mint-bg:#cce2e3;
   --dark:#08445c;
@@ -38,9 +36,8 @@ html,body,#root{height:100%}
   text-rendering:optimizeLegibility;
   line-height:1.5;
 
-  /* fyll modalens höjd EXAKT (ej växa) så .vz-cv-regions scrollar internt → frysta rubriker */
-  box-sizing:border-box;
-  height:100%;
+  /* fyll modalens höjd; växer med innehållet (body-scroll) */
+  min-height:100%;
   display:flex;
   background:
     radial-gradient(1200px 600px at 80% -10%, rgba(53,112,135,.18), transparent 60%),
@@ -249,7 +246,7 @@ html,body,#root{height:100%}
 
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
-  flex:1;min-height:0;overflow:visible;position:relative;
+  flex:1;min-height:0;overflow:auto;position:relative;
   background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
   padding-right:120px;   /* #16: plats för sista stegtitelns diagonala svans ("Uppföljningssamtal") */
 }
