@@ -225,6 +225,19 @@ function renderInlineStepDetail(host, p, stepKey, card) {
   var nb = host.querySelector('[data-act="notes"]'); if (nb) { nb.addEventListener('click', function () { showParticipantNotes(p, card); }); }
 }
 
+// Efter lyckad bock/label: mutera kortdatan lokalt + uppdatera matriscellerna (inkl. implies-kaskad) utan omladdning.
+function applyStepChange_(cardId, d, kind) {
+  var card = COURSE_CARDS_BY_ID[cardId];
+  if (!card) { return; }
+  if (kind === 'tick' && d.checkItemId) {
+    (card.checklists || []).forEach(function (cl) { (cl.checkItems || []).forEach(function (it) { if (it.id === d.checkItemId) { it.state = 'complete'; } }); });
+  } else if (kind === 'label' && d.triggerLabel) {
+    card.labels = card.labels || []; card.labels.push({ name: d.triggerLabel });
+  }
+  var ns = statusForCard(card).status;
+  Object.keys(ns).forEach(function (k) { if (window.CourseView && CourseView.setCellStatus) { CourseView.setCellStatus(cardId, k, ns[k]); } });
+}
+
 // Fas 1: sätt triggerlabeln (POST idLabels → startar nya-zapier-automationen). Bekräftelse + fail-closed test-läge.
 function inlineSetLabel(cardId, d, btn) {
   courseInModalConfirm('Sätt labeln «' + d.triggerLabel + '» på kortet?\n\nDet startar automationen'
@@ -241,6 +254,7 @@ function inlineSetLabel(cardId, d, btn) {
         });
       }).then(function () {
         btn.textContent = '✓ Label satt'; btn.classList.add('is-done');
+        applyStepChange_(cardId, d, 'label');   // uppdatera matriscellen utan omladdning
         try { t.alert({ message: '✓ Satte «' + d.triggerLabel + '» — automationen startar.', duration: 7, display: 'success' }); } catch (e) {}
       }).catch(function (err) { btn.disabled = false; btn.textContent = 'Sätt label'; try { t.alert({ message: '⚠️ ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {} });
     });
@@ -258,6 +272,7 @@ function inlineTick(cardId, d, btn) {
         return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + d.checkItemId + '?state=complete');
       }).then(function () {
         btn.textContent = '✓ Bockad'; btn.classList.add('is-done');
+        applyStepChange_(cardId, d, 'tick');   // uppdatera matriscellen utan omladdning
         try { t.alert({ message: '✓ Bockade «' + d.checkItemName + '».', duration: 6, display: 'success' }); } catch (e) {}
       }).catch(function (err) { btn.disabled = false; btn.textContent = 'Bocka av'; try { t.alert({ message: '⚠️ ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {} });
     });

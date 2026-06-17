@@ -319,8 +319,14 @@
 .vz-cv-collapsed-cell .cc-dash{color:#9bbcc6;font-size:14px;font-weight:700}
 
 /* inline steg-detalj (klick på cell → expandera rad): Fas 1/Fas 2-kort + noteringar */
-.vz-cv-cell{cursor:pointer}
-.vz-cv-cell.is-sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.vz-cv-cell{cursor:pointer;position:relative}
+/* vald cell: mint-bg (samma som detalj-raden) + ram + förstärkt underkant som "pekar" mot raden under (UX-rek) */
+.vz-cv-cell.is-sel{background:#eef6f6;box-shadow:inset 0 0 0 2px var(--accent), inset 0 -3px 0 0 var(--accent);z-index:1}
+.vz-cv-cell.is-sel > *{position:relative}
+.vz-cv-cell.is-sel::after{content:"";position:absolute;left:50%;bottom:-5px;width:11px;height:6px;transform:translateX(-50%);background:#eef6f6;clip-path:polygon(0 0,100% 0,50% 100%);z-index:2}
+/* highlight av kolumnrubrikens siffer-cirkel för det öppnade steget */
+.vz-cv-stephead.is-active-step .sidx{background:var(--accent);color:#fff;box-shadow:0 0 0 3px var(--lightmint)}
+.vz-cv-stephead.is-active-step .stitle{color:var(--dark);font-weight:800}
 .vz-cv-detailrow > td{padding:0;background:#eef6f6;border-bottom:1px solid var(--hairline-strong)}
 .vz-cv-detail{padding:14px 20px}
 .vz-cv-detail-loading,.vz-cv-detail-empty{color:var(--muted);font-size:13px}

@@ -80,6 +80,7 @@
    * course.js fyller DOC_STATUS via CourseView.applyDocStatus → repaint. Keyat på p.key (kort-id). */
   var DOC_STATUS = {};
   var repaintBodyRef = null;
+  var setCellStatusRef = null;   // course.js → uppdatera EN cell efter bock/label utan att rita om modalen
   function docCellBadge(pkey, stepKey) {
     if (stepKey !== 'hf_klart' && stepKey !== 'livs_klar') { return null; }
     var d = DOC_STATUS[pkey];
@@ -254,7 +255,7 @@
       // .vz-story-leader-label) → smal kolumn. Badge nederst (horisontell), titel stiger diagonalt.
       // Fallande inline-z (vänster över höger) så en etiketts diagonala svans ej döljs av nästa
       // kolumns opaka th-bakgrund. Inline slår .vz-cv-table thead th{z-index} (specificitet).
-      stepRow += '<th class="vz-cv-stephead' + edge + '" data-phase-key="' + esc(pk) + '"'
+      stepRow += '<th class="vz-cv-stephead' + edge + '" data-phase-key="' + esc(pk) + '" data-step-key="' + esc(s.key) + '"'
         + ' style="z-index:' + (40 - n) + '" title="' + esc(s.title) + '">'
         + '<span class="stitle">' + esc(s.title) + '</span>'
         + '<span class="sidx">' + n + '</span>'
@@ -588,8 +589,11 @@
         && next.getAttribute('data-step') === stepKey && next.getAttribute('data-pkey') === p.key;
       Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-detailrow'), function (d) { d.parentNode.removeChild(d); });
       Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-cell.is-sel'), function (c) { c.classList.remove('is-sel'); });
+      Array.prototype.forEach.call(head.querySelectorAll('.vz-cv-stephead.is-active-step'), function (h) { h.classList.remove('is-active-step'); });
       if (openSame) { return; }                                   // toggla av
       if (cell) { cell.classList.add('is-sel'); }
+      var hd = head.querySelector('.vz-cv-stephead[data-step-key="' + stepKey + '"]');  // highlighta kolumnrubrikens siffer-cirkel
+      if (hd) { hd.classList.add('is-active-step'); }
       var tr = document.createElement('tr');
       tr.className = 'vz-cv-detailrow';
       tr.setAttribute('data-step', stepKey); tr.setAttribute('data-pkey', p.key);
@@ -599,6 +603,27 @@
       td.appendChild(hostDiv); tr.appendChild(td);
       row.parentNode.insertBefore(tr, row.nextSibling);
       if (typeof handlers.onSelectCell === 'function') { try { handlers.onSelectCell(p, stepKey, hostDiv); } catch (err) { hostDiv.textContent = 'Kunde inte visa steget.'; } }
+    }
+
+    // course.js anropar denna efter en lyckad bock/label → uppdatera cellens prick + modellen, utan omladdning.
+    // Steg 8/9 styrs av dok-% (DOC_STATUS) → rör dem ej.
+    function setCellStatus(pkey, stepKey, statusCode) {
+      if ((stepKey === 'hf_klart' || stepKey === 'livs_klar') && DOC_STATUS[pkey]) { return; }
+      var pObj = pByKey(pkey); if (pObj && pObj.status) { pObj.status[stepKey] = statusCode; }
+      var row = body.querySelector('.vz-cv-row[data-pkey="' + pkey + '"]');
+      if (!row) { return; }
+      var cell = row.querySelector('.vz-cv-cell[data-step-key="' + stepKey + '"]');
+      if (!cell) { return; }
+      var m = meta(statusCode);
+      cell.classList.toggle('is-gap', statusCode === 'gap');
+      cell.innerHTML = '<span class="vz-cv-dot ' + m.cls + '">' + (m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>') + '</span>';
+      // uppdatera radens progress (X/total) + bar utifrån modellen
+      if (pObj) {
+        var done = steps.reduce(function (n, s) { return n + (pObj.status[s.key] === 'done' ? 1 : 0); }, 0);
+        var rel = steps.reduce(function (n, s) { return n + (pObj.status[s.key] === 'na' ? 0 : 1); }, 0);
+        var frac = row.querySelector('.vz-cv-prog .frac'); if (frac) { frac.textContent = done + '/' + rel; }
+        var bar = row.querySelector('.vz-cv-bar > span'); if (bar) { bar.style.width = (rel ? Math.round(done / rel * 100) : 0) + '%'; }
+      }
     }
 
     function wireRows() {
@@ -631,6 +656,7 @@
 
     // initial paint
     repaintBodyRef = paintBody;   // #11: låt applyDocStatus rita om kroppen när dok-status anländer
+    setCellStatusRef = setCellStatus;   // course.js → uppdatera cell efter bock/label
     paintSummary();
     paintHead();
     paintBody(true);
@@ -749,7 +775,10 @@
   };
 
   /* ---------- expose ---------- */
-  window.CourseView = { render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus };
+  window.CourseView = {
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus,
+    setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
+  };
 
   /* ---------- fristående auto-boot ---------- */
   function autoBoot() {
