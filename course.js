@@ -23,6 +23,27 @@ function esc(s) {
   });
 }
 
+/* bild16: bevara användarens MANUELLT ändrade textarea-höjd mellan öppningar (per id, localStorage).
+ * Sparar BARA på pekar-drag (mousedown→mouseup) → krockar ej med programmatisk auto-fit (fitAllergi/fit).
+ * Restaurerar sparad höjd på init. vzTaHasSavedSize_ = guard så auto-fit hoppas när manuell storlek finns. */
+function vzTaSizeKey_(el) { return el && el.id ? 'vz_tasize_' + el.id : null; }
+function vzTaHasSavedSize_(el) { var k = vzTaSizeKey_(el); if (!k) { return false; } try { return !!localStorage.getItem(k); } catch (e) { return false; } }
+function persistTextareaSize_(el) {
+  var key = vzTaSizeKey_(el);
+  if (!key) { return; }
+  try { var saved = localStorage.getItem(key); if (saved) { el.style.height = saved; } } catch (e) {}
+  if (el.getAttribute('data-vzsize') === '1') { return; }   // koppla lyssnaren bara en gång per element
+  el.setAttribute('data-vzsize', '1');
+  el.addEventListener('mousedown', function () {
+    var h0 = el.style.height;
+    var onUp = function () {
+      document.removeEventListener('mouseup', onUp);
+      try { if (el.style.height && el.style.height !== h0) { localStorage.setItem(key, el.style.height); } } catch (e) {}
+    };
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 /* E-post ur ett kort-desc. Föredrar markdown-mönstret "**Epost:** [x](mailto:x)"
  * eller "**Epost:** x", faller tillbaka till första rena adressen. Ren funktion. */
 var STAFF_EMAIL_RE = /\*\*Epost:\*\*\s*(?:\[(.*?)\]\(mailto:[^)]+\)|([\w.\-+]+@[\w.\-+]+\.\w+))/i;
@@ -549,6 +570,7 @@ function renderStaffPanel(groups, courseName) {
   // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
   var emBtn = sec.querySelector('#vz-asst-emails');
   var emOut = sec.querySelector('#vz-asst-emails-out');
+  if (emOut) { persistTextareaSize_(emOut); }   // bild16: bevara höjd
   if (emBtn && emOut) {
     // Visa tidigare sparad lista direkt (överlever stäng/öppna).
     t.get('board', 'shared', emailsKey).then(function (saved) {
@@ -597,6 +619,7 @@ function renderParticipantEmails(cards, courseName) {
 
   var btn = tfoot.querySelector('#vz-part-emails');
   var out = tfoot.querySelector('#vz-part-emails-out');
+  if (out) { persistTextareaSize_(out); }   // bild16: bevara höjd
   if (!btn || !out) { return; }
   t.get('board', 'shared', emailsKey).then(function (saved) {
     if (saved && !out.value) { out.style.display = ''; out.value = String(saved); }
@@ -906,9 +929,10 @@ function renderHfPanel(rows, courseName) {
   //    ersätt koderna med riktiga namn lokalt i svaret.
   var allergiBtn = sec.querySelector('#vz-allergi-btn');
   var allergiOut = sec.querySelector('#vz-allergi');
+  if (allergiOut) { persistTextareaSize_(allergiOut); }   // bild16: bevara höjd (guard i fitAllergi)
   var allergiInfo = sec.querySelector('#vz-allergi-info');
   // Rutan växer med innehållet.
-  function fitAllergi() { if (allergiOut) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
+  function fitAllergi() { if (allergiOut && !vzTaHasSavedSize_(allergiOut)) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
   if (allergiOut) {
     allergiOut.addEventListener('input', fitAllergi);
     // Visa tidigare sparad sammanställning direkt (överlever stäng/öppna).
@@ -1274,6 +1298,8 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   wrap.className = 'vz-mailbox';
   var lbl = document.createElement('div'); lbl.className = 'vz-mailbox-label'; lbl.textContent = label;
   var ta = document.createElement('textarea'); ta.className = 'vz-textarea'; ta.value = value;
+  ta.id = 'vz-mailbox-ta-' + norm(label).replace(/[^a-z0-9]+/g, '-');   // bild16: stabilt id per mejltyp → bevara höjd
+  persistTextareaSize_(ta);
   var row = document.createElement('div'); row.className = 'vz-mailbox-actions';
   var note = document.createElement('span'); note.className = 'vz-stub-note';
   // "Kopiera text" är meningslös på en MALL med platshållare (enskild-rutorna) → dölj där (#20).
@@ -1327,7 +1353,7 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
   }
   row.appendChild(note);
   wrap.appendChild(lbl); wrap.appendChild(ta); wrap.appendChild(row);
-  function fit() { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
+  function fit() { if (vzTaHasSavedSize_(ta)) { return; } ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; }
   ta.addEventListener('input', function () { fit(); if (pkey) { persistText(pkey, ta.value); } });
   if (pkey && value) { persistText(pkey, value); } // spara genererad text direkt
   setTimeout(fit, 0);

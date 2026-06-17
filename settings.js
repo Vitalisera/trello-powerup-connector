@@ -32,6 +32,24 @@ function esc(s) {
 }
 function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim()); }
 
+/* bild16: bevara användarens MANUELLT ändrade textarea-höjd mellan öppningar (per id, localStorage).
+ * Sparar BARA på pekar-drag → ingen krock med ev. auto-fit. (Inline-kopia av course.js-helpern.) */
+function persistTextareaSize_(el) {
+  if (!el || !el.id) { return; }
+  var key = 'vz_tasize_' + el.id;
+  try { var saved = localStorage.getItem(key); if (saved) { el.style.height = saved; } } catch (e) {}
+  if (el.getAttribute('data-vzsize') === '1') { return; }
+  el.setAttribute('data-vzsize', '1');
+  el.addEventListener('mousedown', function () {
+    var h0 = el.style.height;
+    var onUp = function () {
+      document.removeEventListener('mouseup', onUp);
+      try { if (el.style.height && el.style.height !== h0) { localStorage.setItem(key, el.style.height); } } catch (e) {}
+    };
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 function render(s) {
   s = s || {};
   var root = document.getElementById('root');
@@ -95,6 +113,9 @@ function render(s) {
     + '<span class="vz-note" id="vz-saved"></span>'
     + '</div>'
     + '</div>';
+
+  // bild16: bevara användarens manuellt ändrade textarea-höjd mellan öppningar (per id, localStorage).
+  Array.prototype.forEach.call(document.querySelectorAll('textarea.vz-ta'), persistTextareaSize_);
 
   var btn = document.getElementById('vz-save');
   var saved = document.getElementById('vz-saved');
