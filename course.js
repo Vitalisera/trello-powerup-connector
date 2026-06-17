@@ -565,12 +565,29 @@ function reorderBelowPanels_() {
     col.insertBefore(w, before);
   });
 }
+// Kollapsbara moduler (board-delat vz_panel_collapsed). Fäll ihop till bara rubriken → mindre scroll-vägg.
+var COLLAPSED = {};
+function loadPanelCollapsed() {
+  return t.get('board', 'shared', 'vz_panel_collapsed').then(function (a) {
+    COLLAPSED = {}; (Array.isArray(a) ? a : []).forEach(function (k) { COLLAPSED[k] = true; }); return COLLAPSED;
+  }).catch(function () { COLLAPSED = {}; return COLLAPSED; });
+}
+function savePanelCollapsed_() {
+  var host = vzRegion('below'); if (!host) { return; }
+  var keys = [].map.call(host.querySelectorAll('.vz-panel-wrap.is-collapsed[data-panel]'), function (w) { return w.getAttribute('data-panel'); });
+  COLLAPSED = {}; keys.forEach(function (k) { COLLAPSED[k] = true; });
+  try { t.set('board', 'shared', 'vz_panel_collapsed', keys).catch(function () {}); } catch (e) {}
+}
 function makeWrap_(sec, key) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-panel-wrap'; wrap.setAttribute('data-panel', key); wrap.setAttribute('draggable', 'false');
+  if (COLLAPSED[key]) { wrap.classList.add('is-collapsed'); }
   var grip = document.createElement('span');
   grip.className = 'vz-panel-drag'; grip.title = 'Dra för att flytta modulen'; grip.setAttribute('aria-label', 'Flytta modul'); grip.textContent = '⠿';
-  wrap.appendChild(grip); wrap.appendChild(sec);
+  var chev = document.createElement('button');
+  chev.className = 'vz-panel-collapse'; chev.type = 'button'; chev.title = 'Fäll ihop / expandera'; chev.setAttribute('aria-label', 'Fäll ihop modul'); chev.textContent = '▾';
+  chev.addEventListener('click', function () { wrap.classList.toggle('is-collapsed'); savePanelCollapsed_(); });
+  wrap.appendChild(grip); wrap.appendChild(chev); wrap.appendChild(sec);
   grip.addEventListener('mousedown', function () { wrap.setAttribute('draggable', 'true'); });
   var reset = function () { wrap.setAttribute('draggable', 'false'); };
   wrap.addEventListener('dragstart', function (e) { wrap.classList.add('is-dragging'); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (x) {} });
@@ -1084,7 +1101,7 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
           return postToGas('sendPracticalInfo', {
             dryRun: false, live: mode.live === true, redirectEmail: mode.redirect, courseName: courseName, docId: doc.docId,
             recipients: targets.map(function (r) { return { code: r.code, email: r.email }; }),
-            senderName: settings.senderName, replyTo: settings.replyToEmail,
+            senderName: settings.senderName, replyTo: settings.replyTo,
           });
         }).then(function (res) {
           if (!res || !res.ok) { throw new Error('Utskick misslyckades (' + ((res && res.error) || 'okänt') + ').'); }
@@ -2130,8 +2147,8 @@ function loadCourse(listId, listName) {
     window.CourseView.render(ROOT(), model, handlers);
     loadGenderSplit(model.participants);
     loadStaff(res[0]);
-    // Ladda sparad panel-layout (kolumner+ordning) FÖRST → panelerna placeras deterministiskt (ej async-laddningsordning).
-    loadPanelLayout().then(function () {
+    // Ladda sparad panel-layout (kolumner+ordning) + kollaps-tillstånd FÖRST → panelerna placeras deterministiskt.
+    Promise.all([loadPanelLayout(), loadPanelCollapsed()]).then(function () {
       loadHfPanel(res[1] || [], res[0]);
       loadStoryMatrix(res[0], model.participants, res[1] || []);
       loadCourseChecklist(res[0]);

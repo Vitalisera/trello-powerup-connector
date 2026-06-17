@@ -257,8 +257,19 @@
 .vz-course .vz-panel-drag:active{cursor:grabbing}
 .vz-course .vz-panel-wrap.is-dragging{opacity:.45}
 .vz-course .vz-panel-wrap.is-dragging .vz-panel--below{outline:2px dashed var(--accent);outline-offset:-2px}
-/* panel-huvudets meta krockar ej med handtaget */
-.vz-course .vz-panel-wrap .vz-panel-head{padding-right:30px}
+/* kollaps-chevron (vänster om dra-handtaget, samma diskret-tills-hover) */
+.vz-course .vz-panel-collapse{position:absolute;top:9px;right:36px;z-index:6;cursor:pointer;color:#7d97a0;border:none;
+  font-size:12px;line-height:1;padding:3px 6px;border-radius:7px;background:rgba(255,255,255,.7);font-family:inherit;
+  opacity:.4;transition:opacity .15s ease,color .15s ease,background .15s ease,transform .2s ease}
+.vz-course .vz-panel-wrap:hover .vz-panel-collapse,.vz-course .vz-panel-collapse:focus-visible{opacity:1}
+.vz-course .vz-panel-collapse:hover{color:var(--accent);background:#eef6f6;opacity:1}
+.vz-course .vz-panel-wrap.is-collapsed .vz-panel-collapse{transform:rotate(-90deg)}
+/* kollapsad: visa bara första elementet (panel-head/title), dölj resten */
+.vz-course .vz-panel-wrap.is-collapsed .vz-panel--below > *:not(:first-child){display:none}
+.vz-course .vz-panel-wrap.is-collapsed .vz-panel--below{padding-bottom:14px}
+.vz-course .vz-panel-wrap.is-collapsed .vz-panel-head{margin-bottom:0;padding-bottom:0;border-bottom:none}
+/* panel-huvudets meta krockar ej med handtag + chevron */
+.vz-course .vz-panel-wrap .vz-panel-head{padding-right:58px}
 
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
