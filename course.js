@@ -180,6 +180,12 @@ function restGet(token, path) {
   var url = 'https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
   return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
+// Trello-skrivning (PUT/POST) — för #11 Fas 2 auto-bockning av checkItem. Samma auth som restGet.
+function restWrite(token, method, path) {
+  var sep = path.indexOf('?') === -1 ? '?' : '&';
+  var url = 'https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
+  return fetch(url, { method: method }).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+}
 
 /* ---------- Personal (gruppledare/assistenter/kockar = egna boards) ----------
  * Regler från Rumsindelning (Hämta alla som ska vara närvarande.js):
@@ -551,13 +557,73 @@ function loadDocStatus(courseName, cards) {
   var CHUNK = 6, chunks = [];
   for (var i = 0; i < withDocs.length; i += CHUNK) { chunks.push(withDocs.slice(i, i + CHUNK)); }
   var byKey = {};
-  chunks.forEach(function (grp) {
-    postToGas('courseDocStatus', { items: grp })
+  Promise.all(chunks.map(function (grp) {
+    return postToGas('courseDocStatus', { items: grp })
       .then(function (data) {
         ((data && data.items) || []).forEach(function (r) { byKey[r.key] = r; });
         if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }  // progressiv ifyllning
       })
       .catch(function () { /* en chunk kan fela — övriga fyller ändå */ });
+  })).then(function () { maybeAutoBock(cards, byKey); });   // #11 Fas 2: bocka färdiga steg 8/9
+}
+
+/* #11 Fas 2: AUTO-BOCKA steg 8/9 när dokumentet är färdigt (ready = ≥85%, livs även bild).
+ * Skriver checkItem complete via Malins token — SAMMA write som manuell bock (steg utan prod-automation).
+ * SÄKERHET: idempotent (hoppar redan bockade), fail-closed test-läge (skriver BARA om testMode===false),
+ * per-kort-felisolering, transparent toast. computeAutoBocks är ren → proof-testad. */
+function flowCheckItem_(key) { var f = (window.NYA_ZAPIER_FLOW || []).filter(function (s) { return s.key === key; })[0]; return f ? f.checkItem : null; }
+function findCheckItemByName_(card, name) {
+  if (!name) { return null; }
+  var n = norm(name), found = null;
+  (card.checklists || []).forEach(function (cl) {
+    (cl.checkItems || []).forEach(function (it) {
+      if (found) { return; }
+      var inm = norm(it.name || '');
+      if (inm === n || inm.indexOf(n) !== -1 || n.indexOf(inm) !== -1) { found = { id: it.id, complete: norm(it.state) === 'complete' }; }
+    });
+  });
+  return found;
+}
+function computeAutoBocks(cards, byKey) {
+  var steps = [{ stepKey: 'hf_klart', docKey: 'hf' }, { stepKey: 'livs_klar', docKey: 'livs' }];
+  var out = [];
+  (cards || []).forEach(function (c) {
+    var r = byKey && byKey[c.id];
+    if (!r) { return; }
+    steps.forEach(function (s) {
+      var st = r[s.docKey];
+      if (!st || st.ok !== true || !st.ready) { return; }            // bara FÄRDIGA dok
+      var ci = findCheckItemByName_(c, flowCheckItem_(s.stepKey));
+      if (!ci || !ci.id || ci.complete) { return; }                  // saknas/redan bockad → hoppa (idempotent)
+      out.push({ cardId: c.id, checkItemId: ci.id, stepKey: s.stepKey,
+        cardName: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, '') });
+    });
+  });
+  return out;
+}
+function maybeAutoBock(cards, byKey) {
+  var bocks;
+  try { bocks = computeAutoBocks(cards, byKey); } catch (e) { return; }
+  if (!bocks.length) { return; }
+  getCourseSettings().then(function (settings) {
+    if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: skriv ej i testläge/osäkert läge
+      try { t.alert({ message: bocks.length + ' dokument-steg är färdiga (testläge → bockas ej automatiskt).', duration: 6, display: 'info' }); } catch (e) {}
+      return;
+    }
+    t.getRestApi().getToken().then(function (token) {
+      if (!token) { return; }
+      var done = 0;
+      bocks.reduce(function (p, b) {
+        return p.then(function () {
+          return restWrite(token, 'PUT', 'cards/' + b.cardId + '/checkItem/' + b.checkItemId + '?state=complete')
+            .then(function () { done++; }).catch(function () { /* hoppa felande kort */ });
+        });
+      }, Promise.resolve()).then(function () {
+        if (done > 0) {
+          try { t.alert({ message: '✓ Bockade automatiskt ' + done + ' färdiga dokument-steg (hälsoformulär/livsberättelse).', duration: 8, display: 'success' }); } catch (e) {}
+        }
+      });
+    }).catch(function () {});
   });
 }
 
