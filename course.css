@@ -219,7 +219,7 @@
   border-right:1px solid var(--hairline);
 }
 .vz-region-aside{
-  flex:0 0 320px;width:320px;align-self:stretch;
+  flex:0 0 320px;width:320px;align-self:flex-start;   /* ej stretch → påverkas ej av matrisens höjdtak */
   background:rgba(255,255,255,.55);
   padding:16px 16px 22px;
 }
@@ -249,6 +249,9 @@
   flex:1;min-height:0;overflow:auto;position:relative;
   background:linear-gradient(180deg,#fbfdfd,#f3f9f9);
   padding-right:120px;   /* #16: plats för sista stegtitelns diagonala svans ("Uppföljningssamtal") */
+  /* egen scroll-container med höjdtak → thead fryser INOM matrisen + släpper vid tabellslut + clippar
+     (ingen överlappning av aside/below). Page body-scrollar resten. (V=79, ersätter trasiga V=75-sticky.) */
+  max-height:calc(100vh - 118px);
 }
 .vz-cv-table{
   /* #16: width:100% → kolumnerna sprids och fyller matris-regionen (Robert 2026-06-17: tabellen var för smal).
