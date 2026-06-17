@@ -122,8 +122,13 @@ function render(s) {
     };
     btn.disabled = true; saved.style.color = '#437a3a'; saved.textContent = '⏳ Sparar…';
     t.set('board', 'shared', KEY, next).then(function () {
-      saved.textContent = '✓ Sparat.';
-      render(next); // rita om → test-badge speglar nytt läge
+      render(next); // rita om → test-badge speglar nytt läge (rebuildar #vz-saved → sätt pill EFTER)
+      // P1.4: tydlig grön pill EFTER ombyggnad (annars wipas bekräftelsen direkt) + auto-blekning så den ej blir vilseledande.
+      var s2 = document.getElementById('vz-saved');
+      if (s2) {
+        s2.className = 'vz-note vz-saved-pill'; s2.textContent = '✓ Sparat';
+        setTimeout(function () { var e = document.getElementById('vz-saved'); if (e) { e.textContent = ''; e.className = 'vz-note'; } }, 4000);
+      }
     }).catch(function (err) {
       saved.style.color = '#b23a2e'; saved.textContent = '⚠️ Kunde inte spara: ' + esc(err && err.message || err);
       btn.disabled = false;
