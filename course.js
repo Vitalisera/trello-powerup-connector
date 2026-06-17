@@ -128,6 +128,23 @@ function deadlineDateStr(listName, daysBefore) {
   var d = new Date(start.getTime() - n * 86400000);
   return d.getDate() + ' ' + MONTHS_SV[d.getMonth()] + ' ' + d.getFullYear();
 }
+// Rik deadline-info per checklist-item (bild15): { label, passed, today }. Deadline = start − N dagar.
+// Relativt (Idag/Imorgon/Igår) för ±1 dag; annars "D mån"; röd (passed) om datumet ligger bakåt i tiden.
+function deadlineDateInfo(listName, daysBefore) {
+  var start = courseStartDate(listName);
+  var n = parseInt(daysBefore, 10);
+  if (!start || isNaN(n)) { return null; }
+  var d = new Date(start.getTime() - n * 86400000);
+  d.setHours(0, 0, 0, 0);
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var diff = Math.round((d - today) / 86400000);   // dagar från idag till deadline (neg = passerat)
+  var label;
+  if (diff === 0) { label = 'Idag'; }
+  else if (diff === 1) { label = 'Imorgon'; }
+  else if (diff === -1) { label = 'Igår'; }
+  else { label = d.getDate() + ' ' + MONTHS_SV[d.getMonth()]; }
+  return { label: label, passed: diff < 0, today: diff === 0 };
+}
 
 function buildCourseModel(listName, cards) {
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
@@ -622,55 +639,47 @@ function renderChecklistPanel(key, items, courseName) {
   if (!host) { return; }
   var sec = document.createElement('section');
   sec.className = 'vz-panel vz-panel--below';
-  // #19: deadline-dagar (board-shared per kursinstans) → visa deadline-DATUM ur kursens startdatum.
-  var ddKey = 'vz_deadline_days_' + courseSlug(courseName || '');
-  var deadlineDays = '';
-  // Ladda ev. sparat deadline-värde (board-shared) → fyll input + datum när det kommit.
-  t.get('board', 'shared', ddKey).then(function (v) {
-    if (v != null && v !== '') {
-      deadlineDays = String(v);
-      var inp = sec.querySelector('#vzchk-dd'), out = sec.querySelector('#vzchk-dd-out');
-      if (inp) { inp.value = deadlineDays; } if (out) { out.innerHTML = ddOutHtml(); }
-    }
-  }).catch(function () {});
-  function ddOutHtml() {
-    var ddStr = deadlineDateStr(courseName, deadlineDays);
-    if (ddStr) { return '→ <strong>' + esc(ddStr) + '</strong>'; }
-    return (deadlineDays !== '' && courseName) ? '<span class="vz-stub-note">(kunde ej tolka kursdatum)</span>' : '';
+  // bild15: per-item deadline (dagar innan kursstart) + datum-cell. Deadline = kursstart − item.days.
+  // Datum rött om passerat; Idag/Imorgon/Igår för ±1 dag. item.days lagras i items[] (board-shared).
+  function dateCellHtml(days) {
+    if (days === '' || days == null) { return '<span class="vzchk-date vzchk-date--empty">–</span>'; }
+    var info = deadlineDateInfo(courseName, days);
+    if (!info) { return '<span class="vzchk-date vzchk-date--empty" title="kunde ej tolka kursdatum">?</span>'; }
+    return '<span class="vzchk-date' + (info.passed ? ' is-passed' : '') + (info.today ? ' is-today' : '') + '">' + esc(info.label) + '</span>';
   }
   function paint() {
     var done = items.filter(function (i) { return i.done; }).length;
-    var deadlineRow = '<div class="vzchk-deadline">'
-      + '<label for="vzchk-dd">Deadline: lämna in senast </label>'
-      + '<input id="vzchk-dd" type="number" min="0" class="vz-input" style="width:64px;display:inline-block" value="' + esc(deadlineDays) + '" placeholder="dagar"> dagar innan kursstart'
-      + ' <span id="vzchk-dd-out">' + ddOutHtml() + '</span>'
-      + '</div>';
     var rows = items.map(function (it, idx) {
-      return '<label data-i="' + idx + '" class="vzchk-row' + (it.done ? ' is-done' : '') + '">'
-        + '<input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' class="vzchk-box">'
-        + '<span class="vzchk-text">' + esc(it.text) + '</span>'
+      var days = (it.days == null ? '' : it.days);
+      return '<div data-i="' + idx + '" class="vzchk-row' + (it.done ? ' is-done' : '') + '">'
+        + '<label class="vzchk-main"><input type="checkbox" data-i="' + idx + '"' + (it.done ? ' checked' : '') + ' class="vzchk-box">'
+        + '<span class="vzchk-text">' + esc(it.text) + '</span></label>'
+        + '<span class="vzchk-days"><input type="number" min="0" class="vzchk-daysinp" data-i="' + idx + '" value="' + esc(String(days)) + '" placeholder="–" aria-label="Deadline i dagar innan kursstart"><span class="vzchk-days-u">dgr</span></span>'
+        + '<span class="vzchk-datecell" data-date="' + idx + '">' + dateCellHtml(days) + '</span>'
         + '<button data-del="' + idx + '" title="Ta bort" class="vzchk-del">✕</button>'
-        + '</label>';
+        + '</div>';
     }).join('');
     sec.innerHTML = '<div class="vz-panel-head">'
       + '<div class="vz-panel-title">Kurschecklista</div>'
       + '<div class="vz-panel-meta">' + done + '/' + items.length + ' klara · sparas automatiskt</div></div>'
-      + deadlineRow
+      + '<div class="vzchk-collhead"><span class="vzchk-ch-task">Uppgift</span><span class="vzchk-ch-days">Deadline<small>dgr innan start</small></span><span class="vzchk-ch-date">Datum</span></div>'
       + '<div class="vzchk-list">' + rows + '</div>'
       + '<div class="vzchk-add-row">'
       + '<input id="vzchk-new" placeholder="Lägg till uppgift på kursnivå…" class="vz-input">'
       + '<button id="vzchk-add" class="vz-btn">Lägg till</button></div>';
-    // #19 deadline-input: uppdatera datumvisning live (utan re-paint → behåll fokus), persist på change.
-    var ddInp = sec.querySelector('#vzchk-dd');
-    var ddOut = sec.querySelector('#vzchk-dd-out');
-    if (ddInp) {
-      // Live: uppdatera bara datum-spanet (ingen re-paint → behåll fokus/cursor). Persist på change (blur).
-      ddInp.addEventListener('input', function () { deadlineDays = ddInp.value; if (ddOut) { ddOut.innerHTML = ddOutHtml(); } });
-      ddInp.addEventListener('change', function () { persistText(ddKey, String(deadlineDays || '')); });
-    }
-    // events
-    Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
+    // checkbox-toggle (re-paint → datumceller räknas om)
+    Array.prototype.forEach.call(sec.querySelectorAll('input.vzchk-box'), function (cb) {
       cb.addEventListener('change', function () { items[+cb.getAttribute('data-i')].done = cb.checked; persistChecklist(key, items); paint(); });
+    });
+    // per-item deadline-dagar: live-uppdatera BARA den radens datumcell (ingen re-paint → behåll fokus), persist på change.
+    Array.prototype.forEach.call(sec.querySelectorAll('input.vzchk-daysinp'), function (di) {
+      var i = +di.getAttribute('data-i');
+      di.addEventListener('input', function () {
+        items[i].days = di.value === '' ? '' : di.value;
+        var cell = sec.querySelector('[data-date="' + i + '"]');
+        if (cell) { cell.innerHTML = dateCellHtml(items[i].days); }
+      });
+      di.addEventListener('change', function () { persistChecklist(key, items); });
     });
     // P2.4: 2-klicks-bekräftelse (board-delad lista = lätt att råka radera). 1:a klick "armar"
     // (✕ → "Ta bort?"), återställs efter 3s; 2:a klick raderar. Ingen overlay, självständigt.
