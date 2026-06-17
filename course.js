@@ -767,6 +767,7 @@ function renderParticipantEmails(cards, courseName) {
   tfoot.innerHTML = '<tr><td colspan="99">'
     + '<div class="vz-cv-emailrow">'
     + '<button class="vz-btn" id="vz-part-emails">Alla emailadresser</button>'
+    + '<button class="vz-btn vz-btn--send" id="vz-part-emails-copy" style="display:none">Kopiera</button>'
     + '<span class="vz-stub-note">deltagarnas mejl ur korten (read-only)</span>'
     + '</div>'
     + '<textarea id="vz-part-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>'
@@ -775,10 +776,20 @@ function renderParticipantEmails(cards, courseName) {
 
   var btn = tfoot.querySelector('#vz-part-emails');
   var out = tfoot.querySelector('#vz-part-emails-out');
+  var copyBtn = tfoot.querySelector('#vz-part-emails-copy');
   if (out) { persistTextareaSize_(out); }   // bild16: bevara höjd
   if (!btn || !out) { return; }
+  function showCopy(has) { if (copyBtn) { copyBtn.style.display = has ? '' : 'none'; } }
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function () {
+      copyTextToClipboard(out.value).then(function (okc) {
+        var o = copyBtn.textContent; copyBtn.textContent = okc ? '✓ Kopierat' : '⚠️ Kunde ej kopiera';
+        setTimeout(function () { copyBtn.textContent = o; }, 2000);
+      });
+    });
+  }
   t.get('board', 'shared', emailsKey).then(function (saved) {
-    if (saved && !out.value) { out.style.display = ''; out.value = String(saved); }
+    if (saved && !out.value) { out.style.display = ''; out.value = String(saved); showCopy(true); }
   }).catch(function () {});
   btn.addEventListener('click', function () {
     out.style.display = '';
@@ -787,6 +798,7 @@ function renderParticipantEmails(cards, courseName) {
     emails.forEach(function (e) { var k = e.toLowerCase(); if (!seen[k]) { seen[k] = true; uniq.push(e); } });
     out.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i deltagarkortens beskrivningar.';
     if (uniq.length) { persistText(emailsKey, out.value); }
+    showCopy(uniq.length > 0);
   });
 }
 
@@ -999,15 +1011,17 @@ function maybeAutoBock(cards, byKey) {
     }
     t.getRestApi().getToken().then(function (token) {
       if (!token) { return; }
-      var done = 0;
+      var done = 0, fail = 0;
       bocks.reduce(function (p, b) {
         return p.then(function () {
           return restWrite(token, 'PUT', 'cards/' + b.cardId + '/checkItem/' + b.checkItemId + '?state=complete')
-            .then(function () { done++; }).catch(function () { /* hoppa felande kort */ });
+            .then(function () { done++; }).catch(function () { fail++; });   // räkna fel (synliggör nedan)
         });
       }, Promise.resolve()).then(function () {
-        if (done > 0) {
-          try { t.alert({ message: '✓ Bockade automatiskt ' + done + ' färdiga dokument-steg (hälsoformulär/livsberättelse).', duration: 8, display: 'success' }); } catch (e) {}
+        if (done > 0 || fail > 0) {
+          var msg = done > 0 ? '✓ Bockade automatiskt ' + done + ' färdiga dokument-steg (hälsoformulär/livsberättelse).' : '';
+          if (fail > 0) { msg += (msg ? ' ' : '') + '⚠️ ' + fail + ' kunde inte bockas — bocka manuellt i kortet.'; }
+          try { t.alert({ message: msg, duration: fail > 0 ? 11 : 8, display: fail > 0 ? 'warning' : 'success' }); } catch (e) {}
         }
       });
     }).catch(function () {});
@@ -1033,6 +1047,8 @@ function practicalRowAction_(r) {
   if (!r.email) { return '<span class="vz-status vz-status--missing">– e-post saknas i kortet</span>'; }
   if (!r.checkItemId) { return '<span class="vz-status vz-status--missing">– "Praktisk info skickat" saknas i checklistan</span>'; }
   if (r.done) { return '<button class="vz-hf-share is-done" disabled>✓ Skickad</button>'; }
+  // skickad men steg 7-bock misslyckades → re-skicka EJ (dubbel-utskick), uppmana manuell bock
+  if (r.sentNoBock) { return '<span class="vz-status" style="color:var(--amber)" title="Mejlet är skickat men steg 7 kunde inte bockas automatiskt">✓ Skickad · bocka steg 7 manuellt</span>'; }
   return '<button class="vz-hf-share vz-pi-send" data-code="' + esc(r.code) + '">Skicka</button>';
 }
 function renderPracticalInfoPanel(rows, courseName) {
@@ -1042,7 +1058,7 @@ function renderPracticalInfoPanel(rows, courseName) {
   sec.className = 'vz-panel vz-panel--below';
   var byCode = {}; rows.forEach(function (r) { byCode[r.code] = r; });
   var tokens = practicalTokens(courseName);
-  function pending() { return rows.filter(function (r) { return r.email && r.checkItemId && !r.done; }); }
+  function pending() { return rows.filter(function (r) { return r.email && r.checkItemId && !r.done && !r.sentNoBock; }); }
   function paint() {
     var done = rows.filter(function (r) { return r.done; }).length;
     var sendable = rows.filter(function (r) { return r.email && r.checkItemId; }).length;
@@ -1081,7 +1097,7 @@ function renderPracticalInfoPanel(rows, courseName) {
 /* Orkestrering: bekräfta (visa tokens + läges-varning) → createPracticalInfoDoc → sendPracticalInfo → bocka steg 7
  * (BARA vid live + lyckat utskick; testläge redirectar och bockar INTE). onSent(rader[]) uppdaterar UI in-place. */
 function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
-  targets = (targets || []).filter(function (r) { return r.email && r.checkItemId && !r.done; });
+  targets = (targets || []).filter(function (r) { return r.email && r.checkItemId && !r.done && !r.sentNoBock; });
   if (!targets.length) { try { t.alert({ message: 'Inga mottagare som saknar utskick.', duration: 6, display: 'info' }); } catch (e) {} return; }
   getCourseSettings().then(function (settings) {
     var mode = resolveSendMode(settings);
@@ -1112,19 +1128,29 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
             try { t.alert({ message: 'Testläge: ' + okTargets.length + ' mejl gick till redirect (' + mode.redirect + '). Inga deltagare nåddes, steg 7 ej bockat.', duration: 10, display: 'info' }); } catch (e) {}
             return;
           }
-          // live: bocka steg 7 för lyckade utskick (Malins token), seriellt.
+          // live: bocka steg 7 för lyckade utskick (Malins token), seriellt. Spåra per deltagare (bockad vs skickad-men-ej-bockad).
           t.getRestApi().getToken().then(function (token) {
             if (!token) { throw new Error('Ingen Trello-token för att bocka steg 7.'); }
+            var bocked = [], notBocked = [];
             return okTargets.reduce(function (p, r) {
-              return p.then(function () { return restWrite(token, 'PUT', 'cards/' + r.cardId + '/checkItem/' + r.checkItemId + '?state=complete').catch(function () {}); });
-            }, Promise.resolve());
-          }).then(function () {
+              return p.then(function () {
+                return restWrite(token, 'PUT', 'cards/' + r.cardId + '/checkItem/' + r.checkItemId + '?state=complete')
+                  .then(function () { bocked.push(r); }).catch(function () { notBocked.push(r); });
+              });
+            }, Promise.resolve()).then(function () { return { bocked: bocked, notBocked: notBocked }; });
+          }).then(function (rr) {
             btn.disabled = false; btn.textContent = orig;
-            if (onSent) { onSent(okTargets); }
-            try { t.alert({ message: '✓ Skickade praktisk info till ' + okTargets.length + ' deltagare och bockade steg 7.', duration: 9, display: 'success' }); } catch (e) {}
+            // mejlet ÄR skickat → markera ALLA okTargets så de aldrig dubbel-skickas; bockade=fullt klara, övriga=bocka manuellt.
+            rr.notBocked.forEach(function (r) { r.sentNoBock = true; });
+            if (onSent) { onSent(rr.bocked); }   // markera BARA bockade done; paint visar sentNoBock-rader distinkt
+            var msg = '✓ Skickade praktisk info till ' + okTargets.length + ' deltagare'
+              + (rr.notBocked.length ? '. ⚠️ ' + rr.notBocked.length + ' steg 7-bock misslyckades — bocka manuellt i korten (mejlen ÄR skickade, skicka INTE igen).' : ' och bockade steg 7.');
+            try { t.alert({ message: msg, duration: rr.notBocked.length ? 13 : 9, display: rr.notBocked.length ? 'warning' : 'success' }); } catch (e) {}
           }).catch(function (err) {
             btn.disabled = false; btn.textContent = orig;
-            try { t.alert({ message: '⚠️ Mejlen gick men steg 7 kunde inte bockas: ' + ((err && err.message) || err), duration: 10, display: 'error' }); } catch (e) {}
+            okTargets.forEach(function (r) { r.sentNoBock = true; });   // mejlen gick, bock-steget kraschade → re-skicka ej
+            if (onSent) { onSent([]); }
+            try { t.alert({ message: '⚠️ Mejlen gick men steg 7 kunde inte bockas: ' + ((err && err.message) || err) + '. Bocka manuellt — skicka INTE igen.', duration: 12, display: 'error' }); } catch (e) {}
           });
         }).catch(function (err) {
           btn.disabled = false; btn.textContent = orig;
