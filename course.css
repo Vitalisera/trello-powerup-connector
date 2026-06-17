@@ -349,6 +349,13 @@
 .vz-pd-ok{color:var(--success);font-weight:600}
 .vz-pd-note{color:var(--muted)}
 .vz-pd-actions{margin-top:11px}
+/* #11/bild14: dok-status-lista i Fas 1 för steg 8/9 (besvarat/tecken/bild/ändrad) */
+.vz-pd-stats{list-style:none;margin:0 0 8px;display:flex;flex-direction:column;gap:0}
+.vz-pd-stats li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  padding:5px 0;border-bottom:1px solid var(--hairline);font-size:12.5px}
+.vz-pd-stats li:last-child{border-bottom:none}
+.vz-pd-stats li span{color:var(--muted)}
+.vz-pd-stats li b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .vz-course .vz-pd-act.is-done{background:rgba(31,122,83,.12);color:var(--success);border-color:transparent;cursor:default}
 @media (max-width:760px){ .vz-pd-phases{flex-direction:column} .vz-pd-arrow{transform:rotate(90deg)} }
 .vz-notes-list{list-style:none;display:flex;flex-direction:column;gap:13px}

@@ -148,6 +148,7 @@ function buildCourseModel(listName, cards) {
 // Inline steg-detalj (Robert 2026-06-17: klick på cell → expandera rad med stegets Fas1/Fas2 + noteringar;
 // porterar Vy1:s detalj in i Vy2 → gör deltagarstatus-vyn överflödig). COURSE_CARDS_BY_ID fylls i loadCourse.
 var COURSE_CARDS_BY_ID = {};
+var DOC_BYKEY = {};   // #11/bild14: senaste dok-statusen (per kort-id → {hf,livs}), läses av inline-detaljen för steg 8/9
 
 var handlers = {
   onOpenCard: function (p) { if (p && p.cardUrl) { window.open(p.cardUrl, '_blank'); } },
@@ -188,12 +189,42 @@ function vzPhaseCard_(num, kind, title, bodyHtml, actionHtml) {
     + (actionHtml ? '<div class="vz-pd-actions">' + actionHtml + '</div>' : '') + '</div>';
 }
 
+// Tusentalsavgränsare (svenskt mellanslag): 6612 → "6 612"
+function groupNum_(n) { return String(n == null ? '' : n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+// #11/bild14: Fas 1 för steg 8/9 (Hälsoformulär klart / Livsberättelse klar) visar dokumentets status
+// (samma info som matriscellens tooltip — besvarat/tecken/bild/ändrad — men presenterat som en stat-lista).
+function docStatFas1_(stepKey, card) {
+  var isLivs = stepKey === 'livs_klar';
+  var docName = isLivs ? 'Livsberättelse' : 'Hälsoformulär';
+  var st = (DOC_BYKEY[card.id] || {})[isLivs ? 'livs' : 'hf'];
+  var docUrl = commentLink(card, isLivs ? STORY_LINK_RES : HF_LINK_RES);
+  var openBtn = docUrl ? '<a class="vz-btn vz-pd-act" href="' + esc(docUrl) + '" target="_blank" rel="noopener">Öppna dokumentet ↗</a>' : '';
+  if ((st && st.loading) || (!st && docUrl)) {   // skannas just nu, eller har länk men ej skannat än
+    return vzPhaseCard_('1', docName, 'Läser dokumentet…', '<span class="vz-pd-note">⏳ Skannar svar och bilder — vänta några sekunder.</span>', '');
+  }
+  if (!st || st.ok !== true) {   // ingen länk på kortet, eller skanning misslyckades
+    return vzPhaseCard_('1', docName, 'Dokument saknas', '<span class="vz-pd-note">Inget ' + esc(docName.toLowerCase()) + '-dokument hittat på kortet.</span>', '');
+  }
+  var title = (st.pct != null ? st.pct + ' % ifyllt' : st.filled + '/' + st.total + ' besvarat');
+  var stats = '<ul class="vz-pd-stats">'
+    + '<li><span>Besvarade frågor</span><b>' + st.filled + ' / ' + st.total + '</b></li>'
+    + (st.chars != null ? '<li><span>Tecken</span><b>' + groupNum_(st.chars) + '</b></li>' : '')
+    + (isLivs ? '<li><span>Bild</span><b>' + (st.hasImage ? '✓ finns' : 'saknas') + '</b></li>' : '')
+    + (st.docUpdated ? '<li><span>Senast ändrad</span><b>' + esc(st.docUpdated) + '</b></li>' : '')
+    + '</ul>'
+    + (st.ready ? '<span class="vz-pd-ok">Komplett — klart att bocka av.</span>' : '<span class="vz-pd-note">Ännu inte komplett.</span>');
+  return vzPhaseCard_('1', docName, esc(title), stats, openBtn);
+}
+
 function renderInlineStepDetail(host, p, stepKey, card) {
   var d = stepDetailForCard(card, stepKey);
   if (!d) { host.innerHTML = '<div class="vz-cv-detail-empty">Okänt steg.</div>'; return; }
 
   var fas1;
-  if (!d.triggerLabel && !d.automation) {
+  if (stepKey === 'hf_klart' || stepKey === 'livs_klar') {
+    fas1 = docStatFas1_(stepKey, card);
+  } else if (!d.triggerLabel && !d.automation) {
     fas1 = vzPhaseCard_('1', 'Trigger', 'Ingen automation', '<span class="vz-pd-note">✋ Inget mejl, inget dokument — utförs manuellt av dig.</span>', '');
   } else if (!d.triggerLabel) {
     fas1 = vzPhaseCard_('1', 'Trigger', esc(d.automation || 'Automatiskt'), '<span class="vz-pd-note">Triggas automatiskt — krävde ingen label.</span>', '');
@@ -719,7 +750,7 @@ function loadDocStatus(courseName, cards) {
   if (!withDocs.length) { return; }
 
   // visa ⏳ i steg 8/9-cellerna direkt (skanning kan ta ~10-30s första gången, sedan cachat)
-  var byKey = {};
+  DOC_BYKEY = {}; var byKey = DOC_BYKEY;   // modul-mappen följer den levande byKey (progressiv ifyllning syns i inline-detaljen)
   withDocs.forEach(function (it) { byKey[it.key] = { hf: it.hfUrl ? { loading: true } : null, livs: it.livsUrl ? { loading: true } : null }; });
   if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }
 
