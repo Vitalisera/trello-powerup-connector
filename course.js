@@ -1143,16 +1143,20 @@ function renderHfPanel(rows, courseName) {
     + table
     + '<div class="vz-stub-row" style="margin-top:12px">'
     + '<button class="vz-btn" id="vz-hf-sharefolder">Dela mapp till läkare</button>'
-    + '<span class="vz-stub-note">sätter läsrätt på mappen för läkarens e-post (Inställningar) — läkaren får en Google Drive-notis</span></div>'
-    + '<div class="vz-allergi-box">'
-    + '<div class="vz-allergi-title">Matallergier</div>'
+    + '<span class="vz-stub-note">sätter läsrätt på mappen för läkarens e-post (Inställningar) — läkaren får en Google Drive-notis</span></div>';
+  placeBelowPanel(sec, 'hf');
+
+  // Matallergier = EGEN modul (Robert 2026-06-18: ej inbäddad i HF-panelen). Egen sektion, samma closures (rows/courseName/kockTpl).
+  var allergiSec = document.createElement('section');
+  allergiSec.className = 'vz-panel vz-panel--below';
+  allergiSec.innerHTML = '<div class="vz-panel-head"><div class="vz-panel-title">Matallergier</div></div>'
+    + '<div class="vz-panel-note">Läser hälsoformulär + assistentkort anonymiserat (koder, ej namn) och sammanställer ett mejl till kocken.</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
     + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Sammanställ matallergier</button>'
-    + '<button class="vz-btn" id="vz-allergi-kock">Skicka till kock</button>'
-    + '<span class="vz-stub-note">läser hälsoformulär + assistentkort anonymiserat (koder, ej namn)</span></div>'
+    + '<button class="vz-btn" id="vz-allergi-kock">Skicka till kock</button></div>'
     + '<div id="vz-allergi-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
-    + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
-  placeBelowPanel(sec, 'hf');
+    + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div>';
+  placeBelowPanel(allergiSec, 'allergi');
 
   // #18: per-rad "Skapa läkarkopia" (bockar hf_delad → anonym kopia i mappen). Bekräftelse + fail-closed test-läge + idempotent.
   Array.prototype.forEach.call(sec.querySelectorAll('.vz-hf-share[data-card]'), function (btn) {
@@ -1164,10 +1168,10 @@ function renderHfPanel(rows, courseName) {
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
   //    ersätt koderna med riktiga namn lokalt i svaret.
-  var allergiBtn = sec.querySelector('#vz-allergi-btn');
-  var allergiOut = sec.querySelector('#vz-allergi');
+  var allergiBtn = allergiSec.querySelector('#vz-allergi-btn');
+  var allergiOut = allergiSec.querySelector('#vz-allergi');
   if (allergiOut) { persistTextareaSize_(allergiOut); }   // bild16: bevara höjd (guard i fitAllergi)
-  var allergiInfo = sec.querySelector('#vz-allergi-info');
+  var allergiInfo = allergiSec.querySelector('#vz-allergi-info');
   // Rutan växer med innehållet.
   function fitAllergi() { if (allergiOut && !vzTaHasSavedSize_(allergiOut)) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
   if (allergiOut) {
@@ -1292,8 +1296,8 @@ function renderHfPanel(rows, courseName) {
 
   // ── Skicka till kock: riktig send via samma väg som gruppledar-mejlen (GAS, brandat, fail-closed,
   //    in-modal bekräftelse, admin-cc). Body = matallergi-sammanställningen (allergiOut). Malins knapptryck.
-  var kockBtn = sec.querySelector('#vz-allergi-kock');
-  var kockOut = sec.querySelector('#vz-allergi-kock-out');
+  var kockBtn = allergiSec.querySelector('#vz-allergi-kock');
+  var kockOut = allergiSec.querySelector('#vz-allergi-kock-out');
   if (kockBtn && kockOut) {
     kockBtn.addEventListener('click', function () {
       var text = (allergiOut.value || '').trim();
@@ -1569,9 +1573,7 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
     var docBtn = document.createElement('button'); docBtn.className = 'vz-btn'; docBtn.textContent = 'Skapa sammanfattningsdok';
     docBtn.style.marginLeft = '6px';
     function insertSummaryLink(url) {
-      var mdLink = '[länk till sammanfattningsdokumentet](' + url + ')';   // etiketterad → snygg <a> i mejlet
-      if (ta.value.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { ta.value = ta.value.replace(/\{SAMMANFATTNINGSLÄNK\}/g, mdLink); }
-      else { ta.value = ta.value + '\n\n' + mdLink; }
+      ta.value = upsertSummaryLink_(ta.value, url);
       if (pkey) { persistText(pkey, ta.value); }
       fit();
     }
@@ -1625,6 +1627,21 @@ function applyTokens(tpl, map) {
   return String(tpl == null ? '' : tpl).replace(/\{([A-ZÅÄÖ_]+)\}/g, function (m, k) {
     return (map && map[k] != null) ? map[k] : m;
   });
+}
+// Sätt in/uppdatera sammanfattningsdok-länken UTAN att ackumulera (Robert 2026-06-18-bugg: "skapa om" lade till ny varje gång).
+// Prioritet: (1) finns redan minst en länk → ersätt FÖRSTA in-place + ta bort dubbletter; (2) token kvar → fyll; (3) annars sist. Ren funktion.
+function upsertSummaryLink_(text, url) {
+  var mdLink = '[länk till sammanfattningsdokumentet](' + url + ')';
+  text = String(text == null ? '' : text);
+  if (/\[länk till sammanfattningsdokumentet\]\([^)]*\)/.test(text)) {
+    var seen = false;
+    return text.replace(/\n*\[länk till sammanfattningsdokumentet\]\([^)]*\)/g, function (m) {
+      if (!seen) { seen = true; return (/^\n/.test(m) ? '\n\n' : '') + mdLink; }
+      return '';   // dubblett → bort
+    });
+  }
+  if (text.indexOf('{SAMMANFATTNINGSLÄNK}') !== -1) { return text.replace(/\{SAMMANFATTNINGSLÄNK\}/g, mdLink); }
+  return text + '\n\n' + mdLink;
 }
 // tpl = settings-override (eller tom → default). assignLines → {TILLDELNING}; antal → {ANTAL} (neutralt, utan omdöme).
 function livsAllaText(tpl, total, men, women, assignLines) {
@@ -1859,10 +1876,12 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   var sec = document.createElement('section');
   // Matriserna ligger 2-i-bredd i below-griddet (egen horisontell scroll vid behov).
   sec.className = 'vz-panel vz-panel--below';
+  // Egen panel-nyckel per matris (Livsberättelser/Uppföljning är SEPARATA flyttbara moduler) — ej kollidera.
+  var matrisKey = opts.kind === 'uppfoljning' ? 'uppf_matris' : 'livs_matris';
   var head = '<div class="vz-panel-title">' + esc(opts.title || 'Matris') + '</div>';
   if (!leaders.length) {
     sec.innerHTML = head + '<div class="vz-panel-empty">Inga gruppledare hittade för kursen (kontrollera Gruppledare-boarden + listnamn).</div>';
-    placeBelowPanel(sec, 'storymatris'); return;
+    placeBelowPanel(sec, matrisKey); return;
   }
   function cellKey(pk, ld) { return pk + '||' + ld; }
   // ── Skicka-cfg per mejl-ruta (personal-mejl via GAS). build(contacts, taVal) → {emails, missing}. ──
@@ -2008,7 +2027,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     }
   }
   paint();
-  placeBelowPanel(sec, 'storymatris');
+  placeBelowPanel(sec, matrisKey);
 }
 
 // Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,
