@@ -184,8 +184,10 @@ function courseEndDate(listName) {
   var dm = [], re = /(\d{1,2})\s+([a-zåäö]+)/gi, m;
   while ((m = re.exec(s))) { var mon = MONTHS[norm(m[2])]; if (mon !== undefined) { dm.push({ d: parseInt(m[1], 10), mon: mon }); } }
   if (!dm.length) { return null; }
-  var last = dm[dm.length - 1];
-  return new Date(year, last.mon, last.d);
+  var first = dm[0], last = dm[dm.length - 1];
+  // Årskorsande intervall ("28 december 2025 - 4 januari 2026"): slutmånad < startmånad → slutdatum nästa år.
+  var endYear = (last.mon < first.mon) ? year + 1 : year;
+  return new Date(endYear, last.mon, last.d);
 }
 function practicalTokens(courseName) {
   var start = courseStartDate(courseName), end = courseEndDate(courseName);
@@ -462,6 +464,13 @@ function restGet(token, path) {
   var url = 'https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
   return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
 }
+// Cacha öppna boards per modal-session (granskning 2026-06-18: samma fetch på 5 ställen, board-listan ändras ~aldrig
+// i en session). Reset vid fel så ett enstaka nätfel inte poisonar cachen. Modal-återöppning = ny iframe = ny cache.
+var _openBoardsP = null;
+function getOpenBoards_(token) {
+  if (!_openBoardsP) { _openBoardsP = restGet(token, 'members/me/boards?fields=name&filter=open').catch(function (e) { _openBoardsP = null; throw e; }); }
+  return _openBoardsP;
+}
 // Trello-skrivning (PUT/POST) — för #11 Fas 2 auto-bockning av checkItem. Samma auth som restGet.
 function restWrite(token, method, path) {
   var sep = path.indexOf('?') === -1 ? '?' : '&';
@@ -636,7 +645,7 @@ function staffPerson(card, cfg) {
 function loadStaff(courseName) {
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }
-    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+    return getOpenBoards_(token).then(function (boards) {
       boards = boards || [];
       var jobs = STAFF_BOARDS.map(function (cfg) {
         var b = boards.filter(function (bd) { return cfg.re.test(bd.name || ''); })[0];
@@ -972,17 +981,22 @@ function loadDocStatus(courseName, cards) {
  * SÄKERHET: idempotent (hoppar redan bockade), fail-closed test-läge (skriver BARA om testMode===false),
  * per-kort-felisolering, transparent toast. computeAutoBocks är ren → proof-testad. */
 function flowCheckItem_(key) { var f = (window.NYA_ZAPIER_FLOW || []).filter(function (s) { return s.key === key; })[0]; return f ? f.checkItem : null; }
+// Härdad matchning (granskning 2026-06-18): resultatet matas RAKT in i skarp checkItem-PUT (auto-bock, praktisk
+// steg 7, inlineTick) → en felmatch bockar fel ruta (delvis irreversibelt). Prioritet: 1) EXAKT vinner alltid,
+// 2) kortets punkt INNEHÅLLER hela målnamnet (säker riktning), 3) sista utväg reverse + ≥6 tecken (undvik korta falska).
 function findCheckItemByName_(card, name) {
   if (!name) { return null; }
-  var n = norm(name), found = null;
+  var n = norm(name), exact = null, contains = null, loose = null;
   (card.checklists || []).forEach(function (cl) {
     (cl.checkItems || []).forEach(function (it) {
-      if (found) { return; }
-      var inm = norm(it.name || '');
-      if (inm === n || inm.indexOf(n) !== -1 || n.indexOf(inm) !== -1) { found = { id: it.id, complete: norm(it.state) === 'complete' }; }
+      var inm = norm(it.name || ''); if (!inm) { return; }
+      var hit = { id: it.id, complete: norm(it.state) === 'complete' };
+      if (inm === n) { if (!exact) { exact = hit; } }
+      else if (inm.indexOf(n) !== -1) { if (!contains) { contains = hit; } }
+      else if (inm.length >= 6 && n.indexOf(inm) !== -1) { if (!loose) { loose = hit; } }
     });
   });
-  return found;
+  return exact || contains || loose || null;
 }
 function computeAutoBocks(cards, byKey) {
   var steps = [{ stepKey: 'hf_klart', docKey: 'hf' }, { stepKey: 'livs_klar', docKey: 'livs' }];
@@ -1522,7 +1536,7 @@ function loadStoryMatrix(courseName, participants, cards) {
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }
     return Promise.all([
-      restGet(token, 'members/me/boards?fields=name&filter=open'),
+      getOpenBoards_(token),
       t.get('board', 'shared', key).catch(function () { return {}; }),
       t.get('board', 'shared', followKey).catch(function () { return {}; }),
     ]).then(function (r) {
@@ -1740,7 +1754,7 @@ function uppfoljningText(tplA, tplB, assignLines) {
 function fetchGroupLeaderContacts() {
   return t.getRestApi().getToken().then(function (token) {
     if (!token) { return []; }
-    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+    return getOpenBoards_(token).then(function (boards) {
       var b = (boards || []).filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
       if (!b) { return []; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
@@ -1760,7 +1774,7 @@ function fetchGroupLeaderContacts() {
 function fetchKockContacts() {
   return t.getRestApi().getToken().then(function (token) {
     if (!token) { return []; }
-    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+    return getOpenBoards_(token).then(function (boards) {
       var b = (boards || []).filter(function (bd) { return /kock/i.test(bd.name || ''); })[0];
       if (!b) { return []; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
@@ -2005,7 +2019,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     var trs = participants.map(function (p) {
       var cells = leaders.map(function (l) {
         var ck = cellKey(p.key, l);
-        return '<td class="vz-story-cell"><input type="checkbox" data-ck="' + esc(ck) + '"' + (sel[ck] ? ' checked' : '') + ' class="vz-story-box"></td>';
+        var lbl = esc(p.name) + ' – ' + esc(l);   // a11y: skärmläsare läser deltagare + gruppledare, ej bara "kryssruta"
+        return '<td class="vz-story-cell"><input type="checkbox" data-ck="' + esc(ck) + '"' + (sel[ck] ? ' checked' : '') + ' class="vz-story-box" aria-label="' + lbl + '" title="' + lbl + '"></td>';
       }).join('');
       var lk = storyLinks[p.key];
       var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
@@ -2133,7 +2148,7 @@ function fetchGroupLeaderAllergies() {
   if (!COURSE_GL_NAMES.length) { return Promise.resolve([]); }
   return t.getRestApi().getToken().then(function (token) {
     if (!token) { return []; }
-    return restGet(token, 'members/me/boards?fields=name&filter=open').then(function (boards) {
+    return getOpenBoards_(token).then(function (boards) {
       var b = (boards || []).filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
       if (!b) { return []; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
