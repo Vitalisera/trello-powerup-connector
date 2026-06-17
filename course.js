@@ -533,13 +533,13 @@ function commentLink(card, regexes) {
 }
 var HF_ITEM_RE = /h[äa]lsoformul[äa]r.*(l[äa]kare|kursledare)|(l[äa]kare|kursledare).*h[äa]lsoformul[äa]r/i;
 function hfDoneForCard(card) {
-  var done = false, exists = false;
+  var done = false, exists = false, id = null;
   (card.checklists || []).forEach(function (cl) {
     (cl.checkItems || []).forEach(function (it) {
-      if (HF_ITEM_RE.test(it.name || '')) { exists = true; if (norm(it.state) === 'complete') { done = true; } }
+      if (HF_ITEM_RE.test(it.name || '')) { exists = true; id = it.id; if (norm(it.state) === 'complete') { done = true; } }
     });
   });
-  return { exists: exists, done: done };
+  return { exists: exists, done: done, id: id };
 }
 
 /* ---------- #11 Dokumentstatus (Fas 1, READ-ONLY): skanna HF + livsberättelse via GAS ----------
@@ -638,6 +638,7 @@ function loadHfPanel(cards, courseName) {
       code: 'P' + (i + 1), // anonym deltagarkod (skickas till GAS istället för namn)
       name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
       exists: hf.exists, done: hf.done,
+      cardId: c.id, checkItemId: hf.id,   // #18: skarp delning (PUT hf_delad → triggar "Kopiera HF till läkare")
       link: commentLink(c, HF_LINK_RES), // HF-dokumentlänk ur kommentar om den finns
     };
   });
@@ -650,29 +651,32 @@ function renderHfPanel(rows, courseName) {
   var sec = document.createElement('section');
   sec.className = 'vz-panel vz-panel--below';
   var done = rows.filter(function (r) { return r.done; }).length;
+  var sharable = rows.filter(function (r) { return r.exists && r.checkItemId; }).length;
+  // #18: status-kolumnen → DELNINGS-knapp. Bockar "Delat Hälsoformulär till läkare/kursledare" = skapar den
+  // anonyma kopian i läkarens mapp (prod-automation). Redan delad → disabled grön. Saknar checkItem → ingen åtgärd.
   var bodyRows = rows.map(function (r) {
     var nameHtml = r.link
       ? '<a href="' + esc(r.link) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(r.name) + ' <span class="vz-ext">↗</span></a>'
       : '<span class="vz-tbl-name">' + esc(r.name) + '</span>';
-    var mark = r.done ? '<span class="vz-status vz-status--done">✓ Skickat</span>'
-      : (r.exists ? '<span class="vz-status vz-status--pending">○ Ej skickat</span>'
-        : '<span class="vz-status vz-status--missing">– saknas i checklista</span>');
-    return '<tr><td class="vz-tbl-namecell">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + mark + '</td></tr>';
+    var action;
+    if (!r.exists || !r.checkItemId) {
+      action = '<span class="vz-status vz-status--missing">– saknas i checklistan</span>';
+    } else if (r.done) {
+      action = '<button class="vz-hf-share is-done" disabled>✓ Delad till läkare</button>';
+    } else {
+      action = '<button class="vz-hf-share" data-card="' + esc(r.cardId) + '" data-ci="' + esc(r.checkItemId) + '" data-name="' + esc(r.name) + '">Dela till läkare</button>';
+    }
+    return '<tr><td class="vz-tbl-namecell">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + action + '</td></tr>';
   }).join('');
   var table = rows.length
     ? '<table class="vz-tbl vz-tbl--hf"><colgroup><col class="vz-col-name"><col class="vz-col-status"></colgroup>'
       + '<tbody>' + bodyRows + '</tbody></table>'
     : '<div class="vz-panel-empty">Inga deltagare.</div>';
-  var withLink = rows.filter(function (r) { return r.link; }).length;
   sec.innerHTML = '<div class="vz-panel-head">'
     + '<div class="vz-panel-title">Hälsoformulär till läkare</div>'
-    + '<div class="vz-panel-meta">' + done + '/' + rows.length + ' skickade</div></div>'
-    + '<div class="vz-panel-note">Namn med ↗ länkar till hälsoformuläret. Status speglar checklistpunkten "Delat Hälsoformulär till läkare/kursledare".</div>'
+    + '<div class="vz-panel-meta">' + done + ' av ' + sharable + ' delade</div></div>'
+    + '<div class="vz-panel-note">Klicka <b>Dela till läkare</b> för att skapa den anonymiserade kopian i läkarens mapp (bockar "Delat Hälsoformulär till läkare/kursledare"). Här avgör du vilka som går till läkaren. Namn med ↗ öppnar hälsoformuläret.</div>'
     + table
-    + '<div class="vz-stub-row">'
-    + '<button class="vz-btn" id="vz-hf-doctor">Skicka till läkare</button>'
-    + '<span class="vz-stub-note">förhandsvisning (dry-run) — inget skickas</span></div>'
-    + '<div id="vz-hf-doctor-out" class="vz-panel-note" style="display:none"></div>'
     + '<div class="vz-allergi-box">'
     + '<div class="vz-allergi-title">Matallergier</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
@@ -682,6 +686,11 @@ function renderHfPanel(rows, courseName) {
     + '<div id="vz-allergi-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
     + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div></div>';
   host.appendChild(sec);
+
+  // #18: per-rad delning till läkare. Bekräftelse (irreversibel hälsodata-delning) + fail-closed test-läge + idempotent.
+  Array.prototype.forEach.call(sec.querySelectorAll('.vz-hf-share[data-card]'), function (btn) {
+    btn.addEventListener('click', function () { shareHfToDoctor(btn.getAttribute('data-card'), btn.getAttribute('data-ci'), btn.getAttribute('data-name'), btn); });
+  });
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
   //    ersätt koderna med riktiga namn lokalt i svaret.
@@ -842,28 +851,62 @@ function renderHfPanel(rows, courseName) {
   }
 
   // ── Skicka till läkare: dry-run förhandsvisning (inget skickas skarpt).
-  var docBtn = sec.querySelector('#vz-hf-doctor');
-  var docOut = sec.querySelector('#vz-hf-doctor-out');
-  if (docBtn) {
-    docBtn.addEventListener('click', function () {
-      // Modell (ur nya-zapiers Actions_CopyHealthFormToDoctor): när checklistpunkten
-      // "Delat Hälsoformulär till läkare/kursledare" är IKRYSSAD finns redan en anonymiserad
-      // kopia i mappen "HF till läkare - Kursnamn". DE IKRYSSADE är alltså de som ska till
-      // läkaren. (Urkryssad = kopian borttagen.)
-      var ready = rows.filter(function (r) { return r.done; });
-      var notYet = rows.filter(function (r) { return r.link && !r.done; }).length;
-      var noForm = rows.filter(function (r) { return !r.link; }).length;
-      docOut.style.display = '';
-      if (!ready.length) {
-        docOut.textContent = 'Inga ikryssade deltagare än → ingen anonymiserad kopia finns att skicka. '
-          + notYet + ' har hälsoformulär men är inte ikryssade än, ' + noForm + ' saknar HF-länk.';
-        return;
-      }
-      docOut.textContent = ready.length + ' anonymiserade hälsoformulär (de ikryssade) ligger i mappen '
-        + '"HF till läkare" och är de som ska till läkaren. ' + notYet + ' har HF men är inte ikryssade än, '
-        + noForm + ' saknar HF-länk. Skarp delning till läkaren kopplas härnäst.';
-    });
-  }
+}
+
+/* #18: skarp delning av ETT hälsoformulär till läkaren. Bockar hf_delad → prod-automationen "Kopiera HF
+ * till läkare" skapar den anonyma kopian i läkarens mapp. IRREVERSIBEL hälsodata-delning → bekräftelse-dialog
+ * (in-modal; t.popup funkar ej i fullscreen-modal) + FAIL-CLOSED test-läge (skriver bara om testMode===false)
+ * + idempotent (redan-delade knappar är disabled). Samma write som Vy1:s gap-stängning. */
+function shareHfToDoctor(cardId, checkItemId, name, btn) {
+  if (!cardId || !checkItemId) { return; }
+  courseInModalConfirm(
+    'Dela ' + name + ':s anonymiserade hälsoformulär till läkaren?\n\nDetta bockar "Delat Hälsoformulär till läkare/kursledare", '
+      + 'vilket skapar den anonymiserade kopian i läkarens mapp. Det kan inte ångras härifrån.',
+    'Dela till läkare',
+    function () {
+      getCourseSettings().then(function (settings) {
+        if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: dela ej i testläge/osäkert läge
+          try { t.alert({ message: 'Testläge: skulle delat ' + name + ':s hälsoformulär (ingen ändring gjordes).', duration: 7, display: 'info' }); } catch (e) {}
+          return;
+        }
+        var orig = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ Delar…';
+        t.getRestApi().getToken().then(function (token) {
+          if (!token) { throw new Error('Ingen Trello-token — anslut Power-Up:en först.'); }
+          return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + checkItemId + '?state=complete');
+        }).then(function () {
+          btn.textContent = '✓ Delad till läkare'; btn.classList.add('is-done');
+          try { t.alert({ message: '✓ Delade ' + name + ':s hälsoformulär till läkaren.', duration: 7, display: 'success' }); } catch (e) {}
+        }).catch(function (err) {
+          btn.disabled = false; btn.textContent = orig;
+          try { t.alert({ message: '⚠️ Kunde inte dela: ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {}
+        });
+      });
+    }
+  );
+}
+
+/* In-modal bekräftelse-dialog (t.popup renderar ej i fullscreen t.modal). Esc avbryter, Enter bekräftar,
+ * autofokus på bekräfta. Vi äger modalens DOM → egen overlay. */
+function courseInModalConfirm(message, confirmText, onYes) {
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,68,92,.35);display:flex;align-items:center;justify-content:center;font-family:Calibri,system-ui,sans-serif';
+  var box = document.createElement('div');
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+  box.style.cssText = 'background:#fff;max-width:440px;margin:16px;padding:20px 22px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);color:#0d3142';
+  var p = document.createElement('div'); p.style.cssText = 'font-size:14.5px;line-height:1.5;margin-bottom:16px;white-space:pre-line'; p.textContent = message;
+  var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+  var no = document.createElement('button'); no.textContent = 'Avbryt'; no.style.cssText = 'border:none;cursor:pointer;background:#7a8a91;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
+  var yes = document.createElement('button'); yes.textContent = confirmText || 'Bekräfta'; yes.style.cssText = 'border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
+  row.appendChild(no); row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
+  (document.body || document.documentElement).appendChild(ov);
+  function close() { document.removeEventListener('keydown', onKey, true); ov.remove(); }
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter') { e.preventDefault(); close(); onYes(); } }
+  document.addEventListener('keydown', onKey, true);
+  no.addEventListener('click', close);
+  ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
+  yes.addEventListener('click', function () { close(); onYes(); });
+  yes.focus();
 }
 
 // Åtgärdsknapp-stub: visar vad den SKULLE göra (mejl/sidoeffekter kopplas server-side).

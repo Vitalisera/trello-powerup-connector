@@ -557,6 +557,13 @@
 .vz-course .vz-status--done{color:var(--success)}
 .vz-course .vz-status--pending{color:var(--amber)}
 .vz-course .vz-status--missing{color:#8aa3ac;font-weight:600}
+/* #18: delnings-knapp per deltagare (skapar anonym kopia till läkaren) */
+.vz-course .vz-hf-share{border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;
+  font-family:var(--font-body);font-weight:700;font-size:12.5px;padding:5px 12px;border-radius:8px;white-space:nowrap;transition:background .12s ease,color .12s ease}
+.vz-course .vz-hf-share:hover{background:var(--accent);color:#fff}
+.vz-course .vz-hf-share:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vz-course .vz-hf-share.is-done,.vz-course .vz-hf-share[disabled]{border-color:transparent;background:rgba(31,122,83,.12);color:var(--success);cursor:default}
+.vz-course .vz-hf-share.is-done:hover{background:rgba(31,122,83,.12);color:var(--success)}
 
 /* knappar + textfält (delas av paneler) */
 .vz-course .vz-btn{
