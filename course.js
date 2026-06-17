@@ -501,29 +501,25 @@ function cleanStaffName(n) {
   return (parts.length > 1 ? parts.slice(1).join(' - ') : s).trim();
 }
 
-/* ── Flyttbara below-paneler: dra-handtag (⠿) + board-delad ordning (vz_panel_order) ──────────────
- * Varje below-panel wrappas i .vz-panel-wrap (handtaget överlever panelens egna innerHTML-repaints).
- * Ordningen sparas board-delat → deterministisk över sessioner; nya moduler hamnar sist tills de flyttas. */
-var PANEL_ORDER = [];
-function loadPanelOrder() {
-  return t.get('board', 'shared', 'vz_panel_order').then(function (o) { PANEL_ORDER = Array.isArray(o) ? o : []; return PANEL_ORDER; }).catch(function () { PANEL_ORDER = []; return []; });
+/* ── Flyttbara below-paneler (KANBAN): TVÅ oberoende kolumn-stackar (.vz-panel-col) som man drar moduler inom/mellan.
+ * Oberoende kolumner → sömlös vertikal stacking utan radhöjds-koppling; topp-modulernas toppar möts (Robert 2026-06-18).
+ * Layout board-delat (vz_panel_layout = [[col0-nycklar],[col1-nycklar]]). Varje panel wrappas i .vz-panel-wrap (handtaget
+ * överlever panelens innerHTML-repaints). Drag BARA via handtaget. Ny/okänd modul → kortare kolumnen (balansering). */
+var DEFAULT_PANEL_LAYOUT = [['livs_matris', 'hf', 'checklist'], ['uppf_matris', 'praktisk', 'allergi']];
+var PANEL_LAYOUT = [[], []];
+function loadPanelLayout() {
+  return t.get('board', 'shared', 'vz_panel_layout').then(function (o) {
+    PANEL_LAYOUT = (o && o.length === 2 && Array.isArray(o[0]) && Array.isArray(o[1])) ? o : [DEFAULT_PANEL_LAYOUT[0].slice(), DEFAULT_PANEL_LAYOUT[1].slice()];
+    return PANEL_LAYOUT;
+  }).catch(function () { PANEL_LAYOUT = [DEFAULT_PANEL_LAYOUT[0].slice(), DEFAULT_PANEL_LAYOUT[1].slice()]; return PANEL_LAYOUT; });
 }
-function panelRank_(key) { var i = PANEL_ORDER.indexOf(key); return i === -1 ? 999 : i; }
-function savePanelOrder_() {
-  var host = vzRegion('below'); if (!host) { return; }
-  PANEL_ORDER = [].map.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'), function (w) { return w.getAttribute('data-panel'); });
-  try { t.set('board', 'shared', 'vz_panel_order', PANEL_ORDER).catch(function () {}); } catch (e) {}
+function panelPos_(key) {
+  for (var c = 0; c < 2; c++) { var i = PANEL_LAYOUT[c].indexOf(key); if (i !== -1) { return { col: c, idx: i }; } }
+  return null;
 }
-// Sortera om befintliga wrappar enligt sparad rank (eventually-consistent om ordningen kommer efter panelerna).
-function reorderBelowPanels_() {
-  var host = vzRegion('below'); if (!host) { return; }
-  var wraps = [].slice.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'));
-  wraps.sort(function (a, b) { return panelRank_(a.getAttribute('data-panel')) - panelRank_(b.getAttribute('data-panel')); });
-  wraps.forEach(function (w) { host.appendChild(w); });   // appendChild flyttar (ej duplicerar) → DOM hamnar i rank-ordning
-}
-// Vilken wrap pekaren ligger FÖRE (vertikal närmast-mitt-heuristik; tät 2-kol → approximativt men funkar).
-function dragAfterElement_(host, y) {
-  var els = [].slice.call(host.querySelectorAll('.vz-panel-wrap:not(.is-dragging)'));
+// Vilken wrap pekaren ligger FÖRE i en kolumn (vertikal närmast-mitt).
+function dragAfterElement_(col, y) {
+  var els = [].slice.call(col.querySelectorAll('.vz-panel-wrap:not(.is-dragging)'));
   var closest = -Infinity, found = null;
   for (var i = 0; i < els.length; i++) {
     var box = els[i].getBoundingClientRect();
@@ -532,43 +528,73 @@ function dragAfterElement_(host, y) {
   }
   return found;
 }
-function ensureBelowDnd_(host) {
-  if (host.getAttribute('data-dnd') === '1') { return; }
-  host.setAttribute('data-dnd', '1');
-  host.addEventListener('dragover', function (e) {
-    var dragging = host.querySelector('.vz-panel-wrap.is-dragging');
-    if (!dragging) { return; }
+function makeCol_(idx) {
+  var col = document.createElement('div'); col.className = 'vz-panel-col'; col.setAttribute('data-col', String(idx));
+  col.addEventListener('dragover', function (e) {
+    var dragging = document.querySelector('.vz-panel-wrap.is-dragging'); if (!dragging) { return; }
     e.preventDefault();
-    var after = dragAfterElement_(host, e.clientY);
-    if (after == null) { host.appendChild(dragging); }
-    else if (after !== dragging) { host.insertBefore(dragging, after); }
+    var after = dragAfterElement_(col, e.clientY);
+    if (after == null) { col.appendChild(dragging); } else if (after !== dragging) { col.insertBefore(dragging, after); }
   });
-  host.addEventListener('drop', function (e) { e.preventDefault(); });
+  col.addEventListener('drop', function (e) { e.preventDefault(); });
+  return col;
 }
-// Wrappa en below-panel + sätt in på rätt plats + koppla drag (handtag-initierat).
-function placeBelowPanel(sec, key) {
-  var host = vzRegion('below'); if (!host) { host = null; }
-  if (!host) { return; }
-  ensureBelowDnd_(host);
+function belowCols_() {
+  var host = vzRegion('below'); if (!host) { return null; }
+  var existing = host.querySelectorAll('.vz-panel-col');
+  if (existing.length === 2) { return [existing[0], existing[1]]; }
+  var a = makeCol_(0), b = makeCol_(1);
+  host.appendChild(a); host.appendChild(b);
+  return [a, b];
+}
+function savePanelLayout_() {
+  var cols = belowCols_(); if (!cols) { return; }
+  PANEL_LAYOUT = cols.map(function (col) { return [].map.call(col.querySelectorAll('.vz-panel-wrap[data-panel]'), function (w) { return w.getAttribute('data-panel'); }); });
+  try { t.set('board', 'shared', 'vz_panel_layout', PANEL_LAYOUT).catch(function () {}); } catch (e) {}
+}
+// Säkerhetsnät: flytta wrappar till rätt kolumn+ordning enligt sparad layout (om de landade innan layouten kom).
+function reorderBelowPanels_() {
+  var cols = belowCols_(); if (!cols) { return; }
+  [].slice.call(vzRegion('below').querySelectorAll('.vz-panel-wrap[data-panel]')).forEach(function (w) {
+    var pos = panelPos_(w.getAttribute('data-panel')); if (!pos) { return; }
+    var col = cols[pos.col], before = null;
+    [].slice.call(col.querySelectorAll('.vz-panel-wrap[data-panel]')).forEach(function (s) {
+      if (before || s === w) { return; }
+      var sp = panelPos_(s.getAttribute('data-panel')); if (sp && sp.idx > pos.idx) { before = s; }
+    });
+    col.insertBefore(w, before);
+  });
+}
+function makeWrap_(sec, key) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-panel-wrap'; wrap.setAttribute('data-panel', key); wrap.setAttribute('draggable', 'false');
   var grip = document.createElement('span');
   grip.className = 'vz-panel-drag'; grip.title = 'Dra för att flytta modulen'; grip.setAttribute('aria-label', 'Flytta modul'); grip.textContent = '⠿';
   wrap.appendChild(grip); wrap.appendChild(sec);
-  // dra BARA via handtaget: draggable togglas på vid grip-mousedown, av efter släpp.
   grip.addEventListener('mousedown', function () { wrap.setAttribute('draggable', 'true'); });
   var reset = function () { wrap.setAttribute('draggable', 'false'); };
-  wrap.addEventListener('dragstart', function (e) {
-    wrap.classList.add('is-dragging');
-    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (x) {}
-  });
-  wrap.addEventListener('dragend', function () { wrap.classList.remove('is-dragging'); reset(); savePanelOrder_(); });
+  wrap.addEventListener('dragstart', function (e) { wrap.classList.add('is-dragging'); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (x) {} });
+  wrap.addEventListener('dragend', function () { wrap.classList.remove('is-dragging'); reset(); savePanelLayout_(); });
   document.addEventListener('mouseup', reset);
-  // ordnad insättning enligt sparad rank
-  var rank = panelRank_(key);
-  var before = null, sibs = [].slice.call(host.querySelectorAll('.vz-panel-wrap[data-panel]'));
-  for (var i = 0; i < sibs.length; i++) { if (panelRank_(sibs[i].getAttribute('data-panel')) > rank) { before = sibs[i]; break; } }
-  host.insertBefore(wrap, before);
+  return wrap;
+}
+// Wrappa + sätt in i rätt kolumn enligt sparad layout. Ny/okänd → kortare kolumnen (balansera).
+function placeBelowPanel(sec, key) {
+  var cols = belowCols_(); if (!cols) { return; }
+  var dup = vzRegion('below').querySelector('.vz-panel-wrap[data-panel="' + key + '"]');
+  if (dup && dup.parentNode) { dup.parentNode.removeChild(dup); }   // re-render-skydd: ingen dubblett
+  var wrap = makeWrap_(sec, key);
+  var pos = panelPos_(key);
+  if (pos) {
+    var col = cols[pos.col], before = null;
+    [].slice.call(col.querySelectorAll('.vz-panel-wrap[data-panel]')).forEach(function (s) {
+      if (before) { return; }
+      var sp = panelPos_(s.getAttribute('data-panel')); if (sp && sp.idx > pos.idx) { before = s; }
+    });
+    col.insertBefore(wrap, before);
+  } else {
+    (cols[0].children.length <= cols[1].children.length ? cols[0] : cols[1]).appendChild(wrap);
+  }
 }
 // Filtrera + rolla ett personalkort enligt board-reglerna. Returnerar {name,role} eller null.
 function staffPerson(card, cfg) {
@@ -2104,8 +2130,8 @@ function loadCourse(listId, listName) {
     window.CourseView.render(ROOT(), model, handlers);
     loadGenderSplit(model.participants);
     loadStaff(res[0]);
-    // Ladda sparad panel-ordning FÖRST → below-panelerna sätts in i rätt ordning (deterministiskt, ej async-laddningsordning).
-    loadPanelOrder().then(function () {
+    // Ladda sparad panel-layout (kolumner+ordning) FÖRST → panelerna placeras deterministiskt (ej async-laddningsordning).
+    loadPanelLayout().then(function () {
       loadHfPanel(res[1] || [], res[0]);
       loadStoryMatrix(res[0], model.participants, res[1] || []);
       loadCourseChecklist(res[0]);

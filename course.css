@@ -229,24 +229,24 @@
 /* below-region: responsivt grid. Smala paneler (HF, Kurschecklista) delar rad
    sida vid sida (2 jämna kolumner); breda matris-paneler (.vz-panel--wide)
    spänner hela bredden på egen rad. Degraderar till en kolumn på smal skärm. */
+/* KANBAN: två oberoende kolumn-stackar sida vid sida (ej grid → ingen radhöjds-koppling, sömlös vertikal stacking). */
 .vz-region-below{
-  display:grid;
-  grid-template-columns:repeat(2, minmax(0, 1fr));
-  /* dense → smala paneler packas ihop sida vid sida även om en matris
-     (full-bredd) hinner renderas emellan dem (panelerna laddas asynkront) */
-  grid-auto-flow:row dense;
+  display:flex;
+  align-items:flex-start;
   gap:18px;
-  align-items:start;
   border-top:1px solid var(--hairline);
   background:rgba(255,255,255,.4);
   padding:18px 24px 26px;
 }
-/* grid-items är nu .vz-panel-wrap (för dra-handtag som överlever repaint). breda → hela radbredden. */
-.vz-course .vz-region-below .vz-panel-wrap.is-wide{grid-column:1 / -1}
-/* en ensam smal panel (udda antal) ska inte lämna en tom halva → fyll raden */
-.vz-course .vz-region-below .vz-panel-wrap:not(.is-wide):last-child:nth-child(odd){grid-column:1 / -1}
-.vz-region-below:empty,.vz-region-aside:empty{display:none}
-/* ── flyttbara below-paneler: wrap (grid-item) + dra-handtag (⠿) ── */
+.vz-course .vz-panel-col{
+  flex:1 1 0;min-width:0;
+  display:flex;flex-direction:column;gap:18px;
+  min-height:70px;   /* tom kolumn ska gå att släppa i */
+  border-radius:12px;
+}
+.vz-course .vz-panel-col:empty{outline:2px dashed var(--hairline);outline-offset:-2px}
+.vz-region-aside:empty{display:none}
+/* ── flyttbara below-paneler: wrap (kolumn-item) + dra-handtag (⠿) ── */
 .vz-course .vz-panel-wrap{position:relative;min-width:0}
 .vz-course .vz-panel-wrap .vz-panel--below{margin:0;height:100%}
 .vz-course .vz-panel-drag{position:absolute;top:9px;right:11px;z-index:6;cursor:grab;color:#7d97a0;
@@ -773,6 +773,6 @@
   .vz-cv-corner,.vz-cv-namehead,.vz-cv-namecell{min-width:200px;width:200px}
   .vz-cv-search input{width:118px}
   /* en kolumn på telefon — min sänks så inget overflowar smala viewporter */
-  .vz-region-below{grid-template-columns:1fr;gap:14px;padding:14px 12px 20px}
+  .vz-region-below{flex-direction:column;gap:14px;padding:14px 12px 20px}
   .vz-course .vz-col-status{width:180px}
 }
