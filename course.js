@@ -1037,6 +1037,9 @@ function loadHfPanel(cards, courseName) {
 }
 function renderHfPanel(rows, courseName) {
   var allergiKey = 'vz_allergi_' + courseSlug(courseName);
+  // Kock-mejlmall: default ur config.js, override ur Inställningar (vz_settings.tpl_kock). Läses async → fallback tills den kommit.
+  var kockTpl = (DEFAULT_TPL.kock || '');
+  getCourseSettings().then(function (s) { if (s && s.tpl_kock) { kockTpl = s.tpl_kock; } }).catch(function () {});
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -1185,12 +1188,14 @@ function renderHfPanel(rows, courseName) {
           // Personal = ALL staff (gruppledare + assistenter + kockar) inkl. kocken (mottagaren).
           var pCount = STAFF_COUNT || items.filter(function (it) { return /^A/.test(it.code); }).length;
           var greeting = KOCK_NAME ? ('Hej ' + KOCK_NAME + ',') : 'Hej!';
-          var mejl = greeting + '\n\n'
-            + 'Här kommer en sammanställning av matallergierna inför kursen.\n\n'
-            + 'Som det ser ut just nu är det ' + dCount + ' deltagare och ' + pCount + ' personal (inklusive dig).\n\n'
-            + 'Deltagare (kopierat från hälsoformuläret):\n' + deltBody + '\n\n'
-            + 'Personal:\n' + persBody + '\n\n'
-            + 'Jag återkommer om det blir ändring i antal eller om någon ny allergi dyker upp.';
+          // Kock-mejlet ur mall (Inställningar → tpl_kock, annars config-default). Tokens fylls här.
+          var mejl = applyTokens(kockTpl || DEFAULT_TPL.kock || '', {
+            'HÄLSNING': greeting,
+            'ANTAL_DELTAGARE': String(dCount),
+            'ANTAL_PERSONAL': String(pCount),
+            'DELTAGARE': deltBody,
+            'PERSONAL': persBody,
+          });
           allergiOut.value = mejl;
           persistText(allergiKey, mejl);
           // Oklar/saknat → SEPARAT info (medvetet EJ med i kock-mejlet).

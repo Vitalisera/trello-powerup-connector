@@ -115,4 +115,13 @@ window.NYA_ZAPIER_TPL = {
     + '{DELTAGARKONTAKTER}\n\n'
     + 'Här är länken till dokumentet där du skriver en kort sammanfattning:\n{SAMMANFATTNINGSLÄNK}\n\n'
     + 'Kram\nMalin',
+  // Matallergi-mejlet till kocken. Tokens: {HÄLSNING} (Hej <kock>, / Hej!), {ANTAL_DELTAGARE}, {ANTAL_PERSONAL},
+  // {DELTAGARE} (allergi-sammanställning ur hälsoformulären), {PERSONAL} (personalens allergier).
+  kock:
+    '{HÄLSNING}\n\n'
+    + 'Här kommer en sammanställning av matallergierna inför kursen.\n\n'
+    + 'Som det ser ut just nu är det {ANTAL_DELTAGARE} deltagare och {ANTAL_PERSONAL} personal (inklusive dig).\n\n'
+    + 'Deltagare (kopierat från hälsoformuläret):\n{DELTAGARE}\n\n'
+    + 'Personal:\n{PERSONAL}\n\n'
+    + 'Jag återkommer om det blir ändring i antal eller om någon ny allergi dyker upp.',
 };

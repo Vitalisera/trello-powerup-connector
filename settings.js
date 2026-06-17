@@ -107,6 +107,12 @@ function render(s) {
     + '<p class="hint">Token <b>{DELTAGARKONTAKTER}</b> fylls med namn/telefon/epost per tilldelad deltagare.</p>'
     + '</div>'
 
+    + '<div class="vz-field">'
+    + '<label for="vz-tpl-kock">Mall-text för kock-mejlet (matallergier)</label>'
+    + '<p class="hint">Matallergi-sammanställningen som mejlas till kocken. Tokens: <b>{HÄLSNING}</b> (Hej + kockens namn), <b>{ANTAL_DELTAGARE}</b>, <b>{ANTAL_PERSONAL}</b>, <b>{DELTAGARE}</b> (allergier ur hälsoformulären), <b>{PERSONAL}</b>.</p>'
+    + '<textarea id="vz-tpl-kock" class="vz-ta">' + esc(s.tpl_kock || TPL.kock || '') + '</textarea>'
+    + '</div>'
+
     + '<div class="vz-autosave"><span class="vz-autosave-txt">Ändringar sparas automatiskt</span><span class="vz-note" id="vz-saved"></span></div>'
     + '</div>';
 
@@ -130,6 +136,7 @@ function render(s) {
       tpl_livsAlla: tplVal('vz-tpl-livsalla', TPL.livsAlla), tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
       tpl_uppfoljning: tplVal('vz-tpl-uppfoljning', TPL.uppfoljning), tpl_uppfoljningB: tplVal('vz-tpl-uppfoljningb', TPL.uppfoljningB),
       tpl_uppfoljningEnskild: tplVal('vz-tpl-uppfenskild', TPL.uppfoljningEnskild),
+      tpl_kock: tplVal('vz-tpl-kock', TPL.kock),
     };
   }
   function flash(text, cls) {
