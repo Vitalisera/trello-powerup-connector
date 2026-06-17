@@ -544,8 +544,8 @@
   padding:8px 14px 8px 0;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0;
 }
-.vz-course .vz-tbl-statuscell{padding:8px 0;text-align:right;white-space:nowrap;width:1%}
-.vz-course .vz-col-status{width:130px}
+.vz-course .vz-tbl-statuscell{padding:8px 0 8px 6px;text-align:right;white-space:nowrap;width:1%}
+.vz-course .vz-col-status{width:200px}   /* #18: rymmer "✓ Läkarkopia skapad"/"Skapa läkarkopia" utan att spilla ut */
 
 .vz-course .vz-tbl-link{color:var(--accent);text-decoration:none;font-size:14px}  /* P2.3: teal (paletten) ist. för Trello-blå #0c66e4 */
 .vz-course .vz-tbl-link:hover{text-decoration:underline}
@@ -687,5 +687,5 @@
   .vz-cv-search input{width:118px}
   /* en kolumn på telefon — min sänks så inget overflowar smala viewporter */
   .vz-region-below{grid-template-columns:1fr;gap:14px;padding:14px 12px 20px}
-  .vz-course .vz-col-status{width:108px}
+  .vz-course .vz-col-status{width:180px}
 }
