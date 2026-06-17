@@ -580,21 +580,37 @@
       return participants.filter(function (p) { return p.key === k; })[0];
     }
 
+    // klick på en matriscell → fäll ut/in en detalj-rad under deltagarraden för det steget.
+    // course.js fyller hostDiv (Fas 1/Fas 2 + noteringar) via handlers.onSelectCell. En öppen åt gången.
+    function toggleDetail(row, p, stepKey, cell) {
+      var next = row.nextSibling;
+      var openSame = next && next.nodeType === 1 && next.className && next.className.indexOf('vz-cv-detailrow') !== -1
+        && next.getAttribute('data-step') === stepKey && next.getAttribute('data-pkey') === p.key;
+      Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-detailrow'), function (d) { d.parentNode.removeChild(d); });
+      Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-cell.is-sel'), function (c) { c.classList.remove('is-sel'); });
+      if (openSame) { return; }                                   // toggla av
+      if (cell) { cell.classList.add('is-sel'); }
+      var tr = document.createElement('tr');
+      tr.className = 'vz-cv-detailrow';
+      tr.setAttribute('data-step', stepKey); tr.setAttribute('data-pkey', p.key);
+      var td = document.createElement('td'); td.colSpan = 99; td.className = 'vz-cv-detailcell';
+      var hostDiv = document.createElement('div'); hostDiv.className = 'vz-cv-detail';
+      hostDiv.innerHTML = '<div class="vz-cv-detail-loading">Laddar steg…</div>';
+      td.appendChild(hostDiv); tr.appendChild(td);
+      row.parentNode.insertBefore(tr, row.nextSibling);
+      if (typeof handlers.onSelectCell === 'function') { try { handlers.onSelectCell(p, stepKey, hostDiv); } catch (err) { hostDiv.textContent = 'Kunde inte visa steget.'; } }
+    }
+
     function wireRows() {
       Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-row'), function (row) {
         var pkey = row.getAttribute('data-pkey');
         var p = pByKey(pkey);
 
-        // klick på cell → onSelectCell (stoppa bubbling till radens onOpenCard)
+        // klick på cell → expandera raden inline med stegets detalj (stoppa bubbling till onOpenCard)
         Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-cell'), function (cell) {
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
-            var stepKey = cell.getAttribute('data-step-key');
-            if (typeof handlers.onSelectCell === 'function') {
-              try { handlers.onSelectCell(p, stepKey); } catch (err) { /* no-op */ }
-            } else {
-              console.log('[CourseView] onSelectCell', pkey, stepKey);
-            }
+            toggleDetail(row, p, cell.getAttribute('data-step-key'), cell);
           });
         });
 

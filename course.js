@@ -145,10 +145,159 @@ function buildCourseModel(listName, cards) {
   return { course: { name: listName, datum: listName, daysToStart: daysToStart(listName) }, steps: steps, participants: participants };
 }
 
+// Inline steg-detalj (Robert 2026-06-17: klick på cell → expandera rad med stegets Fas1/Fas2 + noteringar;
+// porterar Vy1:s detalj in i Vy2 → gör deltagarstatus-vyn överflödig). COURSE_CARDS_BY_ID fylls i loadCourse.
+var COURSE_CARDS_BY_ID = {};
+
 var handlers = {
   onOpenCard: function (p) { if (p && p.cardUrl) { window.open(p.cardUrl, '_blank'); } },
-  onSelectCell: function () {},
+  onSelectCell: function (p, stepKey, host) {
+    if (!host) { return; }
+    var card = p && COURSE_CARDS_BY_ID[p.key];
+    if (!card) { host.innerHTML = '<div class="vz-cv-detail-empty">Kortdata saknas — ladda om vyn.</div>'; return; }
+    renderInlineStepDetail(host, p, stepKey, card);
+  },
 };
+
+// Härled ETT stegs fulla detalj ur kortet (status, label satt?, checkItem-id + bockad?, automation).
+function stepDetailForCard(card, stepKey) {
+  var s = (window.NYA_ZAPIER_FLOW || []).filter(function (f) { return f.key === stepKey; })[0];
+  if (!s) { return null; }
+  var ci = null;
+  (card.checklists || []).forEach(function (cl) {
+    (cl.checkItems || []).forEach(function (it) {
+      if (ci) { return; }
+      var nm = norm(it.name || ''), tg = norm(s.checkItem || '');
+      if (tg && (nm === tg || nm.indexOf(tg) !== -1 || tg.indexOf(nm) !== -1)) { ci = { id: it.id, complete: norm(it.state) === 'complete' }; }
+    });
+  });
+  var labels = {};
+  (card.labels || []).forEach(function (l) { if (l.name) { labels[norm(l.name)] = true; } });
+  return {
+    key: s.key, title: s.title, phase: s.phase, always: !!s.always,
+    triggerLabel: s.triggerLabel || null, automation: s.automation || null,
+    checkItemName: s.checkItem || null, checkItemId: ci ? ci.id : null,
+    labelSet: s.triggerLabel ? !!labels[norm(s.triggerLabel)] : false,
+    checklistDone: !!(ci && ci.complete),
+  };
+}
+
+function vzPhaseCard_(num, kind, title, bodyHtml, actionHtml) {
+  return '<div class="vz-pd-card"><div class="vz-pd-k"><span class="vz-pd-dot">' + num + '</span>Fas ' + num + ' · ' + esc(kind) + '</div>'
+    + '<div class="vz-pd-title">' + title + '</div><div class="vz-pd-body">' + bodyHtml + '</div>'
+    + (actionHtml ? '<div class="vz-pd-actions">' + actionHtml + '</div>' : '') + '</div>';
+}
+
+function renderInlineStepDetail(host, p, stepKey, card) {
+  var d = stepDetailForCard(card, stepKey);
+  if (!d) { host.innerHTML = '<div class="vz-cv-detail-empty">Okänt steg.</div>'; return; }
+
+  var fas1;
+  if (!d.triggerLabel && !d.automation) {
+    fas1 = vzPhaseCard_('1', 'Trigger', 'Ingen automation', '<span class="vz-pd-note">✋ Inget mejl, inget dokument — utförs manuellt av dig.</span>', '');
+  } else if (!d.triggerLabel) {
+    fas1 = vzPhaseCard_('1', 'Trigger', esc(d.automation || 'Automatiskt'), '<span class="vz-pd-note">Triggas automatiskt — krävde ingen label.</span>', '');
+  } else if (d.labelSet) {
+    fas1 = vzPhaseCard_('1', 'Trigger', 'Label satt ✓', '<span class="vz-pd-ok">«' + esc(d.triggerLabel) + '» är satt — automationen har körts.</span>', '');
+  } else {
+    fas1 = vzPhaseCard_('1', 'Sätt label', 'Starta automationen', '<span class="vz-pd-note">Sätt «' + esc(d.triggerLabel) + '»' + (d.automation ? ' → «' + esc(d.automation) + '» (kan skicka mejl)' : '') + '.</span>',
+      '<button class="vz-btn vz-pd-act" data-act="label">Sätt label</button>');
+  }
+
+  var fas2;
+  if (d.always) {
+    fas2 = vzPhaseCard_('2', 'Bock', 'Klart', '<span class="vz-pd-ok">Steget är alltid klart.</span>', '');
+  } else if (!d.checkItemName) {
+    fas2 = vzPhaseCard_('2', 'Bock', '—', '<span class="vz-pd-note">Ingen checklistpunkt för detta steg.</span>', '');
+  } else if (d.checklistDone) {
+    fas2 = vzPhaseCard_('2', 'Bock', 'Bockad ✓', '<span class="vz-pd-ok">«' + esc(d.checkItemName) + '» är bockad — steget är klart.</span>', '');
+  } else {
+    fas2 = vzPhaseCard_('2', 'Bock i checklista', 'Bocka när utfört', '<span class="vz-pd-note">Bocka «' + esc(d.checkItemName) + '» när steget är gjort.</span>',
+      d.checkItemId ? '<button class="vz-btn vz-pd-act" data-act="tick">Bocka av</button>' : '<span class="vz-pd-note">checkItem-id saknas — bocka i kortet</span>');
+  }
+
+  host.innerHTML = '<div class="vz-pd-head"><b>' + esc(d.title) + '</b><span class="vz-pd-phase">' + esc(d.phase) + '</span>'
+    + '<button class="vz-btn vz-pd-notes" data-act="notes">Visa noteringar</button></div>'
+    + '<div class="vz-pd-phases">' + fas1 + '<span class="vz-pd-arrow">→</span>' + fas2 + '</div>';
+
+  var lb = host.querySelector('[data-act="label"]'); if (lb) { lb.addEventListener('click', function () { inlineSetLabel(card.id, d, lb); }); }
+  var tb = host.querySelector('[data-act="tick"]'); if (tb) { tb.addEventListener('click', function () { inlineTick(card.id, d, tb); }); }
+  var nb = host.querySelector('[data-act="notes"]'); if (nb) { nb.addEventListener('click', function () { showParticipantNotes(p, card); }); }
+}
+
+// Fas 1: sätt triggerlabeln (POST idLabels → startar nya-zapier-automationen). Bekräftelse + fail-closed test-läge.
+function inlineSetLabel(cardId, d, btn) {
+  courseInModalConfirm('Sätt labeln «' + d.triggerLabel + '» på kortet?\n\nDet startar automationen'
+    + (d.automation ? ' «' + d.automation + '»' : '') + ' (kan skicka mejl till deltagaren).', 'Sätt label', function () {
+    getCourseSettings().then(function (settings) {
+      if (!resolveSendMode(settings).live) { try { t.alert({ message: 'Testläge: skulle satt «' + d.triggerLabel + '» (ingen ändring).', duration: 6, display: 'info' }); } catch (e) {} return; }
+      btn.disabled = true; btn.textContent = '⏳ Sätter…';
+      t.board('labels').then(function (b) {
+        var lbl = ((b && b.labels) || []).filter(function (l) { return norm(l.name) === norm(d.triggerLabel); })[0];
+        if (!lbl) { throw new Error('Hittar ingen label «' + d.triggerLabel + '» på brädan.'); }
+        return t.getRestApi().getToken().then(function (token) {
+          if (!token) { throw new Error('Ingen Trello-token.'); }
+          return restWrite(token, 'POST', 'cards/' + cardId + '/idLabels?value=' + encodeURIComponent(lbl.id));
+        });
+      }).then(function () {
+        btn.textContent = '✓ Label satt'; btn.classList.add('is-done');
+        try { t.alert({ message: '✓ Satte «' + d.triggerLabel + '» — automationen startar.', duration: 7, display: 'success' }); } catch (e) {}
+      }).catch(function (err) { btn.disabled = false; btn.textContent = 'Sätt label'; try { t.alert({ message: '⚠️ ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {} });
+    });
+  });
+}
+
+// Fas 2: bocka checklistpunkten (PUT checkItem). Bekräftelse + fail-closed test-läge.
+function inlineTick(cardId, d, btn) {
+  courseInModalConfirm('Bocka «' + d.checkItemName + '» i checklistan?', 'Bocka av', function () {
+    getCourseSettings().then(function (settings) {
+      if (!resolveSendMode(settings).live) { try { t.alert({ message: 'Testläge: skulle bockat «' + d.checkItemName + '» (ingen ändring).', duration: 6, display: 'info' }); } catch (e) {} return; }
+      btn.disabled = true; btn.textContent = '⏳ Bockar…';
+      t.getRestApi().getToken().then(function (token) {
+        if (!token) { throw new Error('Ingen Trello-token.'); }
+        return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + d.checkItemId + '?state=complete');
+      }).then(function () {
+        btn.textContent = '✓ Bockad'; btn.classList.add('is-done');
+        try { t.alert({ message: '✓ Bockade «' + d.checkItemName + '».', duration: 6, display: 'success' }); } catch (e) {}
+      }).catch(function (err) { btn.disabled = false; btn.textContent = 'Bocka av'; try { t.alert({ message: '⚠️ ' + ((err && err.message) || err), duration: 8, display: 'error' }); } catch (e) {} });
+    });
+  });
+}
+
+// "Mänskliga noteringar": kortets kommentarer i en lightbox (filtrera bort bot-postade doklänkar).
+function showParticipantNotes(p, card) {
+  var notes = (card.actions || []).filter(function (a) {
+    return a.type === 'commentCard' && a.data && a.data.text
+      && !/zpr\.io|docs\.google|drive\.google|l[äa]nk till|levnadsbeskriv|livsber[äa]ttelse:|h[äa]lsoformul[äa]r.*:|mappen "/i.test(a.data.text);
+  });
+  var bodyHtml = notes.length
+    ? '<ul class="vz-notes-list">' + notes.map(function (a) {
+        var who = (a.memberCreator && a.memberCreator.fullName) || 'Okänd';
+        var when = (a.date || '').slice(0, 10);
+        return '<li><div class="vz-notes-meta">' + esc(who) + (when ? ' · ' + esc(when) : '') + '</div><div class="vz-notes-text">' + esc(a.data.text) + '</div></li>';
+      }).join('') + '</ul>'
+    : '<div class="vz-notes-empty">Inga mänskliga noteringar på det här kortet än.</div>';
+  courseLightbox('Noteringar · ' + (p.name || 'Deltagare'), bodyHtml);
+}
+
+// Enkel lightbox-visare (ej bekräftelse) — egen overlay (t.popup funkar ej i fullscreen-modal). Esc stänger.
+function courseLightbox(title, bodyHtml) {
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,68,92,.4);display:flex;align-items:center;justify-content:center;font-family:Calibri,system-ui,sans-serif;padding:20px';
+  var box = document.createElement('div');
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+  box.style.cssText = 'background:#fff;max-width:560px;width:100%;max-height:80vh;overflow:auto;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);color:#0d3142';
+  box.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(8,68,92,.12);position:sticky;top:0;background:#fff">'
+    + '<b style="font-size:15px">' + esc(title) + '</b><button class="vz-lb-x" style="border:none;background:#eef6f6;cursor:pointer;border-radius:8px;width:30px;height:30px;font-size:16px;color:#5d7c87">✕</button></div>'
+    + '<div style="padding:16px 20px">' + bodyHtml + '</div>';
+  ov.appendChild(box);
+  (document.body || document.documentElement).appendChild(ov);
+  function close() { document.removeEventListener('keydown', onKey, true); ov.remove(); }
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+  document.addEventListener('keydown', onKey, true);
+  box.querySelector('.vz-lb-x').addEventListener('click', close);
+  ov.addEventListener('click', function (e) { if (e.target === ov) { close(); } });
+}
 
 /* ---------- GAS-anrop (CORS-säkert, samma mönster som popup.js) ----------
  * text/plain → "simple request" → ingen OPTIONS-preflight. Body = JSON-sträng.
@@ -1590,6 +1739,8 @@ function loadCourse(listId, listName) {
     var cardsP = restGet(token, 'lists/' + listId + '/cards?fields=name,desc,labels,idList,url&checklists=all&checklist_fields=name&checkItem_fields=name,state&actions=commentCard&actions_limit=50');
     return Promise.all([nameP, cardsP]);
   }).then(function (res) {
+    COURSE_CARDS_BY_ID = {};
+    (res[1] || []).forEach(function (c) { COURSE_CARDS_BY_ID[c.id] = c; });   // för inline steg-detalj (klick på cell)
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
     loadGenderSplit(model.participants);
