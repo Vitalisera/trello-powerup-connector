@@ -622,6 +622,41 @@ function savePanelCollapsed_() {
   COLLAPSED = {}; keys.forEach(function (k) { COLLAPSED[k] = true; });
   try { t.set('board', 'shared', 'vz_panel_collapsed', keys).catch(function () {}); } catch (e) {}
 }
+// ?-hjälp per modul (Robert 2026-06-21): pedagogisk förklaring + relevanta länkar (mall-dok, listor). Konsoliderar
+// "lyft fram i Inställningar" → kontextuell hjälp där modulen är. {{länk}} till Praktisk info-mallen besvarar
+// Roberts fråga "hur vet Malin vilken mall hon ska redigera". HTML tillåts (courseLightbox renderar det).
+var PRACTICAL_TEMPLATE_DOC_URL = 'https://docs.google.com/document/d/1OT-7wIMTKGsbsH5QqEg-DRJtuNToVEEwfIlPG3jCDEI/edit';
+var PANEL_HELP = {
+  hf: { title: 'Hälsoformulär till läkare', body:
+    '<p><b>Vad den gör.</b> Listar alla deltagare och låter dig skapa en <b>anonymiserad kopia</b> av varje deltagares hälsoformulär i läkarens mapp. Att klicka «Skapa läkarkopia» bockar checklistpunkten «Delat Hälsoformulär till läkare/kursledare» på kortet — det är den bocken som triggar nya-zapier att skapa kopian.</p>'
+    + '<p><b>Hur du använder den.</b> 1) Klicka «Skapa läkarkopia» på de deltagare som ska till läkaren (namnen är <span style="color:#1f7a53;font-weight:600">gröna</span> när hälsoformuläret är klart). 2) Klicka «Dela mapp till läkare» längst ned — då får läkaren läsrätt på hela mappen + ett mejl från Google Drive.</p>'
+    + '<p><b>Tänk på.</b> Läkarens e-post sätts i Inställningar (kugghjulet). I testläge skapas/delas inget skarpt. Namn med ↗ öppnar deltagarens hälsoformulär.</p>' },
+  allergi: { title: 'Matallergier', body:
+    '<p><b>Vad den gör.</b> Läser alla deltagares hälsoformulär + personalens kort <b>anonymiserat</b> (koder, inga namn skickas till AI:n) och sammanställer ett färdigt mejl till kocken.</p>'
+    + '<p><b>Hur du använder den.</b> 1) «Sammanställ matallergier» → texten genereras i rutan (du kan redigera den). 2) «Skicka till kock» → mejlas till kockens adress (ur listan «Kontaktuppgifter kockar»). Mejltexten redigeras i Inställningar (mall «kock»).</p>'
+    + '<p><b>Tänk på.</b> Oklara/saknade formulär listas separat (ej med i kock-mejlet) så du kan följa upp dem manuellt. Fail-closed i testläge.</p>' },
+  praktisk: { title: 'Praktisk information till deltagare', body:
+    '<p><b>Vad den gör.</b> Skickar den kursgemensamma praktiska informationen som <b>PDF-bilaga</b> till varje deltagare och bockar steg 7 «Praktisk info skickat». Dokumentet skapas ur en mall där kursdatumen fylls i automatiskt.</p>'
+    + '<p><b>Mall-dokumentet.</b> 👉 <a href="' + PRACTICAL_TEMPLATE_DOC_URL + '" target="_blank" rel="noopener">Öppna mallen för att redigera ↗</a>. Den innehåller tokens — <code>{{KURSDATUM}}</code>, <code>{{STARTDAG}}</code>, <code>{{STARTTID}}</code>, <code>{{SLUTDAG}}</code> — som fylls per kurs. <b>Ta inte bort dem.</b> Plats är hårdkodad i mallen.</p>'
+    + '<p><b>Hur du använder den.</b> Verifiera kursdatumen i rutan. «Skicka» per deltagare, eller «Skicka till alla som inte fått». Klicka länken «kursgemensamma praktiska informationen» i panelen för att öppna/förhandsgranska själva dokumentet (skapas om det inte finns).</p>'
+    + '<p><b>Tänk på.</b> Fail-closed: i testläge går allt till test-mottagaren. Bockas steg 7 inte (nät-fel) markeras raden «Skickad · bocka steg 7 manuellt» så samma deltagare inte dubbel-mejlas.</p>' },
+  checklist: { title: 'Kurschecklista', body:
+    '<p><b>Vad den gör.</b> En kursnivå-checklista (delas över alla omgångar av samma kurssteg) för dina egna uppgifter inför kursen. Sparas automatiskt.</p>'
+    + '<p><b>Hur du använder den.</b> Bocka av uppgifter, lägg till egna längst ned. Sätt en <b>deadline i dagar innan kursstart</b> per uppgift → datumet räknas ut automatiskt (rött om passerat, «Idag»/«Imorgon»/«Igår» nära inpå).</p>'
+    + '<p><b>Tänk på.</b> Listan är delad — radera försiktigt (kräver två klick).</p>' },
+  livs_matris: { title: 'Livsberättelse / Du och dina relationer → gruppledare', body:
+    '<p><b>Vad den gör.</b> En matris där du bockar vilken gruppledare som läser vilken deltagares dokument. Deltagar-namnen är <span style="color:#1f7a53;font-weight:600">gröna</span> när dokumentet är klart, <span style="color:#b5710b;font-weight:600">gula</span> när det är påbörjat, <span style="color:#b23a2e">röda</span> när det inte är ifyllt (håll muspekaren över namnet för %/bild).</p>'
+    + '<p><b>Hur du använder den.</b> Bocka tilldelningarna, klicka «Skapa mejltext» → en redigerbar text genereras som du granskar och skickar själv. Namn med ↗ öppnar deltagarens dokument.</p>'
+    + '<p><b>Tänk på.</b> Dokumentet heter olika per kurssteg (Livsberättelse / Nulägesbeskrivning / Du och dina relationer) — rubriken anpassas automatiskt.</p>' },
+  uppf_matris: { title: 'Uppföljningssamtal → gruppledare', body:
+    '<p><b>Vad den gör.</b> Matris för vilken gruppledare som har uppföljningssamtal med vilken deltagare, samt «Skapa mejltext» för kontaktuppgifterna.</p>'
+    + '<p><b>Tänk på.</b> Uppföljningssamtal finns bara i <b>Steg 1</b> — den här modulen visas inte för Steg 2/3A/3B.</p>' },
+};
+function openPanelHelp(key) {
+  var h = PANEL_HELP[key];
+  if (!h) { return; }
+  courseLightbox('❓ ' + h.title, '<div class="vz-help-body">' + h.body + '</div>');
+}
 function makeWrap_(sec, key) {
   var wrap = document.createElement('div');
   wrap.className = 'vz-panel-wrap'; wrap.setAttribute('data-panel', key); wrap.setAttribute('draggable', 'false');
@@ -631,7 +666,14 @@ function makeWrap_(sec, key) {
   var chev = document.createElement('button');
   chev.className = 'vz-panel-collapse'; chev.type = 'button'; chev.title = 'Fäll ihop / expandera'; chev.setAttribute('aria-label', 'Fäll ihop modul'); chev.textContent = '▾';
   chev.addEventListener('click', function () { wrap.classList.toggle('is-collapsed'); savePanelCollapsed_(); });
-  wrap.appendChild(grip); wrap.appendChild(chev); wrap.appendChild(sec);
+  wrap.appendChild(grip); wrap.appendChild(chev);
+  if (PANEL_HELP[key]) {   // ?-hjälp: pedagogisk förklaring + relevanta länkar för just denna modul
+    var help = document.createElement('button');
+    help.className = 'vz-panel-help'; help.type = 'button'; help.title = 'Vad gör den här modulen?'; help.setAttribute('aria-label', 'Hjälp om modulen'); help.textContent = '?';
+    help.addEventListener('click', function () { openPanelHelp(key); });
+    wrap.appendChild(help);
+  }
+  wrap.appendChild(sec);
   grip.addEventListener('mousedown', function () { wrap.setAttribute('draggable', 'true'); });
   var reset = function () { wrap.setAttribute('draggable', 'false'); };
   wrap.addEventListener('dragstart', function (e) { wrap.classList.add('is-dragging'); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch (x) {} });

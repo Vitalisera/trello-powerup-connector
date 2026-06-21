@@ -250,16 +250,23 @@
 .vz-course .vz-panel-wrap{position:relative;min-width:0}
 .vz-course .vz-panel-wrap .vz-panel--below{margin:0;height:100%}
 /* Robert 2026-06-21: kontrollerna var "flugskit" — förstorade + tydlig knapp-look (bg + ram), synliga utan hover. */
-.vz-course .vz-panel-drag,.vz-course .vz-panel-collapse{
+.vz-course .vz-panel-drag,.vz-course .vz-panel-collapse,.vz-course .vz-panel-help{
   position:absolute;top:10px;z-index:6;display:flex;align-items:center;justify-content:center;
   width:30px;height:30px;line-height:1;border-radius:8px;cursor:pointer;
   color:#4f7180;background:#eaf1f3;border:1px solid var(--hairline);font-family:inherit;
   opacity:.92;transition:color .12s ease,background .12s ease,opacity .12s ease,transform .2s ease}
 .vz-course .vz-panel-drag{right:12px;cursor:grab;font-size:19px;user-select:none}
 .vz-course .vz-panel-collapse{right:50px;font-size:15px;padding:0}
-.vz-course .vz-panel-wrap:hover .vz-panel-drag,.vz-course .vz-panel-wrap:hover .vz-panel-collapse{opacity:1}
-.vz-course .vz-panel-drag:hover,.vz-course .vz-panel-collapse:hover,
-.vz-course .vz-panel-drag:focus-visible,.vz-course .vz-panel-collapse:focus-visible{color:#fff;background:var(--accent);border-color:var(--accent)}
+.vz-course .vz-panel-help{right:88px;font-size:15px;font-weight:800;padding:0}
+.vz-course .vz-panel-wrap:hover .vz-panel-drag,.vz-course .vz-panel-wrap:hover .vz-panel-collapse,.vz-course .vz-panel-wrap:hover .vz-panel-help{opacity:1}
+.vz-course .vz-panel-drag:hover,.vz-course .vz-panel-collapse:hover,.vz-course .vz-panel-help:hover,
+.vz-course .vz-panel-drag:focus-visible,.vz-course .vz-panel-collapse:focus-visible,.vz-course .vz-panel-help:focus-visible{color:#fff;background:var(--accent);border-color:var(--accent)}
+/* ?-hjälp-innehåll i lightboxen */
+.vz-course .vz-help-body{font-size:14px;line-height:1.55;color:var(--ink)}
+.vz-course .vz-help-body p{margin:0 0 11px}
+.vz-course .vz-help-body b{color:var(--dark)}
+.vz-course .vz-help-body a{color:var(--accent);font-weight:600}
+.vz-course .vz-help-body code{background:#eef4f5;border:1px solid var(--hairline);border-radius:5px;padding:1px 5px;font-size:12.5px}
 .vz-course .vz-panel-drag:active{cursor:grabbing}
 .vz-course .vz-panel-wrap.is-dragging{opacity:.45}
 .vz-course .vz-panel-wrap.is-dragging .vz-panel--below{outline:2px dashed var(--accent);outline-offset:-2px}
@@ -268,8 +275,8 @@
 .vz-course .vz-panel-wrap.is-collapsed .vz-panel--below > *:not(:first-child){display:none}
 .vz-course .vz-panel-wrap.is-collapsed .vz-panel--below{padding-bottom:14px}
 .vz-course .vz-panel-wrap.is-collapsed .vz-panel-head{margin-bottom:0;padding-bottom:0;border-bottom:none}
-/* panel-huvudets meta krockar ej med de (större) handtag + chevron-knapparna */
-.vz-course .vz-panel-wrap .vz-panel-head{padding-right:90px}
+/* panel-huvudets meta krockar ej med de tre kontrollerna (?, fäll ihop, flytta) */
+.vz-course .vz-panel-wrap .vz-panel-head{padding-right:128px}
 
 /* ===== MATRIS (tabell) ===== */
 .vz-cv-matrixwrap{
