@@ -1145,7 +1145,7 @@ function renderPracticalInfoPanel(rows, courseName) {
       : '<div class="vz-panel-empty">Inga deltagare.</div>';
     sec.innerHTML = '<div class="vz-panel-head"><div class="vz-panel-title">Praktisk information till deltagare</div>'
       + '<div class="vz-panel-meta">' + done + ' av ' + sendable + ' skickade</div></div>'
-      + '<div class="vz-panel-note">Skickar den <b>kursgemensamma praktiska informationen</b> som <b>PDF-bilaga</b> per deltagare och bockar steg 7 "Praktisk info skickat". Verifiera kursdatumen nedan innan du skickar.</div>'
+      + '<div class="vz-panel-note">Skickar den <a id="vz-pi-doclink" class="vz-tbl-link" href="#" title="Öppna dokumentet (skapas om det inte finns)">kursgemensamma praktiska informationen <span class="vz-ext">↗</span></a> som <b>PDF-bilaga</b> per deltagare och bockar steg 7 "Praktisk info skickat". Verifiera kursdatumen nedan innan du skickar.</div>'
       + '<div class="vz-pi-tokens"><span>Kursdatum: <b>' + esc(tokens.KURSDATUM || '–') + '</b></span>'
       + '<span>Start: <b>' + esc((tokens.STARTDAG || '–') + (tokens.STARTTID ? ' kl. ' + tokens.STARTTID : '')) + '</b></span>'
       + '<span>Slut: <b>' + esc(tokens.SLUTDAG || '–') + '</b></span></div>'
@@ -1157,6 +1157,26 @@ function renderPracticalInfoPanel(rows, courseName) {
     });
     var batch = sec.querySelector('#vz-pi-batch');
     if (batch) { batch.addEventListener('click', function () { sendPracticalInfoFlow(pending(), courseName, batch, 'alla som inte fått', onSent); }); }
+    // doc-länk: öppna praktisk info-dokumentet (skapas idempotent om det inte finns — INGET mejl, bara Doc/Drive).
+    var docLink = sec.querySelector('#vz-pi-doclink');
+    if (docLink) {
+      docLink.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (docLink.dataset.busy) { return; }
+        docLink.dataset.busy = '1'; var orig = docLink.innerHTML; docLink.textContent = '⏳ öppnar dokumentet…';
+        postToGas('createPracticalInfoDoc', { dryRun: false, courseName: courseName, tokens: practicalTokens(courseName) }).then(function (r) {
+          docLink.innerHTML = orig; delete docLink.dataset.busy;
+          if (r && r.ok && r.url) { docLink.setAttribute('href', r.url); docLink.setAttribute('target', '_blank'); docLink.setAttribute('rel', 'noopener'); window.open(r.url, '_blank'); }
+          else {
+            var err = (r && r.error) || 'okänt fel';
+            var msg = err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + courseName + '" — dokumentet kan inte skapas än.'
+              : err === 'tokens_missing' ? 'Kursdatumen kunde inte tolkas ur kursnamnet — dokumentet kan inte fyllas.'
+              : 'Kunde inte öppna/skapa dokumentet: ' + err;
+            try { t.alert({ message: '⚠️ ' + msg, duration: 9, display: 'error' }); } catch (e2) {}
+          }
+        }).catch(function (er) { docLink.innerHTML = orig; delete docLink.dataset.busy; try { t.alert({ message: '⚠️ ' + ((er && er.message) || er), duration: 8, display: 'error' }); } catch (e2) {} });
+      });
+    }
   }
   // efter lyckat live-utskick: markera raderna som skickade (in-place) + uppdatera matriscellen, utan full reload.
   function onSent(sentRows) {
