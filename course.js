@@ -96,7 +96,7 @@ function stripStaffDescForAI(desc, name) {
 }
 
 /* ---------- Status-härledning per kort (samma logik som Vy1) ---------- */
-function statusForCard(card) {
+function statusForCard(card, naKeys) {
   var checked = {};
   (card.checklists || []).forEach(function (cl) {
     (cl.checkItems || []).forEach(function (it) {
@@ -114,6 +114,7 @@ function statusForCard(card) {
   var status = {};
   var flow = window.NYA_ZAPIER_FLOW || [];
   flow.forEach(function (s) {
+    if (naKeys && naKeys[s.key]) { status[s.key] = 'na'; return; }   // ej relevant för detta kurssteg (t.ex. uppföljning utanför Steg 1)
     var checklistDone = isChecked(s.checkItem);
     var labelSet = s.triggerLabel ? !!labels[norm(s.triggerLabel)] : false;
     status[s.key] = s.always ? 'done' : checklistDone ? 'done' : (s.triggerLabel ? (labelSet ? 'gap' : 'wait') : 'manual');
@@ -121,12 +122,17 @@ function statusForCard(card) {
   // Logisk slutledning (Malin): done-steg promotar sina implies-steg → done.
   flow.forEach(function (s) {
     if (s.implies && status[s.key] === 'done') {
-      s.implies.forEach(function (k) { if (status[k] && status[k] !== 'done') { status[k] = 'done'; } });
+      s.implies.forEach(function (k) { if (status[k] && status[k] !== 'done' && status[k] !== 'na') { status[k] = 'done'; } });
     }
   });
-  var done = 0, gaps = 0;
-  flow.forEach(function (s) { if (status[s.key] === 'done') { done++; } else if (status[s.key] === 'gap') { gaps++; } });
-  return { status: status, progress: { done: done, total: flow.length, pct: flow.length ? Math.round(done / flow.length * 100) : 0 }, gapCount: gaps };
+  var done = 0, gaps = 0, total = 0;   // 'na'-steg exkluderas ur progress/total (ej relevant)
+  flow.forEach(function (s) { if (status[s.key] === 'na') { return; } total++; if (status[s.key] === 'done') { done++; } else if (status[s.key] === 'gap') { gaps++; } });
+  return { status: status, progress: { done: done, total: total, pct: total ? Math.round(done / total * 100) : 0 }, gapCount: gaps };
+}
+// Bara Steg 1 har uppföljningssamtal (Robert 2026-06-21) → steg 14 + uppföljnings-matrisen göms/markeras ej relevant för 2/3A/3B.
+function courseHasUppfoljning(courseName) {
+  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
+  return !m || norm(m[1]) === '1';   // okänt steg → visa (bakåtkompat)
 }
 
 /* ---------- Datum ur listnamn → dagar till start ---------- */
@@ -220,8 +226,9 @@ function buildCourseModel(listName, cards) {
       : s.title;   // steg-medveten kolumnrubrik
     return { key: s.key, title: title, short: title.split(' ')[0], phase: s.phase };
   });
+  var naKeys = courseHasUppfoljning(listName) ? null : { uppfoljning: true };   // steg 14 ej relevant utanför Steg 1
   var participants = cards.map(function (c) {
-    var d = statusForCard(c);
+    var d = statusForCard(c, naKeys);
     return {
       key: c.id,
       name: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, ''),
@@ -1614,10 +1621,13 @@ function loadStoryMatrix(courseName, participants, cards) {
       title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse',   // steg-medveten titel
       note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.',
     });
-    renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
-      title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName, contacts: contactByKey,
-      note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
-    });
+    // Uppföljningssamtal finns BARA i Steg 1 (Robert 2026-06-21) → rendera ej matrisen för 2/3A/3B.
+    if (courseHasUppfoljning(courseName)) {
+      renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
+        title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName, contacts: contactByKey,
+        note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
+      });
+    }
   }).catch(function () {});
 }
 /* Bygger gruppledar-tilldelningar ur urvalskartan (cellKey 'pKey||leader'=true).
