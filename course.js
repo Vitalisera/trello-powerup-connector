@@ -1028,7 +1028,7 @@ function computeAutoBocks(cards, byKey) {
   });
   return out;
 }
-function autoBockLabel_(stepKey) { return stepKey === 'livs_klar' ? 'Livsberättelse' : 'Hälsoformulär'; }
+function autoBockLabel_(stepKey) { return stepKey === 'livs_klar' ? livsLabelForCourse(COURSE_NAME) : 'Hälsoformulär'; }   // steg-medveten (3A → "Du och dina relationer")
 // Robert 2026-06-21: ingen TYST auto-bock + ingen fly-by-toast. Visa en STÄNGBAR dialog som NAMNGER vilka deltagares
 // dokument är färdiga + låt Malin bekräfta innan något bockas i Trello. Testläge → info-dialog (bockar ej).
 function maybeAutoBock(cards, byKey) {
@@ -1586,8 +1586,8 @@ function loadStoryMatrix(courseName, participants, cards) {
   }).then(function (d) {
     if (!d) { return; }
     renderStoryMatrix(key, participants || [], d.leaders, d.selStory, {
-      title: 'Livsberättelser → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse',
-      note: 'Bocka vilken gruppledare som läser vilken deltagares livsberättelse. Sparas automatiskt.',
+      title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse',   // steg-medveten titel
+      note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.',
     });
     renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
       title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName, contacts: contactByKey,
