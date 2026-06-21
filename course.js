@@ -249,6 +249,7 @@ function buildCourseModel(listName, cards) {
 // porterar Vy1:s detalj in i Vy2 → gör deltagarstatus-vyn överflödig). COURSE_CARDS_BY_ID fylls i loadCourse.
 var COURSE_CARDS_BY_ID = {};
 var COURSE_NAME = '';   // kursens listnamn (för fold-out-actions, t.ex. enstaka praktisk-info-utskick)
+var COURSE_LISTID = '';   // kursens list-id (för om-laddning efter mutation — "Gsheet-formel"-uppdatering, Robert 2026-06-22)
 var DOC_BYKEY = {};   // #11/bild14: senaste dok-statusen (per kort-id → {hf,livs}), läses av inline-detaljen för steg 8/9
 
 var handlers = {
@@ -1068,6 +1069,9 @@ function offerGapClose(cards) {
           var msg = doneN.length ? '✓ Stängde ' + doneN.length + ' luckor.' : '';
           if (failN.length) { msg += (msg ? ' ' : '') + '⚠️ ' + failN.length + ' kunde inte bockas — bocka manuellt: ' + failN.join(', ') + '.'; }
           try { t.alert({ message: msg, duration: failN.length ? 13 : 7, display: failN.length ? 'warning' : 'success' }); } catch (e) {}
+          // En sanningskälla → härled om allt (summering "Har luckor", celler, progress, luckor-länken). Robert 2026-06-22.
+          // Ladda om från Trello med bockarna applicerade; liten fördröjning så de hinner propagera före re-fetch.
+          if (doneN.length && COURSE_LISTID) { setTimeout(function () { loadCourse(COURSE_LISTID, COURSE_NAME); }, 1200); }
         });
       }).catch(function () {});
     },
@@ -2351,6 +2355,7 @@ function fetchGroupLeaderAllergies() {
 }
 
 function loadCourse(listId, listName) {
+  COURSE_LISTID = listId || COURSE_LISTID;
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
   t.getRestApi().getToken().then(function (token) {
