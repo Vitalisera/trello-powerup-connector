@@ -218,11 +218,17 @@ function livsLabelForCourse(courseName) {
   var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
   return (m && STEP_LIVS_LABELS[norm(m[1])]) || 'Livsberättelse';
 }
+// "Steg 3A" / "Steg 1" ur kursnamnet (för steg-formulär-rubriken steg 7). Versaliserar suffixet (3a → 3A).
+function courseStegDisplay(courseName) {
+  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9]+[a-zåäö]?)/i);
+  return m ? ('Steg ' + m[1].toUpperCase()) : 'Steg 1';
+}
 function buildCourseModel(listName, cards) {
   var livsLabel = livsLabelForCourse(listName);
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
     var title = (s.key === 'livs_klar') ? (livsLabel + ' klar')
       : (s.key === 'livs_delad') ? (livsLabel + ' → kursledare')   // steg 12: "Du och dina relationer → kursledare" (3A)
+      : (s.key === 'steg1') ? (courseStegDisplay(listName) + ' – formulär')   // steg 7: "Steg 3A – formulär" (ej hårdkodat "Steg 1")
       : s.title;   // steg-medveten kolumnrubrik
     return { key: s.key, title: title, short: title.split(' ')[0], phase: s.phase };
   });
