@@ -210,7 +210,9 @@ function livsLabelForCourse(courseName) {
 function buildCourseModel(listName, cards) {
   var livsLabel = livsLabelForCourse(listName);
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
-    var title = (s.key === 'livs_klar') ? (livsLabel + ' klar') : s.title;   // steg-medveten kolumnrubrik
+    var title = (s.key === 'livs_klar') ? (livsLabel + ' klar')
+      : (s.key === 'livs_delad') ? (livsLabel + ' → kursledare')   // steg 12: "Du och dina relationer → kursledare" (3A)
+      : s.title;   // steg-medveten kolumnrubrik
     return { key: s.key, title: title, short: title.split(' ')[0], phase: s.phase };
   });
   var participants = cards.map(function (c) {
@@ -966,6 +968,22 @@ function hfDoneForCard(card) {
  * CourseView.applyDocStatus (Robert 2026-06-17: i deltagartabellen, ej egen tabell). Chunkar parallellt
  * (6/grupp) mot timeout + fyller progressivt. Auto-bockning = Fas 2 m. Robert.
  */
+// Färgkoda deltagar-namnen efter dok-status (klart/del/ej) + tooltip %/bild. Generell över livsberättelse-matrisen
+// (data-doc-kind=livs) OCH HF→läkare-panelen (kind=hf). Anropas när DOC_BYKEY uppdateras (progressivt). Robert 2026-06-21.
+function applyDocNameColors_() {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-doc-pk]'), function (el) {
+    var kind = el.getAttribute('data-doc-kind') === 'hf' ? 'hf' : 'livs';
+    var st = (DOC_BYKEY[el.getAttribute('data-doc-pk')] || {})[kind];
+    el.classList.remove('is-doc-done', 'is-doc-part', 'is-doc-none');
+    if (!st || st.loading || st.ok !== true) { return; }   // okänt/ej skannat → neutral
+    el.classList.add(st.ready ? 'is-doc-done' : (st.pct > 0 ? 'is-doc-part' : 'is-doc-none'));
+    var label = kind === 'hf' ? 'Hälsoformulär' : livsLabelForCourse(COURSE_NAME);
+    el.setAttribute('title', label + ': ' + st.filled + '/' + st.total + ' besvarat'
+      + (st.chars ? ', ' + groupNum_(st.chars) + ' tecken' : '')
+      + (kind === 'livs' ? (st.hasImage ? ', bild ✓' : ', bild saknas') : '')
+      + (st.ready ? ' · klart' : ' · ej klart'));
+  });
+}
 function loadDocStatus(courseName, cards) {
   var withDocs = (cards || []).map(function (c) {
     return { key: c.id, hfUrl: commentLink(c, HF_LINK_RES), livsUrl: commentLink(c, STORY_LINK_RES) };
@@ -984,6 +1002,7 @@ function loadDocStatus(courseName, cards) {
       .then(function (data) {
         ((data && data.items) || []).forEach(function (r) { byKey[r.key] = r; });
         if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }  // progressiv ifyllning
+        applyDocNameColors_();   // färgkoda gruppledar-matrisens namn när dok-status kommer
       })
       .catch(function () { /* en chunk kan fela — övriga fyller ändå */ });
   })).then(function () { maybeAutoBock(cards, byKey); });   // #11 Fas 2: bocka färdiga steg 8/9
@@ -1240,7 +1259,7 @@ function renderHfPanel(rows, courseName) {
     } else {
       action = '<button class="vz-hf-share" data-card="' + esc(r.cardId) + '" data-ci="' + esc(r.checkItemId) + '" data-name="' + esc(r.name) + '">Skapa läkarkopia</button>';
     }
-    return '<tr><td class="vz-tbl-namecell">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + action + '</td></tr>';
+    return '<tr><td class="vz-tbl-namecell" data-doc-pk="' + esc(r.cardId) + '" data-doc-kind="hf">' + nameHtml + '</td><td class="vz-tbl-statuscell">' + action + '</td></tr>';
   }).join('');
   var table = rows.length
     ? '<table class="vz-tbl vz-tbl--hf"><colgroup><col class="vz-col-name"><col class="vz-col-status"></colgroup>'
@@ -1255,6 +1274,7 @@ function renderHfPanel(rows, courseName) {
     + '<button class="vz-btn" id="vz-hf-sharefolder">Dela mapp till läkare</button>'
     + '<span class="vz-stub-note">sätter läsrätt på mappen för läkarens e-post (Inställningar) — läkaren får en Google Drive-notis</span></div>';
   placeBelowPanel(sec, 'hf');
+  applyDocNameColors_();   // initial HF-namn-färgning (om dok-status cachad); loadDocStatus uppdaterar progressivt
 
   // Matallergier = EGEN modul (Robert 2026-06-18: ej inbäddad i HF-panelen). Egen sektion, samma closures (rows/courseName/kockTpl).
   var allergiSec = document.createElement('section');
@@ -2051,7 +2071,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       }).join('');
       var lk = storyLinks[p.key];
       var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
-      return '<tr><td class="vz-story-namecell">' + nm + '</td>' + cells + '</tr>';
+      // Robert 2026-06-21: färgkoda namnet efter dok-status (klart/ej) + tooltip med %/bild. Bara livsberättelse-matrisen (har dok).
+      var docAttr = (opts.kind === 'livsberattelse') ? ' data-doc-pk="' + esc(p.key) + '" data-doc-kind="livs"' : '';
+      return '<tr><td class="vz-story-namecell"' + docAttr + '>' + nm + '</td>' + cells + '</tr>';
     }).join('');
     sec.innerHTML = head
       + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
@@ -2064,6 +2086,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
     });
+    applyDocNameColors_();   // initial färgkodning (om dok-status redan cachad); loadDocStatus uppdaterar sedan progressivt
     var mailBtn = sec.querySelector('#vz-mail-btn');
     var mailOut = sec.querySelector('#vz-mail-out');
     var mailWarn = sec.querySelector('#vz-mail-warn');
