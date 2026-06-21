@@ -75,15 +75,16 @@ window.NYA_ZAPIER_FLOW = [
 ];
 
 // Default-mallar för gruppledar-mejlen — DELAD källa (course.js genererar, settings.js förifyller rutorna).
-// Tokens: {ANTAL} {TILLDELNING} {GRUPPLEDARE} {DELTAGARE} {SAMMANFATTNINGSLÄNK}. Signatur ingår; inget
+// Tokens: {ANTAL} {TILLDELNING} {GRUPPLEDARE} {DELTAGARE} {SAMMANFATTNINGSLÄNK} {DOKTYP}/{DOKTYP_BEST}
+// ({DOKTYP}=dok-typ i plural, steg-medveten: livsberättelser/nulägesbeskrivningar/formulär). Signatur ingår; inget
 // värdeomdöme om gruppstorlek. {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid utskick;
 // {SAMMANFATTNINGSLÄNK} fylls av "Skapa sammanfattningsdok"-knappen.
 window.NYA_ZAPIER_TPL = {
   livsAlla:
     'Hej på Er!\n\n'
-    + 'Idag är sista inlämningsdag för deltagare att lämna in sina livsberättelser. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
+    + 'Idag är sista inlämningsdag för deltagare att lämna in sina {DOKTYP}. Några är klara, och andra inte. Men jag tänker att jag ger er länkarna till dem oavsett idag, så ni får lite tid på er att börja läsa.\n\n'
     + 'Vi är {ANTAL} denna gång. Vi hoppas kanske på någon till innan kursen startar.\n\n'
-    + 'Jag delar upp livsberättelserna enligt följande, och skickar länkarna till er enskilt:\n\n'
+    + 'Jag delar upp {DOKTYP_BEST} enligt följande, och skickar länkarna till er enskilt:\n\n'
     + '{TILLDELNING}\n\n'
     + 'Varma hälsningar\nMalin',
   livsEnskild:

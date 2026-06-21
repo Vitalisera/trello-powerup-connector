@@ -218,6 +218,19 @@ function livsLabelForCourse(courseName) {
   var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
   return (m && STEP_LIVS_LABELS[norm(m[1])]) || 'Livsberättelse';
 }
+// Steg-medveten PLURAL för gruppledar-mejlets brödtext ({DOKTYP}=obest, {DOKTYP_BEST}=best form). 3A/3B
+// pluraliseras ej naturligt ("Du och dina relationer") → generiskt "formulär(en)". Robert 2026-06-22 (mejl sa
+// "livsberättelser" på en 3A-kurs). Saknad/okänt steg → livsberättelser (steg 1 = vanligast).
+var STEP_LIVS_PLURAL = {
+  '1':  { p: 'livsberättelser',      pd: 'livsberättelserna' },
+  '2':  { p: 'nulägesbeskrivningar', pd: 'nulägesbeskrivningarna' },
+  '3a': { p: 'formulär',             pd: 'formulären' },
+  '3b': { p: 'formulär',             pd: 'formulären' }
+};
+function livsPluralForCourse(courseName) {
+  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
+  return (m && STEP_LIVS_PLURAL[norm(m[1])]) || STEP_LIVS_PLURAL['1'];
+}
 // "Steg 3A" / "Steg 1" ur kursnamnet (för steg-formulär-rubriken steg 7). Versaliserar suffixet (3a → 3A).
 function courseStegDisplay(courseName) {
   var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9]+[a-zåäö]?)/i);
@@ -1912,7 +1925,8 @@ function livsAllaText(tpl, total, men, women, assignLines) {
   var antal = (men != null && women != null)
     ? (total + ', ' + men + (men === 1 ? ' man' : ' män') + ' och ' + women + (women === 1 ? ' kvinna' : ' kvinnor'))
     : (total + ' deltagare');
-  return applyTokens(tpl || DEFAULT_TPL.livsAlla, { ANTAL: antal, TILLDELNING: assignLines });
+  var pl = livsPluralForCourse(COURSE_NAME);   // steg-medveten dok-typ (livsberättelser/nulägesbeskrivningar/formulär)
+  return applyTokens(tpl || DEFAULT_TPL.livsAlla, { ANTAL: antal, TILLDELNING: assignLines, DOKTYP: pl.p, DOKTYP_BEST: pl.pd });
 }
 function livsEnskildMall(tpl) {
   return tpl || DEFAULT_TPL.livsEnskild;  // {GRUPPLEDARE}/{DELTAGARE} fylls per gruppledare vid utskick
