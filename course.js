@@ -133,7 +133,12 @@ function statusForCard(card) {
 var MONTHS = { januari: 0, februari: 1, mars: 2, april: 3, maj: 4, juni: 5, juli: 6, augusti: 7, september: 8, oktober: 9, november: 10, december: 11 };
 // Kursens startdatum ur listnamnet (ex "24 juni - 2 juli 2026 (Steg 1)") → Date, eller null. Ren funktion.
 function courseStartDate(listName) {
-  var m = String(listName || '').match(/(\d{1,2})\s+([a-zåäö]+).*?(\d{4})/i);
+  var s = String(listName || '');
+  // BUGGFIX (Robert 2026-06-21): kompakt samma-månad-intervall "22-30 juli 2026" → FÖRSTA talet är startdagen
+  // (annars matchade "30 juli" = slutdagen). Kräver siffra-bindestreck-siffra-mellanslag-månad.
+  var rng = s.match(/(\d{1,2})\s*[-–]\s*\d{1,2}\s+([a-zåäö]+).*?(\d{4})/i);
+  if (rng && MONTHS[norm(rng[2])] !== undefined) { return new Date(parseInt(rng[3], 10), MONTHS[norm(rng[2])], parseInt(rng[1], 10)); }
+  var m = s.match(/(\d{1,2})\s+([a-zåäö]+).*?(\d{4})/i);
   if (!m) { return null; }
   var mon = MONTHS[norm(m[2])];
   if (mon === undefined) { return null; }
