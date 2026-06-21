@@ -1015,31 +1015,44 @@ function computeAutoBocks(cards, byKey) {
   });
   return out;
 }
+function autoBockLabel_(stepKey) { return stepKey === 'livs_klar' ? 'Livsberättelse' : 'Hälsoformulär'; }
+// Robert 2026-06-21: ingen TYST auto-bock + ingen fly-by-toast. Visa en STÄNGBAR dialog som NAMNGER vilka deltagares
+// dokument är färdiga + låt Malin bekräfta innan något bockas i Trello. Testläge → info-dialog (bockar ej).
 function maybeAutoBock(cards, byKey) {
   var bocks;
   try { bocks = computeAutoBocks(cards, byKey); } catch (e) { return; }
   if (!bocks.length) { return; }
+  var lines = bocks.map(function (b) { return '• ' + b.cardName + ' — ' + autoBockLabel_(b.stepKey); }).join('\n');
   getCourseSettings().then(function (settings) {
-    if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: skriv ej i testläge/osäkert läge
-      try { t.alert({ message: bocks.length + ' dokument-steg är färdiga (testläge → bockas ej automatiskt).', duration: 6, display: 'info' }); } catch (e) {}
+    if (!resolveSendMode(settings).live) {   // FAIL-CLOSED: bocka ej i testläge — bara informera (namngivet)
+      courseInModalConfirm(
+        bocks.length + ' deltagares dokument är färdiga:\n\n' + lines + '\n\n(Testläge — markeras EJ automatiskt. Slå av testläget i Inställningar för att markera dem klara.)',
+        'OK', function () {}, { hideCancel: true }
+      );
       return;
     }
-    t.getRestApi().getToken().then(function (token) {
-      if (!token) { return; }
-      var done = 0, fail = 0;
-      bocks.reduce(function (p, b) {
-        return p.then(function () {
-          return restWrite(token, 'PUT', 'cards/' + b.cardId + '/checkItem/' + b.checkItemId + '?state=complete')
-            .then(function () { done++; }).catch(function () { fail++; });   // räkna fel (synliggör nedan)
-        });
-      }, Promise.resolve()).then(function () {
-        if (done > 0 || fail > 0) {
-          var msg = done > 0 ? '✓ Bockade automatiskt ' + done + ' färdiga dokument-steg (hälsoformulär/livsberättelse).' : '';
-          if (fail > 0) { msg += (msg ? ' ' : '') + '⚠️ ' + fail + ' kunde inte bockas — bocka manuellt i kortet.'; }
-          try { t.alert({ message: msg, duration: fail > 0 ? 11 : 8, display: fail > 0 ? 'warning' : 'success' }); } catch (e) {}
-        }
-      });
-    }).catch(function () {});
+    courseInModalConfirm(
+      bocks.length + ' deltagares dokument är färdiga och kan markeras klara:\n\n' + lines + '\n\nMarkera dessa steg som klara i Trello-korten?',
+      'Markera klara',
+      function () {
+        t.getRestApi().getToken().then(function (token) {
+          if (!token) { try { t.alert({ message: 'Ingen Trello-token — kunde inte markera. Försök igen.', duration: 8, display: 'error' }); } catch (e) {} return; }
+          var doneN = [], failN = [];
+          bocks.reduce(function (p, b) {
+            return p.then(function () {
+              return restWrite(token, 'PUT', 'cards/' + b.cardId + '/checkItem/' + b.checkItemId + '?state=complete')
+                .then(function () { doneN.push(b.cardName + ' (' + autoBockLabel_(b.stepKey) + ')'); })
+                .catch(function () { failN.push(b.cardName + ' (' + autoBockLabel_(b.stepKey) + ')'); });
+            });
+          }, Promise.resolve()).then(function () {
+            var msg = doneN.length ? '✓ Markerade ' + doneN.length + ' klara.' : '';
+            if (failN.length) { msg += (msg ? ' ' : '') + '⚠️ ' + failN.length + ' kunde inte markeras — bocka manuellt i kortet: ' + failN.join(', ') + '.'; }
+            try { t.alert({ message: msg, duration: failN.length ? 13 : 7, display: failN.length ? 'warning' : 'success' }); } catch (e) {}
+          });
+        }).catch(function () {});
+      },
+      { cancelText: 'Inte nu' }
+    );
   });
 }
 
@@ -1499,7 +1512,8 @@ function courseInModalConfirm(message, confirmText, onYes, opts) {
   var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
   var no = document.createElement('button'); no.textContent = opts.cancelText || 'Avbryt'; no.style.cssText = 'border:none;cursor:pointer;background:#7a8a91;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
   var yes = document.createElement('button'); yes.textContent = confirmText || 'Bekräfta'; yes.style.cssText = 'border:none;cursor:pointer;background:#357087;color:#fff;font-weight:700;padding:8px 16px;border-radius:8px;font-family:inherit';
-  row.appendChild(no); row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
+  if (!opts.hideCancel) { row.appendChild(no); }   // info-dialog (hideCancel) → bara en knapp
+  row.appendChild(yes); box.appendChild(p); box.appendChild(row); ov.appendChild(box);
   (document.body || document.documentElement).appendChild(ov);
   function close() { document.removeEventListener('keydown', onKey, true); ov.remove(); }
   function cancel() { close(); if (opts.onCancel) { opts.onCancel(); } }
