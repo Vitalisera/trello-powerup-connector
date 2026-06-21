@@ -79,6 +79,7 @@
   /* #11: dok-status (HF/livsberättelse-skanning) injiceras i matrisens steg 8/9-celler.
    * course.js fyller DOC_STATUS via CourseView.applyDocStatus → repaint. Keyat på p.key (kort-id). */
   var DOC_STATUS = {};
+  var LIVS_LABEL = 'Livsberättelse';   // steg-medveten (sätts i render ur model.steps livs_klar-titel)
   var repaintBodyRef = null;
   var setCellStatusRef = null;   // course.js → uppdatera EN cell efter bock/label utan att rita om modalen
   function docCellBadge(pkey, stepKey) {
@@ -92,7 +93,7 @@
     if (st.ok !== true) { return null; }
     var cls = st.ready ? 'dp-done' : (st.pct > 0 ? 'dp-part' : 'dp-empty');
     var img = isLivs ? (st.hasImage ? '<i class="dp-img on">●</i>' : '<i class="dp-img">○</i>') : '';
-    var title = (isLivs ? 'Livsberättelse' : 'Hälsoformulär') + ': ' + st.filled + '/' + st.total + ' besvarat'
+    var title = (isLivs ? LIVS_LABEL : 'Hälsoformulär') + ': ' + st.filled + '/' + st.total + ' besvarat'
       + (st.chars ? ', ' + st.chars + ' tecken' : '')
       + (isLivs ? (st.hasImage ? ', bild ✓' : ', bild saknas') : '')
       + (st.docUpdated ? ' · ändrad ' + st.docUpdated : '');
@@ -425,6 +426,9 @@
     var course = model.course || {};
     var steps = (model.steps || []).slice();
     var participants = (model.participants || []).slice();
+    // steg-medveten livs-etikett (tooltip i steg 9): "Du och dina relationer klar" → "Du och dina relationer"
+    var _livs = steps.filter(function (s) { return s.key === 'livs_klar'; })[0];
+    if (_livs && _livs.title) { LIVS_LABEL = _livs.title.replace(/\s+klar$/i, ''); }
 
     // härled fas-grupper (i förekommande ordning) för kolumn-grupperingen
     var phases = [];

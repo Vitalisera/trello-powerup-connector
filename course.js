@@ -200,9 +200,18 @@ function practicalTokens(courseName) {
   };
 }
 
+// Steg-medveten etikett för livsberättelse-MOTSVARIGHETEN (Robert 2026-06-21; verifierat mot nya-zapier Step_Configs.js).
+// CheckItem-namnet ("Levnadsbeskrivning klar") är samma över alla steg → bara ETIKETTEN är steg-beroende.
+var STEP_LIVS_LABELS = { '1': 'Livsberättelse', '2': 'Nulägesbeskrivning', '3a': 'Du och dina relationer', '3b': 'Steg 3B-formulär' };
+function livsLabelForCourse(courseName) {
+  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
+  return (m && STEP_LIVS_LABELS[norm(m[1])]) || 'Livsberättelse';
+}
 function buildCourseModel(listName, cards) {
+  var livsLabel = livsLabelForCourse(listName);
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
-    return { key: s.key, title: s.title, short: s.title.split(' ')[0], phase: s.phase };
+    var title = (s.key === 'livs_klar') ? (livsLabel + ' klar') : s.title;   // steg-medveten kolumnrubrik
+    return { key: s.key, title: title, short: title.split(' ')[0], phase: s.phase };
   });
   var participants = cards.map(function (c) {
     var d = statusForCard(c);
@@ -268,7 +277,7 @@ function groupNum_(n) { return String(n == null ? '' : n).replace(/\B(?=(\d{3})+
 // (samma info som matriscellens tooltip — besvarat/tecken/bild/ändrad — men presenterat som en stat-lista).
 function docStatFas1_(stepKey, card) {
   var isLivs = stepKey === 'livs_klar';
-  var docName = isLivs ? 'Livsberättelse' : 'Hälsoformulär';
+  var docName = isLivs ? livsLabelForCourse(COURSE_NAME) : 'Hälsoformulär';   // steg-medveten rubrik i fold-out
   var st = (DOC_BYKEY[card.id] || {})[isLivs ? 'livs' : 'hf'];
   var docUrl = commentLink(card, isLivs ? STORY_LINK_RES : HF_LINK_RES);
   var openBtn = docUrl ? '<a class="vz-btn vz-pd-act" href="' + esc(docUrl) + '" target="_blank" rel="noopener">Öppna dokumentet ↗</a>' : '';
