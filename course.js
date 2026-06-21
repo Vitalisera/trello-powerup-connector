@@ -923,6 +923,10 @@ var STORY_LINK_RES = [
   /livsber[äa]ttelse[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
   /nul[äa]gesbeskriv[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
   /\*\*livsber[äa]ttelse:\*\*\s*(https?:\/\/[^\s)\]"]+)/i,
+  // Steg-formulär-doket (livsberättelse-MOTSVARIGHETEN per kurssteg): nya-zapier postar "Länk till Steg 3A-formuläret: <url>"
+  // (3A = "Du och dina relationer", även Steg 3B). Kräver "steg X" → matchar EJ "Hälsoformuläret". (Robert 2026-06-21, verifierat mot Actions_Step3AForm.js.)
+  /l[äa]nk till steg\s*[0-9a-zåäö]+\s*[-–]?\s*formul[äa]ret[^:]*:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
+  /du och dina relationer[^:]*:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
 ];
 function isFolderUrl(u) { return /drive\.google\.com\/drive\/folders/i.test(u || ''); }
 function commentLink(card, regexes) {
