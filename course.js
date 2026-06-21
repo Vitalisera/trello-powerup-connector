@@ -986,6 +986,52 @@ function hfDoneForCard(card) {
  * CourseView.applyDocStatus (Robert 2026-06-17: i deltagartabellen, ej egen tabell). Chunkar parallellt
  * (6/grupp) mot timeout + fyller progressivt. Auto-bockning = Fas 2 m. Robert.
  */
+// Luckor (Robert 2026-06-21): ett 'gap'-steg = trigger-labeln satt (handlingen gjord/bekräftad, t.ex. "Anm. avgift
+// betald") men checkItem:et ej bockat. Att stänga luckan = bocka för att matcha labeln. Verifierat säkert för alla
+// gap-bara steg (tack/antagen/avgift/steg1). Samma write som manuell bock; Malin bekräftar i dialog.
+function computeGapBocks(cards) {
+  var flow = window.NYA_ZAPIER_FLOW || [];
+  var na = courseHasUppfoljning(COURSE_NAME) ? null : { uppfoljning: true };
+  var out = [];
+  (cards || []).forEach(function (c) {
+    var d = statusForCard(c, na);
+    flow.forEach(function (s) {
+      if (d.status[s.key] !== 'gap') { return; }
+      var ci = findCheckItemByName_(c, s.checkItem);
+      if (!ci || !ci.id || ci.complete) { return; }   // checkItem saknas/redan bockad → kan ej/behöver ej stängas
+      var title = (s.key === 'steg1') ? (courseStegDisplay(COURSE_NAME) + ' – formulär') : s.title;
+      out.push({ cardId: c.id, checkItemId: ci.id, stepKey: s.key, stepTitle: title, cardName: (c.name || '').replace(/^\s*\d+\s*[-–]\s*/, '') });
+    });
+  });
+  return out;
+}
+function offerGapClose(cards) {
+  var gaps = computeGapBocks(cards);
+  if (!gaps.length) { try { t.alert({ message: 'Inga öppna luckor att stänga just nu.', duration: 5, display: 'info' }); } catch (e) {} return; }
+  var lines = gaps.map(function (g) { return '• ' + g.cardName + ' — ' + g.stepTitle; }).join('\n');
+  courseInModalConfirm(
+    gaps.length + ' öppna luckor kan stängas (labeln är satt men checkrutan inte bockad — handlingen är gjord, bara bocken saknas):\n\n' + lines + '\n\nBocka dessa checkrutor i Trello-korten?',
+    'Stäng luckorna',
+    function () {
+      t.getRestApi().getToken().then(function (token) {
+        if (!token) { try { t.alert({ message: 'Ingen Trello-token — kunde inte stänga. Försök igen.', duration: 8, display: 'error' }); } catch (e) {} return; }
+        var doneN = [], failN = [];
+        gaps.reduce(function (p, g) {
+          return p.then(function () {
+            return restWrite(token, 'PUT', 'cards/' + g.cardId + '/checkItem/' + g.checkItemId + '?state=complete')
+              .then(function () { doneN.push(g); try { if (window.CourseView && CourseView.setCellStatus) { CourseView.setCellStatus(g.cardId, g.stepKey, 'done'); } } catch (e) {} })
+              .catch(function () { failN.push(g.cardName + ' (' + g.stepTitle + ')'); });
+          });
+        }, Promise.resolve()).then(function () {
+          var msg = doneN.length ? '✓ Stängde ' + doneN.length + ' luckor.' : '';
+          if (failN.length) { msg += (msg ? ' ' : '') + '⚠️ ' + failN.length + ' kunde inte bockas — bocka manuellt: ' + failN.join(', ') + '.'; }
+          try { t.alert({ message: msg, duration: failN.length ? 13 : 7, display: failN.length ? 'warning' : 'success' }); } catch (e) {}
+        });
+      }).catch(function () {});
+    },
+    { cancelText: 'Inte nu' }
+  );
+}
 // Färgkoda deltagar-namnen efter dok-status (klart/del/ej) + tooltip %/bild. Generell över livsberättelse-matrisen
 // (data-doc-kind=livs) OCH HF→läkare-panelen (kind=hf). Anropas när DOC_BYKEY uppdateras (progressivt). Robert 2026-06-21.
 function applyDocNameColors_() {
@@ -2278,6 +2324,9 @@ function loadCourse(listId, listName) {
     (res[1] || []).forEach(function (c) { COURSE_CARDS_BY_ID[c.id] = c; });   // för inline steg-detalj (klick på cell)
     var model = buildCourseModel(res[0], res[1] || []);
     window.CourseView.render(ROOT(), model, handlers);
+    // "öppna luckor"-raden → lucka-stäng-dialog (Robert 2026-06-21)
+    var _cg = document.getElementById('vz-cv-closegaps');
+    if (_cg) { _cg.addEventListener('click', function (e) { e.preventDefault(); offerGapClose(res[1] || []); }); }
     loadGenderSplit(model.participants);
     loadStaff(res[0]);
     // Ladda sparad panel-layout (kolumner+ordning) + kollaps-tillstånd FÖRST → panelerna placeras deterministiskt.

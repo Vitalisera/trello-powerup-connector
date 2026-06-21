@@ -150,7 +150,7 @@
 
     var headHtml = allClear
       ? '<span class="hl">Inga luckor.</span> Allt som triggats är också bockat.'
-      : (s.withGaps || 0) + ' deltagare har <span class="hl">öppna luckor</span> som väntar på din bock.';
+      : (s.withGaps || 0) + ' deltagare har <a id="vz-cv-closegaps" class="hl" style="cursor:pointer;text-decoration:underline dotted" title="Stäng luckorna — bocka stegen där labeln är satt men checkrutan inte bockad">öppna luckor</a> som väntar på din bock.';
     if (soon && !allClear) {
       headHtml = 'Snart kursstart — fokus skiftar till förberedelse. ' + headHtml;
     } else if (soon && allClear) {
