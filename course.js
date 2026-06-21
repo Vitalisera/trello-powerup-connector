@@ -909,14 +909,18 @@ function courseKey(name) {
 function courseSlug(name) { return norm(name).replace(/[^a-z0-9]+/g, '_'); }
 // Liten persist-helper för enkla textfält (board-shared pluginData).
 function persistText(key, value) { try { t.set('board', 'shared', key, value).catch(function () {}); } catch (e) {} }
-var DEFAULT_TODOS = ['Ordna kock', 'Inköp inför kurs', 'Tilldela livsberättelser till gruppledare', 'Full assistentgrupp'];
+// Steg-medveten default-checklista: dok-tilldelnings-punkten anpassas per kurssteg (3A → "Du och dina relationer").
+function defaultTodos_(courseName) {
+  return ['Ordna kock', 'Inköp inför kurs', 'Tilldela ' + livsLabelForCourse(courseName).toLowerCase() + ' till gruppledare', 'Full assistentgrupp'];
+}
 function loadCourseChecklist(courseName) {
   var key = courseKey(courseName);
+  var def = function () { return defaultTodos_(courseName).map(function (x) { return { text: x, done: false }; }); };
   t.get('board', 'shared', key).then(function (items) {
-    if (!Array.isArray(items)) { items = DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }); }
+    if (!Array.isArray(items)) { items = def(); }
     renderChecklistPanel(key, items, courseName);
   }).catch(function () {
-    renderChecklistPanel(key, DEFAULT_TODOS.map(function (x) { return { text: x, done: false }; }), courseName);
+    renderChecklistPanel(key, def(), courseName);
   });
 }
 function persistChecklist(key, items) { try { t.set('board', 'shared', key, items).catch(function () {}); } catch (e) {} }
@@ -2170,7 +2174,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   }
   var cfgAlla = { kind: 'livsberattelse', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
     var r = leaderEmailsFor(contacts);
-    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Livsberättelser inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: livsLabelForCourse(COURSE_NAME) + ' inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
@@ -2178,7 +2182,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var em = glContactEmail(a.leaderName, contacts);
       if (!em) { missing.push(a.leaderName); return; }
       var items = leaderParticipantLinks(sel, participants, a.leaderName, storyLinks);
-      emails.push({ to: em, cc: cc, subject: 'Livsberättelser att läsa', bodyHtml: enskildBodyHtml(taVal, a.leaderName, items), bodyText: enskildBodyText(taVal, a.leaderName, items) });
+      emails.push({ to: em, cc: cc, subject: livsLabelForCourse(COURSE_NAME) + ' att läsa', bodyHtml: enskildBodyHtml(taVal, a.leaderName, items), bodyText: enskildBodyText(taVal, a.leaderName, items) });
     });
     return { emails: emails, missing: missing };
   } };

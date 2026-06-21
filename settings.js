@@ -92,10 +92,10 @@ function render(s) {
 
     + '<div class="vz-field">'
     + '<label>Mall-texter för gruppledar-mejlen</label>'
-    + '<p class="hint">Redigera mejltexterna fritt (förifyllda med standardtexten). Dessa tokens fylls automatiskt vid generering/utskick: <b>{ANTAL}</b>, <b>{TILLDELNING}</b>, <b>{GRUPPLEDARE}</b>, <b>{DELTAGARE}</b>, <b>{SAMMANFATTNINGSLÄNK}</b>.</p>'
-    + '<label for="vz-tpl-livsalla" class="vz-sub">Livsberättelser – till alla</label>'
+    + '<p class="hint">Redigera mejltexterna fritt (förifyllda med standardtexten). Dessa tokens fylls automatiskt vid generering/utskick: <b>{ANTAL}</b>, <b>{TILLDELNING}</b>, <b>{GRUPPLEDARE}</b>, <b>{DELTAGARE}</b>, <b>{SAMMANFATTNINGSLÄNK}</b>, <b>{DOKTYP}</b> (dok-typ i plural, anpassas per kurssteg: livsberättelser/nulägesbeskrivningar/formulär).</p>'
+    + '<label for="vz-tpl-livsalla" class="vz-sub">Dokumenttilldelning – till alla</label>'
     + '<textarea id="vz-tpl-livsalla" class="vz-ta">' + esc(s.tpl_livsAlla || TPL.livsAlla || '') + '</textarea>'
-    + '<label for="vz-tpl-livsenskild" class="vz-sub">Livsberättelser – enskild mall</label>'
+    + '<label for="vz-tpl-livsenskild" class="vz-sub">Dokumenttilldelning – enskild mall</label>'
     + '<textarea id="vz-tpl-livsenskild" class="vz-ta">' + esc(s.tpl_livsEnskild || TPL.livsEnskild || '') + '</textarea>'
     + '<label for="vz-tpl-uppfoljning" class="vz-sub">Uppföljningssamtal – om Malin VAR med på kursveckan</label>'
     + '<textarea id="vz-tpl-uppfoljning" class="vz-ta">' + esc(s.tpl_uppfoljning || TPL.uppfoljning || '') + '</textarea>'
