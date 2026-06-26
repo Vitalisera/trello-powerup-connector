@@ -1490,8 +1490,8 @@ function renderHfPanel(rows, courseName) {
           items.push({ code: code, allergy: blob || '(inget angivet i kortet)' });
           codeToName[code] = nm;
         });
-        // Gruppledar/VP-allergier ur "Kontaktuppgifter Gruppledare" (matchade mot kursens gruppledare).
-        // Desc = kontaktinfo + ev. allergi → redan PII-städad i fetchGroupLeaderAllergies (stripStaffDescForAI).
+        // Gruppledar/VP-allergier ur "Matallergier Gruppledare/VP" (matchade mot kursens gruppledare).
+        // Allergin står i kortets TITEL ("Namn - allergi") → parsad i fetchGroupLeaderAllergies, ingen PII.
         glAll.forEach(function (g) {
           var code = 'A' + (++aN);
           items.push({ code: code, allergy: g.allergy });
@@ -2342,11 +2342,12 @@ function glNameMatch(a, b) {
   return ta[0] === tb[0] && ta[ta.length - 1] === tb[tb.length - 1]; // samma för- OCH efternamn
 }
 
-// Hämtar gruppledar/VP-allergier ur listan "Kontaktuppgifter Gruppledare" på Gruppledare-boarden
-// (SAMMA UPPLÄGG SOM ASSISTENTERNA, Robert 2026-06-26: kontaktkort där desc = kontaktinfo + ev. allergi).
-// Behåller bara kort som matchar kursens gruppledare (COURSE_GL_NAMES — kontaktlistan delas över kurser).
-// ⚠️ PII (namn/tel/mejl) städas bort lokalt via stripStaffDescForAI INNAN sändning till AI (desc har nu PII,
-// till skillnad från den gamla dedikerade allergilistan). READ-ONLY, fail-soft. Returnerar [{name, allergy}].
+// Hämtar gruppledar/VP-allergier ur listan "Matallergier Gruppledare/VP" på Gruppledare-boarden.
+// Korten: ALLERGIN STÅR I KORTETS TITEL, formatet "Namn - allergi" (Robert 2026-06-26, t.ex.
+// "Lena Sifversson - Hasselnötter och valnötter"). Namnet (före första " - ") matchas mot kursens
+// gruppledare (COURSE_GL_NAMES); allergin (efter " - ") skickas till AI. Allergidelen innehåller
+// ingen PII → ingen anonymisering. READ-ONLY, fail-soft. Returnerar [{name, allergy}].
+// (Förra sessionen läste c.desc → tom → feldiagnostiserade listan som obefintlig; allergin var i titeln.)
 function fetchGroupLeaderAllergies() {
   if (!COURSE_GL_NAMES.length) { return Promise.resolve([]); }
   return t.getRestApi().getToken().then(function (token) {
@@ -2355,15 +2356,18 @@ function fetchGroupLeaderAllergies() {
       var b = (boards || []).filter(function (bd) { return /gruppled|ledare/i.test(bd.name || ''); })[0];
       if (!b) { return []; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
-        var lst = (lists || []).filter(function (l) { return /kontakt.*gruppled/i.test(l.name || ''); })[0];
+        var lst = (lists || []).filter(function (l) { return /matallerg.*(gruppled|vp)/i.test(l.name || ''); })[0];
         if (!lst) { return []; }
-        return restGet(token, 'lists/' + lst.id + '/cards?fields=name,desc').then(function (cs) {
+        return restGet(token, 'lists/' + lst.id + '/cards?fields=name').then(function (cs) {
           var out = [];
           (cs || []).forEach(function (c) {
-            var person = cleanStaffName(c.name);
+            var title = String(c.name || '').trim();
+            var dash = title.indexOf(' - ');                       // separerar "Namn - allergi"
+            var person = (dash === -1 ? title : title.slice(0, dash)).trim();
+            var allergy = (dash === -1 ? '' : title.slice(dash + 3)).trim();
+            if (!person) { return; }
             if (!COURSE_GL_NAMES.some(function (gl) { return glNameMatch(person, gl); })) { return; }
-            var blob = stripStaffDescForAI(c.desc, person);   // anonymisera (samma som assistenterna)
-            out.push({ name: person, allergy: blob || '(inget angivet i kortet)' });
+            out.push({ name: person, allergy: allergy || '(inget angivet i kortet)' });
           });
           return out;
         });
