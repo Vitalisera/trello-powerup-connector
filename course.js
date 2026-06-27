@@ -1482,7 +1482,8 @@ function renderHfPanel(rows, courseName) {
         var cards = rr[0] || [], glAll = rr[1] || [];
         var aN = 0; // löpande A-kod-räknare (assistenter + gruppledare/VP)
         cards.forEach(function (c) {
-          if (['assistenter', 'intresserad', 'status'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
+          // Hoppa över rubrik-/mallkort som inte är personer (Robert 2026-06-27: ett kort heter "Email").
+          if (['assistenter', 'intresserad', 'status', 'email', 'e-post', 'epost'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
           var nm = cleanStaffName(c.name);
           var blob = stripStaffDescForAI(c.desc, nm);
           var code = 'A' + (++aN);
