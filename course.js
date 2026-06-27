@@ -529,12 +529,16 @@ function restWrite(token, method, path) {
  *    "Assistenter"/"Intresserad"/"Status". Roll = "Assistent".
  *  - Namn = delen efter " - " i kortnamnet (annars hela).
  */
+// Skräp-/rubrik-/mallkort på personal-listorna som INTE är personer (Robert 2026-06-27: ett kort heter "Email").
+// EN sanningskälla — används av staffPerson (sidopanel + antal), matallergi-sammanställningen OCH "Alla emailadresser".
+var STAFF_JUNK_NAMES = ['assistenter', 'intresserad', 'status', 'email', 'e-post', 'epost'];
+function isStaffJunkName(name) { var n = norm(name); return STAFF_JUNK_NAMES.some(function (x) { return n.indexOf(x) !== -1; }); }
 var STAFF_BOARDS = [
   { key: 'gruppledare', label: 'Gruppledare', re: /gruppled|ledare/i,
     filterLabels: ['Gruppledare', 'Kursledare', 'Biträdande kursledare', 'Gruppledarpraktikant', 'Vitaliseraperson på plats'],
     excludeName: [], defaultRole: 'Gruppledare' },
   { key: 'assistenter', label: 'Assistenter', re: /assistent/i,
-    filterLabels: [], excludeName: ['assistenter', 'intresserad', 'status'], defaultRole: 'Assistent' },
+    filterLabels: [], excludeName: STAFF_JUNK_NAMES, defaultRole: 'Assistent' },
   { key: 'kockar', label: 'Kockar', re: /kock/i,
     filterLabels: ['Kock'], excludeName: [], defaultRole: 'Kock' },
 ];
@@ -799,6 +803,7 @@ function renderStaffPanel(groups, courseName) {
         + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
         + '<span class="vz-stub-note">läser korten skarpt (read-only)</span></div>'
         + '<textarea id="vz-asst-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>'
+        + '<div id="vz-asst-emails-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
       : '';
     return '<div class="vz-staff-group">'
       + '<div class="vz-staff-grouphead">' + esc(g.cfg.label) + (g.people.length ? '<span class="vz-staff-badge">' + g.people.length + '</span>' : '') + '</div>'
@@ -826,6 +831,7 @@ function renderStaffPanel(groups, courseName) {
   // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
   var emBtn = sec.querySelector('#vz-asst-emails');
   var emOut = sec.querySelector('#vz-asst-emails-out');
+  var emInfo = sec.querySelector('#vz-asst-emails-info');
   if (emOut) { persistTextareaSize_(emOut); }   // bild16: bevara höjd
   if (emBtn && emOut) {
     // Visa tidigare sparad lista direkt (överlever stäng/öppna).
@@ -840,11 +846,23 @@ function renderStaffPanel(groups, courseName) {
         if (!token) { throw new Error('Ingen Trello-token.'); }
         return restGet(token, 'lists/' + listId + '/cards?fields=name,desc');
       }).then(function (cards) {
-        var uniq = dedupeEmailsCI_((cards || []).map(function (c) { return extractStaffEmail(c.desc); }).filter(Boolean));
+        // Skräp-/mallkort bort (samma källa som listan/antalet), sedan dela på har/saknar e-post.
+        var persons = (cards || []).filter(function (c) { return !isStaffJunkName(c.name); });
+        var uniq = dedupeEmailsCI_(persons.map(function (c) { return extractStaffEmail(c.desc); }).filter(Boolean));
+        var missing = persons.filter(function (c) { return !extractStaffEmail(c.desc); })
+                             .map(function (c) { return cleanStaffName(c.name); }).filter(Boolean);
         emOut.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i assistentkortens beskrivningar.';
         if (uniq.length) { persistText(emailsKey, emOut.value); }   // spara så det överlever stäng/öppna
+        // Failar INTE tyst: namnge assistenter vars kort saknar e-post (Robert 2026-06-27).
+        if (emInfo) {
+          emInfo.style.display = missing.length ? '' : 'none';
+          emInfo.textContent = missing.length
+            ? ('⚠️ Saknar e-post i kortet (ej med ovan): ' + missing.join(', '))
+            : '';
+        }
       }).catch(function (err) {
         emOut.value = '⚠️ ' + err.message;
+        if (emInfo) { emInfo.style.display = 'none'; }
       }).then(function () { emBtn.disabled = false; });
     });
   }
@@ -1482,8 +1500,7 @@ function renderHfPanel(rows, courseName) {
         var cards = rr[0] || [], glAll = rr[1] || [];
         var aN = 0; // löpande A-kod-räknare (assistenter + gruppledare/VP)
         cards.forEach(function (c) {
-          // Hoppa över rubrik-/mallkort som inte är personer (Robert 2026-06-27: ett kort heter "Email").
-          if (['assistenter', 'intresserad', 'status', 'email', 'e-post', 'epost'].some(function (x) { return norm(c.name).indexOf(x) !== -1; })) { return; }
+          if (isStaffJunkName(c.name)) { return; }   // rubrik-/mallkort (t.ex. "Email") = ej person, central källa
           var nm = cleanStaffName(c.name);
           var blob = stripStaffDescForAI(c.desc, nm);
           var code = 'A' + (++aN);
