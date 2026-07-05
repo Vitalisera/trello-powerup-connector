@@ -2253,7 +2253,20 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       + '<div id="vz-mail-warn" class="vz-panel-note" style="color:#b5710b"></div>'
       + '<div id="vz-mail-out"></div>';
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
-      cb.addEventListener('change', function () { sel[cb.getAttribute('data-ck')] = cb.checked; try { t.set('board', 'shared', key, sel).catch(function () {}); } catch (e) {} });
+      cb.addEventListener('change', function () {
+        var ck = cb.getAttribute('data-ck');
+        sel[ck] = cb.checked;
+        var warnEl = sec.querySelector('#vz-mail-warn');
+        // Board-delad plugin-data (t.set 'board','shared') synkas mellan enheter/medlemmar. Skrivfel får INTE
+        // sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak, så det aldrig ser "sparat" ut utan att vara det.
+        Promise.resolve()
+          .then(function () { return t.set('board', 'shared', key, sel); })
+          .then(function () { if (warnEl && warnEl.getAttribute('data-save-err')) { warnEl.textContent = ''; warnEl.removeAttribute('data-save-err'); } })
+          .catch(function (e) {
+            cb.checked = !cb.checked; sel[ck] = cb.checked;   // rulla tillbaka till det som FAKTISKT är sparat
+            if (warnEl) { warnEl.setAttribute('data-save-err', '1'); warnEl.textContent = '⚠️ Kunde inte spara bocken (synkas då ej mellan enheter): ' + ((e && e.message) || e || 'okänt fel') + '. Prova igen; kvarstår det, säg till.'; }
+          });
+      });
     });
     applyDocNameColors_();   // initial färgkodning (om dok-status redan cachad); loadDocStatus uppdaterar sedan progressivt
     var mailBtn = sec.querySelector('#vz-mail-btn');
