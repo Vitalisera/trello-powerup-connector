@@ -667,8 +667,9 @@ var PANEL_HELP = {
     + '<p><b>Hur du använder den.</b> Bocka tilldelningarna, klicka «Skapa mejltext» → en redigerbar text genereras som du granskar och skickar själv. Namn med ↗ öppnar deltagarens dokument.</p>'
     + '<p><b>Tänk på.</b> Dokumentet heter olika per kurssteg (Livsberättelse / Nulägesbeskrivning / Du och dina relationer) — rubriken anpassas automatiskt.</p>' },
   uppf_matris: { title: 'Uppföljningssamtal → gruppledare', body:
-    '<p><b>Vad den gör.</b> Matris för vilken gruppledare som har uppföljningssamtal med vilken deltagare, samt «Skapa mejltext» för kontaktuppgifterna.</p>'
-    + '<p><b>Tänk på.</b> Uppföljningssamtal finns bara i <b>Steg 1</b> — den här modulen visas inte för Steg 2/3A/3B.</p>' },
+    '<p><b>Vad den gör.</b> Här fördelar du deltagarna mellan gruppledarna inför uppföljningssamtalen. Du bockar vilken gruppledare som ringer vilken deltagare, och modulen skriver två färdiga mejl åt dig: ett översiktsmejl till alla gruppledare och ett enskilt kontaktmejl per gruppledare med deras deltagares telefon och e-post.</p>'
+    + '<p><b>Hur du använder den.</b> 1) Bocka i matrisen vem som tar vem (namn med ↗ öppnar deltagarens dokument). 2) Klicka «Skapa mejltext» så genereras två redigerbara rutor. 3) I «till alla gruppledare» ser alla hela fördelningen; i «enskilt kontaktmejl» får varje gruppledare bara sina egna deltagare (med kursledaren som kopia). 4) Granska texten och klicka «Skicka till alla» respektive «Skicka enskilt». 5) «Skapa sammanfattningsdok» skapar Google-dokumentet där gruppledarna skriver sina sammanfattningar, och lägger in länken i mejlen.</p>'
+    + '<p><b>Tänk på.</b> Glömmer du bocka någon deltagare flaggas det i gult ovanför mejltexten, så ingen faller mellan stolarna. Bockarna sparas automatiskt. Uppföljningssamtal finns bara i <b>Steg 1</b>, så modulen visas inte för Steg 2, 3A eller 3B.</p>' },
 };
 function openPanelHelp(key) {
   var h = PANEL_HELP[key];
@@ -2306,7 +2307,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           if (opts.kind === 'uppfoljning') {
             mailOut.innerHTML = '';
             mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', uppfoljningText(s.tpl_uppfoljning, s.tpl_uppfoljningB, assignLines), key + '_mailU', cfgUppf, docCfgUppf));
-            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', s.tpl_uppfoljningEnskild || DEFAULT_TPL.uppfoljningEnskild, key + '_mailUE', cfgUppfEnskild, docCfgUppf));
+            // "Skapa sammanfattningsdok" hör hemma EN gång (samma dok för hela kursen) → bara på översiktsrutan
+            // ovan, ej duplicerad här (Robert 2026-07-06: förvirrande med två identiska knappar).
+            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', s.tpl_uppfoljningEnskild || DEFAULT_TPL.uppfoljningEnskild, key + '_mailUE', cfgUppfEnskild));
             return;
           }
           // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
@@ -2334,7 +2337,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         ]).then(function (r) {
           if ((r[0] || r[1]) && !mailOut.children.length) {
             mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(r[0] || ''), key + '_mailU', cfgUppf, docCfgUppf));
-            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', String(r[1] || DEFAULT_TPL.uppfoljningEnskild), key + '_mailUE', cfgUppfEnskild, docCfgUppf));
+            mailOut.appendChild(mailBox('Uppföljningssamtal – enskilt kontaktmejl (per gruppledare)', String(r[1] || DEFAULT_TPL.uppfoljningEnskild), key + '_mailUE', cfgUppfEnskild));   // ingen dubbel "Skapa sammanfattningsdok" (bara översiktsrutan)
           }
         }).catch(function () {});
       } else {
