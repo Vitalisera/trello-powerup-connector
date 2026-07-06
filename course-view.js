@@ -172,12 +172,9 @@
       + '    </div>'
       + '    <div class="vz-cv-stat is-gap' + ((s.withGaps || 0) > 0 ? ' has-gaps' : '') + '">'
       + '      <span class="big" data-count="' + (s.withGaps || 0) + '">0</span>'
-      + '      <span class="lbl"><span class="ic">' + ic.warn + '</span>Har luckor</span>'
+      + '      <span class="lbl"><span class="ic">' + (allClear ? ic.check : ic.warn) + '</span>Har luckor</span>'
       + '    </div>'
-      + '    <div class="vz-cv-stat ' + (allClear ? 'is-clear' : 'is-action') + '">'
-      + '      <span class="big" data-count="' + (s.openActions || 0) + '">0</span>'
-      + '      <span class="lbl"><span class="ic">' + (allClear ? ic.check : ic.spark) + '</span>Åtgärder väntar</span>'
-      + '    </div>'
+      // Fjärde stat-kortet borttaget (Robert 2026-07-06): mätte samma sak som "Har luckor" (bara summan av gaps) → redundant.
       + '  </div>'
       + '  <div class="vz-cv-sumside">'
       + '    <div class="head' + (allClear ? ' clear' : '') + '">' + headHtml + '</div>'
@@ -765,7 +762,7 @@
 
   var DEMO_MODEL = {
     course: {
-      name: 'Steg 1 · Mullingstorp 24 juni – 2 juli 2026',
+      name: 'Steg 1 · 24 juni – 2 juli 2026',
       datum: '24 jun – 2 jul 2026',
       daysToStart: 10            // ≤14 → markerar att fokus skiftar till förberedelse
     },

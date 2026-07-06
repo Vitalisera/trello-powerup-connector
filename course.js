@@ -236,13 +236,19 @@ function courseStegDisplay(courseName) {
   var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9]+[a-zåäö]?)/i);
   return m ? ('Steg ' + m[1].toUpperCase()) : 'Steg 1';
 }
+// Steg-medveten rubrik för ETT flödessteg. ENDA KÄLLA — används av både matris-kolumnen OCH inline-detaljens
+// rubrik (Robert 2026-07-06: inline-detaljen visade rå "Livsberättelse klar" på en 3A-kurs). Config-titeln
+// ('Livsberättelse klar') + checkItem-namnet ('Levnadsbeskrivning klar') är oförändrade; bara VISNINGEN är steg-medveten.
+function stepTitleForCourse_(s, courseName) {
+  var livsLabel = livsLabelForCourse(courseName);
+  return (s.key === 'livs_klar') ? (livsLabel + ' klar')
+    : (s.key === 'livs_delad') ? (livsLabel + ' → kursledare')
+    : (s.key === 'steg1') ? (courseStegDisplay(courseName) + ' – formulär')
+    : s.title;
+}
 function buildCourseModel(listName, cards) {
-  var livsLabel = livsLabelForCourse(listName);
   var steps = (window.NYA_ZAPIER_FLOW || []).map(function (s) {
-    var title = (s.key === 'livs_klar') ? (livsLabel + ' klar')
-      : (s.key === 'livs_delad') ? (livsLabel + ' → kursledare')   // steg 12: "Du och dina relationer → kursledare" (3A)
-      : (s.key === 'steg1') ? (courseStegDisplay(listName) + ' – formulär')   // steg 7: "Steg 3A – formulär" (ej hårdkodat "Steg 1")
-      : s.title;   // steg-medveten kolumnrubrik
+    var title = stepTitleForCourse_(s, listName);   // steg-medveten kolumnrubrik (enda källa)
     return { key: s.key, title: title, short: title.split(' ')[0], phase: s.phase };
   });
   var naKeys = courseHasUppfoljning(listName) ? null : { uppfoljning: true };   // steg 14 ej relevant utanför Steg 1
@@ -290,7 +296,7 @@ function stepDetailForCard(card, stepKey) {
   var labels = {};
   (card.labels || []).forEach(function (l) { if (l.name) { labels[norm(l.name)] = true; } });
   return {
-    key: s.key, title: s.title, phase: s.phase, always: !!s.always,
+    key: s.key, title: stepTitleForCourse_(s, COURSE_NAME), phase: s.phase, always: !!s.always,
     triggerLabel: s.triggerLabel || null, automation: s.automation || null,
     checkItemName: s.checkItem || null, checkItemId: ci ? ci.id : null,
     labelSet: s.triggerLabel ? !!labels[norm(s.triggerLabel)] : false,
