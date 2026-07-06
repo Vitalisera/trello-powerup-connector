@@ -2262,15 +2262,19 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () {
         var ck = cb.getAttribute('data-ck');
-        sel[ck] = cb.checked;
+        // Lagra BARA true-tilldelningar. Trellos board-delade plugin-data har en gräns på 8192 tecken PER NYCKEL;
+        // förr sparades även false-poster för varje av-bockad ruta → blobben växte tills en stor matris (t.ex. 23×7
+        // med 24-teckens kort-id i varje nyckel) sprängde taket och skrivningen avvisades (Robert 2026-07-06).
+        if (cb.checked) { sel[ck] = true; } else { delete sel[ck]; }
+        Object.keys(sel).forEach(function (k) { if (!sel[k]) { delete sel[k]; } });   // rensa ev. gamla false-poster
         var warnEl = sec.querySelector('#vz-story-saveerr');
-        // Board-delad plugin-data (t.set 'board','shared') synkas mellan enheter/medlemmar. Skrivfel får INTE
-        // sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak, så det aldrig ser "sparat" ut utan att vara det.
+        // Skrivfel får INTE sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak.
         Promise.resolve()
           .then(function () { return t.set('board', 'shared', key, sel); })
           .then(function () { if (warnEl) { warnEl.textContent = ''; warnEl.style.display = 'none'; } })
           .catch(function (e) {
-            cb.checked = !cb.checked; sel[ck] = cb.checked;   // rulla tillbaka till det som FAKTISKT är sparat
+            cb.checked = !cb.checked;                                   // rulla tillbaka till det som FAKTISKT är sparat
+            if (cb.checked) { sel[ck] = true; } else { delete sel[ck]; }
             if (warnEl) { warnEl.style.display = ''; warnEl.textContent = '⚠️ Kunde inte spara bocken (synkas då ej mellan enheter): ' + ((e && e.message) || e || 'okänt fel'); }
             try { console.error('[vz] matris-save misslyckades', key, e); } catch (_) {}
           });
@@ -2365,12 +2369,18 @@ function loadGenderSplit(participants) {
   postToGas('courseGenderSplit', { names: names }).then(function (data) {
     var el = document.getElementById('vz-cv-gender');
     if (!el || !data || data.ok !== true) { return; }
-    var c = data.counts || {};
+    var c = data.counts || {}, bn = data.byName || {};
+    // Vilka FÖRNAMN blev okända? (byName finns redan i svaret — förr slängdes det.) → visas som tooltip på "okänt",
+    // så Malin/Robert direkt ser vilket namn AI:n inte kunde könsbestämma (Robert 2026-07-06: "vilket förnamn?").
+    var unknownNames = Object.keys(bn).filter(function (n) { return bn[n] !== 'K' && bn[n] !== 'M'; });
     var parts = [];
-    if (c.K) { parts.push(c.K + (c.K === 1 ? ' kvinna' : ' kvinnor')); }
-    if (c.M) { parts.push(c.M + (c.M === 1 ? ' man' : ' män')); }
-    if (c.unknown) { parts.push(c.unknown + ' okänt'); }
-    el.textContent = parts.join(' · ');
+    if (c.K) { parts.push(esc(c.K + (c.K === 1 ? ' kvinna' : ' kvinnor'))); }
+    if (c.M) { parts.push(esc(c.M + (c.M === 1 ? ' man' : ' män'))); }
+    if (c.unknown) {
+      var tip = unknownNames.length ? ('AI kunde inte könsbestämma: ' + unknownNames.join(', ')) : 'AI kunde inte könsbestämma namnet';
+      parts.push('<span title="' + esc(tip) + '" style="text-decoration:underline dotted;cursor:help">' + esc(c.unknown + ' okänt') + '</span>');
+    }
+    el.innerHTML = parts.join(' · ');
   }).catch(function () { /* tyst */ });
 }
 
