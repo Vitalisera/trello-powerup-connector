@@ -1140,17 +1140,22 @@ function loadDocStatus(courseName, cards) {
   withDocs.forEach(function (it) { byKey[it.key] = { hf: it.hfUrl ? { loading: true } : null, livs: it.livsUrl ? { loading: true } : null }; });
   if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }
 
+  // Kurs-guard: skanningen är långsam (~10-30s). Byter Malin kurs under tiden får en STALE skanning INTE
+  // måla dok-status eller trigga auto-bock på en annan kurs (Robert 2026-07-06: 3A-deltagare dök upp i en
+  // Steg 1-vy med fel etikett). courseName fångas här; COURSE_NAME är den levande vyn → jämför vid varje callback.
+  function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
   var CHUNK = 6, chunks = [];
   for (var i = 0; i < withDocs.length; i += CHUNK) { chunks.push(withDocs.slice(i, i + CHUNK)); }
   Promise.all(chunks.map(function (grp) {
     return postToGas('courseDocStatus', { items: grp })
       .then(function (data) {
+        if (isStale()) { return; }   // kursbyte skedde → släpp denna skannings resultat
         ((data && data.items) || []).forEach(function (r) { byKey[r.key] = r; });
         if (window.CourseView && CourseView.applyDocStatus) { CourseView.applyDocStatus(byKey); }  // progressiv ifyllning
         applyDocNameColors_();   // färgkoda gruppledar-matrisens namn när dok-status kommer
       })
       .catch(function () { /* en chunk kan fela — övriga fyller ändå */ });
-  })).then(function () { maybeAutoBock(cards, byKey); });   // #11 Fas 2: bocka färdiga steg 8/9
+  })).then(function () { if (isStale()) { return; } maybeAutoBock(cards, byKey); });   // #11 Fas 2: bocka färdiga steg 8/9 (ej på stale kurs)
 }
 
 /* #11 Fas 2: AUTO-BOCKA steg 8/9 när dokumentet är färdigt (ready = ≥85%, livs även bild).
@@ -2246,6 +2251,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     }).join('');
     sec.innerHTML = head
       + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
+      + '<div id="vz-story-saveerr" style="display:none;margin:6px 0;padding:8px 10px;background:#fdecea;border:1px solid #f5c6c2;border-radius:8px;color:#8a1c1c;font-weight:600;font-size:13px"></div>'
       + '<div class="vz-story-scroll"><table class="vz-tbl vz-story-tbl"><thead><tr><th class="vz-story-corner">Deltagare</th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div>'
       + '<div class="vz-stub-row">'
       + '<button class="vz-btn" id="vz-mail-btn">Skapa mejltext</button>'
@@ -2256,15 +2262,16 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       cb.addEventListener('change', function () {
         var ck = cb.getAttribute('data-ck');
         sel[ck] = cb.checked;
-        var warnEl = sec.querySelector('#vz-mail-warn');
+        var warnEl = sec.querySelector('#vz-story-saveerr');
         // Board-delad plugin-data (t.set 'board','shared') synkas mellan enheter/medlemmar. Skrivfel får INTE
         // sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak, så det aldrig ser "sparat" ut utan att vara det.
         Promise.resolve()
           .then(function () { return t.set('board', 'shared', key, sel); })
-          .then(function () { if (warnEl && warnEl.getAttribute('data-save-err')) { warnEl.textContent = ''; warnEl.removeAttribute('data-save-err'); } })
+          .then(function () { if (warnEl) { warnEl.textContent = ''; warnEl.style.display = 'none'; } })
           .catch(function (e) {
             cb.checked = !cb.checked; sel[ck] = cb.checked;   // rulla tillbaka till det som FAKTISKT är sparat
-            if (warnEl) { warnEl.setAttribute('data-save-err', '1'); warnEl.textContent = '⚠️ Kunde inte spara bocken (synkas då ej mellan enheter): ' + ((e && e.message) || e || 'okänt fel') + '. Prova igen; kvarstår det, säg till.'; }
+            if (warnEl) { warnEl.style.display = ''; warnEl.textContent = '⚠️ Kunde inte spara bocken (synkas då ej mellan enheter): ' + ((e && e.message) || e || 'okänt fel'); }
+            try { console.error('[vz] matris-save misslyckades', key, e); } catch (_) {}
           });
       });
     });
