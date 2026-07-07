@@ -288,8 +288,10 @@
 }
 .vz-cv-table{
   /* #16: width:100% → kolumnerna sprids och fyller matris-regionen (Robert 2026-06-17: tabellen var för smal).
-     Sista rubrikens diagonala svans ryms i matrixwrappens padding-right. */
-  border-collapse:separate;border-spacing:0;width:100%;
+     max-width CAPPAR spridningen på BREDA skärmar (Robert 2026-07-07): utan tak stretchades kolumnerna så brett
+     att de roterade titlarnas diagonala svansar svämmade ut åt höger in i Personal-panelen. 1100px ger bekväma
+     kolumner men lämnar tomrum höger för sista svansen (originaldesignen #16). */
+  border-collapse:separate;border-spacing:0;width:100%;max-width:1100px;
 }
 
 /* --- huvud: fas-rubriker (rad 1) + steg-rubriker (rad 2) --- */
