@@ -178,6 +178,8 @@
       + '  </div>'
       + '  <div class="vz-cv-sumside">'
       + '    <div class="head' + (allClear ? ' clear' : '') + '">' + headHtml + '</div>'
+      // Total könsfördelning i gruppen (deltagare + gruppledare + assistenter, EXKL. kock) — fylls async av course.js (Robert 2026-07-06).
+      + '    <div class="vz-cv-groupgender" id="vz-cv-groupgender" style="display:none;margin-top:4px;font-size:12.5px;color:var(--muted);font-weight:600"></div>'
       + '    <div class="vz-cv-controls">'
       + '      <div class="vz-cv-search">' + ic.search
       + '        <input type="text" data-cv-search placeholder="Sök deltagare…" aria-label="Sök deltagare" value="' + esc(state.query || '') + '">'

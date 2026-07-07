@@ -270,6 +270,7 @@ var COURSE_CARDS_BY_ID = {};
 var COURSE_NAME = '';   // kursens listnamn (för fold-out-actions, t.ex. enstaka praktisk-info-utskick)
 var COURSE_LISTID = '';   // kursens list-id (för om-laddning efter mutation — "Gsheet-formel"-uppdatering, Robert 2026-06-22)
 var DOC_BYKEY = {};   // #11/bild14: senaste dok-statusen (per kort-id → {hf,livs}), läses av inline-detaljen för steg 8/9
+var COURSE_PARTICIPANT_NAMES = [];   // deltagarnas FÖRNAMN (för total könsfördelning deltagare+personal, satt i loadCourse)
 
 var handlers = {
   onOpenCard: function (p) { if (p && p.cardUrl) { window.open(p.cardUrl, '_blank'); } },
@@ -833,6 +834,7 @@ function renderStaffPanel(groups, courseName) {
     }).filter(Boolean);
     staffEl.innerHTML = parts.map(esc).join(' · ');
   }
+  loadGroupGenderTotal_(groups);   // total könsfördelning deltagare+gruppledare+assistenter (exkl. kock)
 
   // "Alla emailadresser": hämta assistent-listans kort med desc skarpt via REST,
   // extrahera mejl per kort, visa kommaseparerat i en kopierbar ruta. Read-only.
@@ -1033,21 +1035,26 @@ var HF_LINK_RES = [
   /l[äa]nk till h[äa]lsoformul[äa]ret:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
   /h[äa]lsoformul[äa]r[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
 ];
+// PRIORITETSORDNING (commentLink itererar regex-först): mest specifika/steg-korrekta doc-länken FÖRST, så den
+// vinner över en generisk "Livsberättelse"-länk om båda finns på samma kort (Robert 2026-07-07: Jannes 3A-kort
+// har BÅDE en "Länk till Steg 3A-formuläret" (rätt) OCH en manuell "Länk till Livsberättelsen: zpr.io" (fel)).
 var STORY_LINK_RES = [
-  /livsber[äa]ttelse[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
-  /nul[äa]gesbeskriv[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
-  /\*\*livsber[äa]ttelse:\*\*\s*(https?:\/\/[^\s)\]"]+)/i,
   // Steg-formulär-doket (livsberättelse-MOTSVARIGHETEN per kurssteg): nya-zapier postar "Länk till Steg 3A-formuläret: <url>"
   // (3A = "Du och dina relationer", även Steg 3B). Kräver "steg X" → matchar EJ "Hälsoformuläret". (Robert 2026-06-21, verifierat mot Actions_Step3AForm.js.)
   /l[äa]nk till steg\s*[0-9a-zåäö]+\s*[-–]?\s*formul[äa]ret[^:]*:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
   /du och dina relationer[^:]*:\s*(?:\[[^\]]*\]\()?(https?:\/\/[^\s)\]"]+)/i,
+  /nul[äa]gesbeskriv[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
+  /livsber[äa]ttelse[^:]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com)[^\s)\]"]+)/i,
+  /\*\*livsber[äa]ttelse:\*\*\s*(https?:\/\/[^\s)\]"]+)/i,
 ];
 function isFolderUrl(u) { return /drive\.google\.com\/drive\/folders/i.test(u || ''); }
 function commentLink(card, regexes) {
   var acts = card.actions || [];
-  for (var i = 0; i < acts.length; i++) {
-    var txt = (acts[i].data && acts[i].data.text) || '';
-    for (var j = 0; j < regexes.length; j++) {
+  // REGEX-först (prioritetsordning) → en mer specifik/steg-korrekt doc-länk vinner över en generisk även om den
+  // generiska ligger i en NYARE kommentar (Robert 2026-07-07, Jannes 3A-kort: Steg 3A-formuläret vs manuell zpr.io-livsberättelse).
+  for (var j = 0; j < regexes.length; j++) {
+    for (var i = 0; i < acts.length; i++) {
+      var txt = (acts[i].data && acts[i].data.text) || '';
       var m = txt.match(regexes[j]);
       if (m && m[1] && !isFolderUrl(m[1])) { return m[1]; }
     }
@@ -2390,6 +2397,30 @@ function loadGenderSplit(participants) {
   }).catch(function () { /* tyst */ });
 }
 
+// Total könsfördelning i gruppen: deltagare + gruppledare + assistenter, EXKL. kock (Robert 2026-07-06).
+// Räknar per PERSON via byName (dubbletter av samma förnamn räknas var för sig). Tyst om något fallerar.
+function loadGroupGenderTotal_(groups) {
+  var el = document.getElementById('vz-cv-groupgender');
+  if (!el) { return; }
+  var firstWord = function (x) { return String(x || '').trim().split(/\s+/)[0]; };
+  var staffNames = [];
+  (groups || []).forEach(function (g) {
+    if (g.cfg && (g.cfg.key === 'gruppledare' || g.cfg.key === 'assistenter')) {   // EXKL. kockar
+      (g.people || []).forEach(function (p) { var n = firstWord(p.name); if (n) { staffNames.push(n); } });
+    }
+  });
+  var all = (COURSE_PARTICIPANT_NAMES || []).concat(staffNames);
+  if (!all.length) { return; }
+  postToGas('courseGenderSplit', { names: all }).then(function (data) {
+    if (!data || data.ok !== true) { return; }
+    var bn = data.byName || {}, K = 0, M = 0;
+    all.forEach(function (n) { var g = bn[n]; if (g === 'K') { K++; } else if (g === 'M') { M++; } });
+    if (!K && !M) { return; }
+    el.style.display = '';
+    el.textContent = 'Hela gruppen exkl. kock: ' + K + (K === 1 ? ' kvinna' : ' kvinnor') + ' · ' + M + (M === 1 ? ' man' : ' män');
+  }).catch(function () { /* tyst */ });
+}
+
 // Fuzzy namn-match (kursens gruppledare ↔ "Matallergier Gruppledare/VP"-kortens namn).
 function glNameMatch(a, b) {
   a = norm(a); b = norm(b);
@@ -2449,6 +2480,7 @@ function loadCourse(listId, listName) {
     COURSE_NAME = res[0] || '';
     (res[1] || []).forEach(function (c) { COURSE_CARDS_BY_ID[c.id] = c; });   // för inline steg-detalj (klick på cell)
     var model = buildCourseModel(res[0], res[1] || []);
+    COURSE_PARTICIPANT_NAMES = (model.participants || []).map(function (p) { return String(p.name || '').trim().split(/\s+/)[0]; }).filter(Boolean);
     window.CourseView.render(ROOT(), model, handlers);
     // "öppna luckor"-raden → lucka-stäng-dialog (Robert 2026-06-21)
     var _cg = document.getElementById('vz-cv-closegaps');
