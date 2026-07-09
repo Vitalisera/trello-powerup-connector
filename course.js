@@ -1489,7 +1489,9 @@ function renderHfPanel(rows, courseName) {
   // Rutan växer med innehållet.
   function fitAllergi() { if (allergiOut && !vzTaHasSavedSize_(allergiOut)) { allergiOut.style.height = 'auto'; allergiOut.style.height = (allergiOut.scrollHeight + 4) + 'px'; } }
   if (allergiOut) {
-    allergiOut.addEventListener('input', fitAllergi);
+    // SPARA på varje redigering (board-delad, som alla andra textrutor) — inte bara den auto-genererade texten.
+    // Robert 2026-07-09: manuella ändringar i allergirutan försvann mellan gångerna (input-lyssnaren gjorde bara fit).
+    allergiOut.addEventListener('input', function () { fitAllergi(); persistText(allergiKey, allergiOut.value); });
     // Visa tidigare sparad sammanställning direkt (överlever stäng/öppna).
     t.get('board', 'shared', allergiKey).then(function (saved) {
       if (saved && !allergiOut.value) { allergiOut.value = String(saved); fitAllergi(); }
