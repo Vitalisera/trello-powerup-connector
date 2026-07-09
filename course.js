@@ -2334,7 +2334,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           // Livsberättelser: behöver M/K-antal → hämta könsfördelning (cachad), bygg sedan båda rutorna.
           var firstNames = participants.map(function (p) { return firstNameOf(p.name); }).filter(Boolean);
           return postToGas('courseGenderSplit', { names: firstNames }).then(function (g) {
-            var c = (g && g.ok && g.counts) || { K: 0, M: 0, unknown: 0 };
+            var c = (g && g.ok) ? genderCountsPerName_(firstNames, g.byName) : { K: 0, M: 0, unknown: 0 };   // per kort, ej unika counts
             mailOut.innerHTML = '';
             mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', livsAllaText(s.tpl_livsAlla, participants.length, c.M, c.K, assignLines), key + '_mailA', cfgAlla));
             mailOut.appendChild(mailBox(MALL_LBL, livsEnskildMall(s.tpl_livsEnskild), key + '_mailB', cfgEnskild));
@@ -2378,13 +2378,20 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
 
 // Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,
 // som härleder kön via Claude. Fyller #vz-cv-gender asynkront; tyst om något fallerar.
+// Räkna kön PER NAMN (ett per kort) via byName — INTE via GAS:ens counts, som räknar UNIKA förnamn (Code.gs dedupar).
+// Utan detta blir "6 män och 11 kvinnor" (17) ≠ deltagarantal (18) när två deltagare delar förnamn (granskning 2026-07-09).
+function genderCountsPerName_(names, byName) {
+  var c = { K: 0, M: 0, unknown: 0 };
+  (names || []).forEach(function (n) { var g = (byName || {})[n]; if (g === 'K') { c.K++; } else if (g === 'M') { c.M++; } else { c.unknown++; } });
+  return c;
+}
 function loadGenderSplit(participants) {
   var names = (participants || []).map(function (p) { return (p.name || '').trim().split(/\s+/)[0]; }).filter(Boolean);
   if (!names.length) { return; }
   postToGas('courseGenderSplit', { names: names }).then(function (data) {
     var el = document.getElementById('vz-cv-gender');
     if (!el || !data || data.ok !== true) { return; }
-    var c = data.counts || {}, bn = data.byName || {};
+    var bn = data.byName || {}, c = genderCountsPerName_(names, bn);   // per kort, ej GAS:ens unika counts
     // Vilka FÖRNAMN blev okända? (byName finns redan i svaret — förr slängdes det.) → visas som tooltip på "okänt",
     // så Malin/Robert direkt ser vilket namn AI:n inte kunde könsbestämma (Robert 2026-07-06: "vilket förnamn?").
     var unknownNames = Object.keys(bn).filter(function (n) { return bn[n] !== 'K' && bn[n] !== 'M'; });
