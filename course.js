@@ -1823,6 +1823,25 @@ function courseScopedKeys_(sharedObj, slug) {
   if (!slug) { return []; }
   return Object.keys(sharedObj || {}).filter(function (k) { return k.indexOf(slug) !== -1; });
 }
+var COURSE_ARCHIVE = {};   // arkiverad kurs-metadata (board-nyckel → värde) för en AVSLUTAD kurs, läst ur kort-scope.
+// Läs per-kurs board/shared-värde MED arkiv-fallback: en avslutad kurs har fått sina board-nycklar flyttade till
+// korten (archiveStaleCourse_), så board/shared ger inget → fall tillbaka på arkivet så Malin ser sina texter igen.
+function getCoursePersist_(key) {
+  function fromArchive() { return Object.prototype.hasOwnProperty.call(COURSE_ARCHIVE, key) ? COURSE_ARCHIVE[key] : null; }
+  return t.get('board', 'shared', key).then(function (v) { return (v === undefined || v === null) ? fromArchive() : v; }).catch(fromArchive);
+}
+// Läs arkiv-bloben (om kursen är arkiverad) ur ankarkorten → COURSE_ARCHIVE. Körs FÖRE panel-laddningen.
+function loadCourseArchive_(courseName, cards) {
+  COURSE_ARCHIVE = {};
+  var slug = courseSlug(courseName);
+  var anchors = (cards || []).map(function (c) { return c.id; }).filter(Boolean).slice(0, 3);
+  if (!slug || !anchors.length) { return Promise.resolve(); }
+  return Promise.all(anchors.map(function (id) { return t.get(id, 'shared', 'vz_archive_' + slug).catch(function () { return null; }); }))
+    .then(function (blobs) {
+      var hit = (blobs || []).filter(function (b) { return b && b.data; })[0];   // första ankarkortet med arkiv
+      if (hit) { COURSE_ARCHIVE = hit.data || {}; }
+    }).catch(function () {});
+}
 // ARKIV-PÅ-SLUT: en avslutad kurs (slutdatum + 5 dygn passerat) är frusen — korten rörs aldrig igen (Robert
 // 2026-07-10). Flytta då kursens per-kurs-metadata från den DELADE board/shared-budgeten (8192 totalt) till
 // kort-scope (4096/kort, gott om plats) på 3 ankarkort för redundans → frigör board/shared, bevarar arkivet.
@@ -1838,12 +1857,22 @@ function archiveStaleCourse_(courseName, cards) {
     var shared = (all && all.board && all.board.shared) || {};
     var keys = courseScopedKeys_(shared, slug);
     if (!keys.length) { return; }                                // inget kvar på board/shared → redan arkiverat
-    var blob = {}; keys.forEach(function (k) { blob[k] = shared[k]; });
-    var archive = { courseName: courseName, slug: slug, data: blob };
-    // Skriv arkivet till alla ankarkort → radera board-nycklarna BARA om ALLA skrivningar lyckades.
-    Promise.all(anchors.map(function (id) { return t.set(id, 'shared', 'vz_archive_' + slug, archive); }))
-      .then(function () { return Promise.all(keys.map(function (k) { return (t.remove ? t.remove('board', 'shared', k) : t.set('board', 'shared', k, undefined)); })); })
-      .catch(function () { /* partiell → behåll board-nycklarna, retry nästa öppning */ });
+    // MERGE med ev. befintligt kort-arkiv (självläkande efter en tidigare PARTIELL körning → skriv ALDRIG över,
+    // annars tappas redan-arkiverade nycklar). Robert 2026-07-10.
+    return Promise.all(anchors.map(function (id) { return t.get(id, 'shared', 'vz_archive_' + slug).catch(function () { return null; }); })).then(function (existing) {
+      var merged = {};
+      (existing || []).forEach(function (a) { if (a && a.data) { Object.keys(a.data).forEach(function (k) { merged[k] = a.data[k]; }); } });
+      keys.forEach(function (k) { merged[k] = shared[k]; });
+      var archive = { courseName: courseName, slug: slug, data: merged };
+      return Promise.all(anchors.map(function (id) { return t.set(id, 'shared', 'vz_archive_' + slug, archive); }))   // olika scopes → parallellt ok
+        .then(function () {
+          // Radera board-nycklarna SEKVENTIELLT — parallella removes racear på SAMMA board/shared-blob (orsaken till
+          // partiell radering, Robert 2026-07-10: vz_followup_*_mail blev kvar). En i taget → deterministiskt.
+          return keys.reduce(function (p, k) {
+            return p.then(function () { return (t.remove ? t.remove('board', 'shared', k) : t.set('board', 'shared', k, undefined)); });
+          }, Promise.resolve());
+        });
+    });
   }).catch(function () {});
 }
 /* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
@@ -2583,16 +2612,17 @@ function loadCourse(listId, listName) {
     if (_cg) { _cg.addEventListener('click', function (e) { e.preventDefault(); offerGapClose(res[1] || []); }); }
     loadGenderSplit(model.participants);
     loadStaff(res[0]);
-    // Ladda sparad panel-layout (kolumner+ordning) + kollaps-tillstånd FÖRST → panelerna placeras deterministiskt.
-    Promise.all([loadPanelLayout(), loadPanelCollapsed()]).then(function () {
+    // Ladda panel-layout + kollaps + ARKIV-fallback (avslutad kurs) FÖRST → paneler placeras deterministiskt OCH
+    // per-kurs-loaders (allergi/mejl/e-post) har COURSE_ARCHIVE redo att falla tillbaka på.
+    Promise.all([loadPanelLayout(), loadPanelCollapsed(), loadCourseArchive_(res[0], res[1] || [])]).then(function () {
       loadHfPanel(res[1] || [], res[0]);
       loadStoryMatrix(res[0], model.participants, res[1] || []);
       loadCourseChecklist(res[0]);
       loadPracticalInfoPanel(res[1] || [], res[0]);    // Praktisk info-utskick (PDF per deltagare + bock steg 7)
+      renderParticipantEmails(res[1] || [], res[0]);   // #17b (pemails-persist → arkiv-fallback)
       setTimeout(reorderBelowPanels_, 1500);           // säkerhetsnät: sortera om när alla (även sen-laddade) panelerna landat
     });
-    renderParticipantEmails(res[1] || [], res[0]);   // #17b
-    loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus)
+    loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus — ingen per-kurs-persist)
     archiveStaleCourse_(res[0], res[1] || []);       // arkiv-på-slut: avslutad kurs (slut+5d) → metadata till frusna kort, frigör board/shared
 
   }).catch(function (err) {
