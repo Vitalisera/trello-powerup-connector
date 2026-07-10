@@ -1779,6 +1779,43 @@ function unpackSel_(stored) {
   Object.keys(stored).forEach(function (ld) { (stored[ld] || []).forEach(function (pk) { out[pk + '||' + ld] = true; }); });
   return out;
 }
+// Läs matris-urvalet från KORT-scope (per deltagare, 4096/kort → skalar med antal kort; ersätter board/shared-
+// nyckeln som delade EN 8192-budget med allt annat → sprängdes vid ~1 kurs, Robert 2026-07-10). Varje deltagarkort
+// bär arrayen av gruppledare som är kopplade till hen. Returnerar in-memory cell-karta { 'cardId||Ledare': true }.
+// MIGRERING: om kort-scope är tomt men den gamla board/shared-nyckeln finns → skriv ut till korten + RADERA board-
+// nyckeln (frigör den delade budgeten). Legacy-format (packat/cell-karta) hanteras av unpackSel_.
+function loadCardScopeSel_(participants, cardKey, legacyBoardKey) {
+  var ids = (participants || []).map(function (p) { return p.key; }).filter(Boolean);
+  return Promise.all([
+    Promise.all(ids.map(function (id) { return t.get(id, 'shared', cardKey).catch(function () { return null; }); })),
+    t.get('board', 'shared', legacyBoardKey).catch(function () { return null; }),
+  ]).then(function (r) {
+    var perCard = r[0] || [], legacy = r[1];
+    var legacySel = unpackSel_(legacy && typeof legacy === 'object' ? legacy : {});
+    // Så länge den gamla board-nyckeln FINNS är den sanningen (pre-migration). Kort-scope blir sanning först när
+    // board-nyckeln raderats — efter FULL migrering. Undviker både data-förlust (partiell skrivning) OCH att
+    // avbockade tilldelningar återuppstår (union med stale legacy). Robert 2026-07-10.
+    if (Object.keys(legacySel).length) {
+      var byCard = {};
+      Object.keys(legacySel).forEach(function (ck) { var i = ck.indexOf('||'); if (i === -1) { return; } (byCard[ck.slice(0, i)] = byCard[ck.slice(0, i)] || []).push(ck.slice(i + 2)); });
+      // INVÄNTA migreringen före render (engångskostnad första loaden): då är board-nyckeln borta innan Malin kan
+      // bocka → ingen race där en async migrering skriver över hennes färska bock med stale legacy-data.
+      return Promise.all(Object.keys(byCard).map(function (id) { return t.set(id, 'shared', cardKey, byCard[id]); }))   // skriv alla kort
+        .then(function () { return (t.remove ? t.remove('board', 'shared', legacyBoardKey) : t.set('board', 'shared', legacyBoardKey, undefined)); })   // radera BARA vid full succé
+        .catch(function () { /* partiell → behåll board-nyckeln, retry nästa load (legacy förblir sanning) */ })
+        .then(function () { return legacySel; });   // använd legacy denna session (kort-scope autoritativt först nästa load)
+    }
+    // Ingen legacy kvar → kort-scope är sanning.
+    var sel = {};
+    ids.forEach(function (id, i) { if (Array.isArray(perCard[i])) { perCard[i].forEach(function (ld) { if (ld) { sel[id + '||' + ld] = true; } }); } });
+    return sel;
+  });
+}
+// Skriv EN deltagares gruppledar-lista till kort-scope (anropas vid varje bock; bara det berörda kortet skrivs).
+function saveCardScopeLeaders_(cardId, leaders, sel, cardKey) {
+  var list = (leaders || []).filter(function (l) { return sel[cardId + '||' + l]; });
+  return t.set(cardId, 'shared', cardKey, list);
+}
 /* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
 function loadStoryMatrix(courseName, participants, cards) {
   var slug = norm(courseName).replace(/[^a-z0-9]+/g, '_');
@@ -1788,40 +1825,38 @@ function loadStoryMatrix(courseName, participants, cards) {
   var storyLinks = {}, contactByKey = {};
   (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); contactByKey[c.id] = parseContactFromDesc(c.desc); });
   var GL = STAFF_BOARDS[0];
-  function asObj(x) { return (x && typeof x === 'object') ? x : {}; }
-  t.getRestApi().getToken().then(function (token) {
-    if (!token) { return null; }
-    return Promise.all([
-      getOpenBoards_(token),
-      t.get('board', 'shared', key).catch(function () { return {}; }),
-      t.get('board', 'shared', followKey).catch(function () { return {}; }),
-    ]).then(function (r) {
-      var boards = r[0] || [], selStory = unpackSel_(asObj(r[1])), selFollow = unpackSel_(asObj(r[2]));
-      var b = boards.filter(function (bd) { return GL.re.test(bd.name || ''); })[0];
-      if (!b) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
+  // Gruppledar-namnen (matris-kolumnerna) ur Gruppledare-boarden, exkl. "Vitaliseraperson på plats".
+  var leadersP = t.getRestApi().getToken().then(function (token) {
+    if (!token) { return []; }
+    return getOpenBoards_(token).then(function (boards) {
+      var b = (boards || []).filter(function (bd) { return GL.re.test(bd.name || ''); })[0];
+      if (!b) { return []; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
         var list = (lists || []).filter(function (l) { return sameCourse(l.name, courseName); })[0];
-        if (!list) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
+        if (!list) { return []; }
         return restGet(token, 'lists/' + list.id + '/cards?fields=name,labels').then(function (cs) {
-          // Matriserna ska INTE innehålla "Vitaliseraperson på plats" (de läser ej livsberättelser/
-          // har ej uppföljningssamtal) — men de är kvar i "Personal på kursen"-panelen.
-          var leaders = (cs || []).map(function (c) { return staffPerson(c, GL); })
+          return (cs || []).map(function (c) { return staffPerson(c, GL); })
             .filter(function (p) { return p && p.role !== 'Vitaliseraperson på plats'; })
             .map(function (p) { return p.name; });
-          return { leaders: leaders, selStory: selStory, selFollow: selFollow };
         });
       });
     });
-  }).then(function (d) {
-    if (!d) { return; }
-    renderStoryMatrix(key, participants || [], d.leaders, d.selStory, {
-      title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse',   // steg-medveten titel
+  }).catch(function () { return []; });
+  // Urvalen från KORT-scope (per deltagare) + migrering av ev. gammal board/shared-nyckel.
+  Promise.all([
+    leadersP,
+    loadCardScopeSel_(participants, 'vz_livs_leaders', key),
+    loadCardScopeSel_(participants, 'vz_uppf_leaders', followKey),
+  ]).then(function (r) {
+    var leaders = r[0] || [], selStory = r[1] || {}, selFollow = r[2] || {};
+    renderStoryMatrix(key, participants || [], leaders, selStory, {
+      title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse', cardKey: 'vz_livs_leaders',   // steg-medveten titel
       note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.',
     });
     // Uppföljningssamtal finns BARA i Steg 1 (Robert 2026-06-21) → rendera ej matrisen för 2/3A/3B.
     if (courseHasUppfoljning(courseName)) {
-      renderStoryMatrix(followKey, participants || [], d.leaders, d.selFollow, {
-        title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', courseName: courseName, contacts: contactByKey,
+      renderStoryMatrix(followKey, participants || [], leaders, selFollow, {
+        title: 'Uppföljningssamtal → gruppledare', storyLinks: {}, kind: 'uppfoljning', cardKey: 'vz_uppf_leaders', courseName: courseName, contacts: contactByKey,
         note: 'Bocka vilken gruppledare som har uppföljningssamtal med vilken deltagare. Sparas automatiskt.',
       });
     }
@@ -2300,20 +2335,20 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () {
         var ck = cb.getAttribute('data-ck');
-        // Lagra BARA true-tilldelningar + PACKA vid spar (packSel_) → under Trellos 8192-tecken/nyckel-gräns även vid
-        // många-till-många (Robert 2026-07-06 bara-true räckte ej 2026-07-10; packad form lagrar namnet en gång/gruppledare).
+        // KORT-SCOPE: bara det berörda deltagarkortet skrivs (4096/kort → skalar; ersätter board/shared-nyckeln som
+        // delade EN 8192-budget med allt annat och sprängdes vid ~1 kurs, Robert 2026-07-10).
         if (cb.checked) { sel[ck] = true; } else { delete sel[ck]; }
-        Object.keys(sel).forEach(function (k) { if (!sel[k]) { delete sel[k]; } });   // rensa ev. gamla false-poster
+        var cardId = ck.slice(0, ck.indexOf('||'));
         var warnEl = sec.querySelector('#vz-story-saveerr');
         // Skrivfel får INTE sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak.
         Promise.resolve()
-          .then(function () { return t.set('board', 'shared', key, packSel_(sel)); })
+          .then(function () { return saveCardScopeLeaders_(cardId, leaders, sel, opts.cardKey); })
           .then(function () { if (warnEl) { warnEl.textContent = ''; warnEl.style.display = 'none'; } })
           .catch(function (e) {
             cb.checked = !cb.checked;                                   // rulla tillbaka till det som FAKTISKT är sparat
             if (cb.checked) { sel[ck] = true; } else { delete sel[ck]; }
             if (warnEl) { warnEl.style.display = ''; warnEl.textContent = '⚠️ Kunde inte spara bocken (synkas då ej mellan enheter): ' + ((e && e.message) || e || 'okänt fel'); }
-            try { console.error('[vz] matris-save misslyckades', key, e); } catch (_) {}
+            try { console.error('[vz] matris-save misslyckades', opts.cardKey, e); } catch (_) {}
           });
       });
     });
