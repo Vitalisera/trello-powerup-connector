@@ -1756,6 +1756,29 @@ function wireStubs(scope) {
   });
 }
 
+// Kompakt serialisering av matris-urvalet — håller under Trellos 8192-tecken/nyckel-gräns (Robert 2026-07-10:
+// felet återkom trots V=116:s bara-true, för många-till-många (23×9 = 207 celler × ~49-teckens 'cardId||namn'-nyckel
+// ≈ 10 000 tecken). PACKAD form { 'Gruppledare': [cardId,...] } lagrar namnet EN gång per gruppledare istället för
+// per cell (~5 800 i värsta fall). In-memory `sel` förblir cell-kartan { 'cardId||Gruppledare': true } → alla läsare orörda.
+function packSel_(sel) {
+  var out = {};
+  Object.keys(sel || {}).forEach(function (k) {
+    if (!sel[k]) { return; }
+    var i = k.indexOf('||'); if (i === -1) { return; }
+    var ld = k.slice(i + 2);
+    (out[ld] = out[ld] || []).push(k.slice(0, i));
+  });
+  return out;
+}
+function unpackSel_(stored) {
+  if (!stored || typeof stored !== 'object') { return {}; }
+  // Ny packad form har ARRAY-värden; gammal cell-karta ({ 'pk||ld': true }) passerar igenom oförändrad (legacy-migrering).
+  var isPacked = Object.keys(stored).some(function (k) { return Array.isArray(stored[k]); });
+  if (!isPacked) { return stored; }
+  var out = {};
+  Object.keys(stored).forEach(function (ld) { (stored[ld] || []).forEach(function (pk) { out[pk + '||' + ld] = true; }); });
+  return out;
+}
 /* ---------- Livsberättelse-matris (#3): deltagare × gruppledare ---------- */
 function loadStoryMatrix(courseName, participants, cards) {
   var slug = norm(courseName).replace(/[^a-z0-9]+/g, '_');
@@ -1773,7 +1796,7 @@ function loadStoryMatrix(courseName, participants, cards) {
       t.get('board', 'shared', key).catch(function () { return {}; }),
       t.get('board', 'shared', followKey).catch(function () { return {}; }),
     ]).then(function (r) {
-      var boards = r[0] || [], selStory = asObj(r[1]), selFollow = asObj(r[2]);
+      var boards = r[0] || [], selStory = unpackSel_(asObj(r[1])), selFollow = unpackSel_(asObj(r[2]));
       var b = boards.filter(function (bd) { return GL.re.test(bd.name || ''); })[0];
       if (!b) { return { leaders: [], selStory: selStory, selFollow: selFollow }; }
       return restGet(token, 'boards/' + b.id + '/lists?fields=name').then(function (lists) {
@@ -2277,15 +2300,14 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     Array.prototype.forEach.call(sec.querySelectorAll('input[type=checkbox]'), function (cb) {
       cb.addEventListener('change', function () {
         var ck = cb.getAttribute('data-ck');
-        // Lagra BARA true-tilldelningar. Trellos board-delade plugin-data har en gräns på 8192 tecken PER NYCKEL;
-        // förr sparades även false-poster för varje av-bockad ruta → blobben växte tills en stor matris (t.ex. 23×7
-        // med 24-teckens kort-id i varje nyckel) sprängde taket och skrivningen avvisades (Robert 2026-07-06).
+        // Lagra BARA true-tilldelningar + PACKA vid spar (packSel_) → under Trellos 8192-tecken/nyckel-gräns även vid
+        // många-till-många (Robert 2026-07-06 bara-true räckte ej 2026-07-10; packad form lagrar namnet en gång/gruppledare).
         if (cb.checked) { sel[ck] = true; } else { delete sel[ck]; }
         Object.keys(sel).forEach(function (k) { if (!sel[k]) { delete sel[k]; } });   // rensa ev. gamla false-poster
         var warnEl = sec.querySelector('#vz-story-saveerr');
         // Skrivfel får INTE sväljas tyst (gold standard) — vid fel: återställ bocken + visa orsak.
         Promise.resolve()
-          .then(function () { return t.set('board', 'shared', key, sel); })
+          .then(function () { return t.set('board', 'shared', key, packSel_(sel)); })
           .then(function () { if (warnEl) { warnEl.textContent = ''; warnEl.style.display = 'none'; } })
           .catch(function (e) {
             cb.checked = !cb.checked;                                   // rulla tillbaka till det som FAKTISKT är sparat
