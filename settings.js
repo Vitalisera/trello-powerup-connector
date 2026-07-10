@@ -114,6 +114,13 @@ function render(s) {
     + '</div>'
 
     + '<div class="vz-autosave"><span class="vz-autosave-txt">Ändringar sparas automatiskt</span><span class="vz-note" id="vz-saved"></span></div>'
+    // Lagringsdiagnostik (Robert 2026-07-10): Trello board/shared har en TOTAL 8192-teckensbudget som ALLA
+    // nycklar delar. Mät faktisk förbrukning + per-nyckel-nedbrytning så vi vet hur nära taket vi är.
+    + '<div class="vz-field" style="margin-top:18px;border-top:1px solid #e4eef0;padding-top:14px">'
+    + '<label>Trello-lagring (board · delad budget)</label>'
+    + '<p class="hint">Trello ger hela Power-Upen <b>8192 tecken totalt</b> på board-nivå — alla kurser och listor delar samma budget. Här ser du faktisk förbrukning.</p>'
+    + '<div id="vz-storage-readout" class="hint" style="font-variant-numeric:tabular-nums">⏳ mäter…</div>'
+    + '</div>'
     + '</div>';
 
   // bild16: bevara användarens manuellt ändrade textarea-höjd mellan öppningar (per id, localStorage).
@@ -158,6 +165,23 @@ function render(s) {
   Array.prototype.forEach.call(document.querySelectorAll('#root input[type=email], #root input[type=text], #root textarea'), function (el) {
     el.addEventListener('input', scheduleSave);
   });
+  // Lagringsdiagnostik: läs ALL board/shared plugin-data (t.getAll) → summera tecken mot 8192-budgeten + topp-nycklar.
+  (function () {
+    var el = document.getElementById('vz-storage-readout');
+    if (!el || !t.getAll) { if (el) { el.textContent = 'Kunde inte mäta (getAll saknas).'; } return; }
+    t.getAll().then(function (all) {
+      var shared = (all && all.board && all.board.shared) || {};
+      var keys = Object.keys(shared).map(function (k) {
+        return { k: k, n: (k + JSON.stringify(shared[k])).length };
+      }).sort(function (a, b) { return b.n - a.n; });
+      var total = JSON.stringify(shared).length;   // faktisk serialiserad längd = det Trello mäter mot 8192
+      var pct = Math.round(total / 8192 * 100);
+      var color = pct >= 90 ? '#b23a2e' : pct >= 70 ? '#b5710b' : '#1f7a53';
+      var top = keys.slice(0, 6).map(function (x) { return esc(x.k) + ' (' + x.n + ')'; }).join(' · ');
+      el.innerHTML = '<b style="color:' + color + '">' + total + ' / 8192 tecken (' + pct + '%)</b>'
+        + '<br>' + keys.length + ' nycklar. Störst: ' + (top || '—');
+    }).catch(function (e) { el.textContent = '⚠️ Kunde inte mäta: ' + esc((e && e.message) || e); });
+  })();
   // Test-läge (kryssruta) → spara DIREKT + uppdatera TEST-badgen in-place (ingen omritning → behåll scroll/fokus).
   var tm = document.getElementById('vz-testmode');
   if (tm) {
