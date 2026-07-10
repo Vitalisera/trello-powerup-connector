@@ -844,7 +844,7 @@ function renderStaffPanel(groups, courseName) {
   if (emOut) { persistTextareaSize_(emOut); }   // bild16: bevara höjd
   if (emBtn && emOut) {
     // Visa tidigare sparad lista direkt (överlever stäng/öppna).
-    t.get('board', 'shared', emailsKey).then(function (saved) {
+    getCoursePersist_(emailsKey).then(function (saved) {   // arkiv-fallback för avslutad kurs (board/shared → kort-arkiv)
       if (saved && !emOut.value) { emOut.style.display = ''; emOut.value = String(saved); }
     }).catch(function () {});
     emBtn.addEventListener('click', function () {
@@ -912,7 +912,7 @@ function renderParticipantEmails(cards, courseName) {
       });
     });
   }
-  t.get('board', 'shared', emailsKey).then(function (saved) {
+  getCoursePersist_(emailsKey).then(function (saved) {   // arkiv-fallback för avslutad kurs
     if (saved && !out.value) { out.style.display = ''; out.value = String(saved); showCopy(true); }
   }).catch(function () {});
   btn.addEventListener('click', function () {
@@ -1493,7 +1493,7 @@ function renderHfPanel(rows, courseName) {
     // Robert 2026-07-09: manuella ändringar i allergirutan försvann mellan gångerna (input-lyssnaren gjorde bara fit).
     allergiOut.addEventListener('input', function () { fitAllergi(); persistText(allergiKey, allergiOut.value); });
     // Visa tidigare sparad sammanställning direkt (överlever stäng/öppna).
-    t.get('board', 'shared', allergiKey).then(function (saved) {
+    getCoursePersist_(allergiKey).then(function (saved) {   // arkiv-fallback för avslutad kurs
       if (saved && !allergiOut.value) { allergiOut.value = String(saved); fitAllergi(); }
     }).catch(function () {});
   }
@@ -1821,9 +1821,19 @@ function saveCardScopeLeaders_(cardId, leaders, sel, cardKey) {
 // cachar, ev. gamla matris-nycklar) — ingen hårdkodad lista → fångar allt kursspecifikt. Ren funktion (proof-bar).
 function courseScopedKeys_(sharedObj, slug) {
   if (!slug) { return []; }
-  return Object.keys(sharedObj || {}).filter(function (k) { return k.indexOf(slug) !== -1; });
+  // Ankra slug vid SEGMENTGRÄNS ('_' före + '_' eller slut efter) — INTE fri substring. Annars: om en frusen kurs slug
+  // är prefix till en AKTIV kurs slug ('steg_1_mars_2026_' ⊂ 'steg_1_mars_2026_helg_') plockar arkiveringen upp den
+  // aktiva kursens nycklar och gör dem oåtkomliga. Svepet kör alla frusna kurser autonomt → förstärker risken (granskning 2026-07-10).
+  return Object.keys(sharedObj || {}).filter(function (k) {
+    var i = k.indexOf(slug);
+    if (i === -1) { return false; }
+    var before = i === 0 ? '' : k.charAt(i - 1);
+    var after = k.charAt(i + slug.length);   // '' om slug slutar nyckeln
+    return (before === '' || before === '_') && (after === '' || after === '_');
+  });
 }
 var COURSE_ARCHIVE = {};   // arkiverad kurs-metadata (board-nyckel → värde) för en AVSLUTAD kurs, läst ur kort-scope.
+var SWEEP_DONE = false;    // bakgrundssvep körs EN gång per modal-öppning (arkiverar alla avslutade kurser).
 // Läs per-kurs board/shared-värde MED arkiv-fallback: en avslutad kurs har fått sina board-nycklar flyttade till
 // korten (archiveStaleCourse_), så board/shared ger inget → fall tillbaka på arkivet så Malin ser sina texter igen.
 function getCoursePersist_(key) {
@@ -1846,14 +1856,16 @@ function loadCourseArchive_(courseName, cards) {
 // 2026-07-10). Flytta då kursens per-kurs-metadata från den DELADE board/shared-budgeten (8192 totalt) till
 // kort-scope (4096/kort, gott om plats) på 3 ankarkort för redundans → frigör board/shared, bevarar arkivet.
 // Datasäkert: skriv korten → radera board-nycklarna BARA vid full succé (aldrig förlust, aldrig mitt-i-kurs).
+// Returnerar ett promise som resolvar när arkiveringen är klar (eller no-op) → bakgrundssvepet kan köra kurser
+// SEKVENTIELLT och undvika att parallella board/shared-raderingar racear på samma delade blob.
 function archiveStaleCourse_(courseName, cards) {
   var end = courseEndDate(courseName);
-  if (!end) { return; }                                          // okänt slutdatum → arkivera ALDRIG (säkert)
-  if (new Date().getTime() <= end.getTime() + 5 * 864e5) { return; }   // < 5 dygn efter slut → för tidigt
+  if (!end) { return Promise.resolve(); }                        // okänt slutdatum → arkivera ALDRIG (säkert)
+  if (new Date().getTime() <= end.getTime() + 5 * 864e5) { return Promise.resolve(); }   // < 5 dygn efter slut → för tidigt
   var slug = courseSlug(courseName);
   var anchors = (cards || []).map(function (c) { return c.id; }).filter(Boolean).slice(0, 3);   // 3 frusna ankarkort
-  if (!slug || !anchors.length || !t.getAll) { return; }
-  t.getAll().then(function (all) {
+  if (!slug || !anchors.length || !t.getAll) { return Promise.resolve(); }
+  return t.getAll().then(function (all) {
     var shared = (all && all.board && all.board.shared) || {};
     var keys = courseScopedKeys_(shared, slug);
     if (!keys.length) { return; }                                // inget kvar på board/shared → redan arkiverat
@@ -1872,6 +1884,43 @@ function archiveStaleCourse_(courseName, cards) {
             return p.then(function () { return (t.remove ? t.remove('board', 'shared', k) : t.set('board', 'shared', k, undefined)); });
           }, Promise.resolve());
         });
+    });
+  }).catch(function () {});
+}
+// BAKGRUNDSSVEP (Robert 2026-07-10): arkivera ALLA avslutade kurser, inte bara den öppnade. Malin öppnar kanske
+// aldrig en gammal kurs igen → dess board/shared-nycklar skulle annars ligga kvar och äta den delade 8192-budgeten
+// tills den sprängs vid ~1 kurs. När aktuell kurs laddats: lista boardens kurslistor, filtrera till de som är
+// FÄRDIG-FRUSNA (slut + 5 dygn) OCH fortfarande har board/shared-nycklar (snapshot via t.getAll → hoppa onödiga
+// kort-hämtningar), hämta deras kort, arkivera SEKVENTIELLT (en kurs i taget → board/shared-blobben racear ej
+// mellan kurser). En-gång-per-modal-guard. Fail-soft: rör aldrig den aktuella renderingen.
+function sweepStaleCourses_() {
+  if (SWEEP_DONE || !t.getAll) { return; }
+  var ctx = {};
+  try { ctx = t.getContext() || {}; } catch (e) { ctx = {}; }
+  var board = ctx.board;
+  if (!board) { return; }                                        // board okänt (kort-entry utan context) → hoppa svepet
+  SWEEP_DONE = true;
+  Promise.all([t.getRestApi().getToken(), t.getAll()]).then(function (r) {
+    var token = r[0], all = r[1];
+    if (!token) { return; }
+    var shared = (all && all.board && all.board.shared) || {};
+    var now = new Date().getTime();
+    return restGet(token, 'boards/' + board + '/lists?fields=name').then(function (lists) {
+      var stale = (lists || []).filter(function (l) {
+        if (!l || !l.name) { return false; }
+        var end = courseEndDate(l.name);
+        if (!end) { return false; }                              // okänt slut → aldrig arkivera (säkert)
+        if (now <= end.getTime() + 5 * 864e5) { return false; }  // ej färdig-frusen än
+        return courseScopedKeys_(shared, courseSlug(l.name)).length > 0;   // nåt kvar på board/shared → värt att arkivera
+      });
+      // Sekventiellt: hämta korten → arkivera → nästa. En kurs som failar stoppar ej svepet.
+      return stale.reduce(function (p, l) {
+        return p.then(function () {
+          return restGet(token, 'lists/' + l.id + '/cards?fields=id').then(function (cards) {
+            return archiveStaleCourse_(l.name, cards || []);
+          }).catch(function () {});
+        });
+      }, Promise.resolve());
     });
   }).catch(function () {});
 }
@@ -2467,8 +2516,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var MALL_LBL2 = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
       if (opts.kind === 'uppfoljning') {
         Promise.all([
-          t.get('board', 'shared', key + '_mailU').catch(function () { return null; }),
-          t.get('board', 'shared', key + '_mailUE').catch(function () { return null; }),
+          getCoursePersist_(key + '_mailU'),    // arkiv-fallback för avslutad kurs (getCoursePersist_ rejectar aldrig)
+          getCoursePersist_(key + '_mailUE'),
         ]).then(function (r) {
           if ((r[0] || r[1]) && !mailOut.children.length) {
             mailOut.appendChild(mailBox('Uppföljningssamtal – till alla gruppledare', String(r[0] || ''), key + '_mailU', cfgUppf, docCfgUppf));
@@ -2477,8 +2526,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         }).catch(function () {});
       } else {
         Promise.all([
-          t.get('board', 'shared', key + '_mailA').catch(function () { return null; }),
-          t.get('board', 'shared', key + '_mailB').catch(function () { return null; }),
+          getCoursePersist_(key + '_mailA'),    // arkiv-fallback för avslutad kurs
+          getCoursePersist_(key + '_mailB'),
         ]).then(function (r) {
           if ((r[0] || r[1]) && !mailOut.children.length) {
             mailOut.appendChild(mailBox('Till alla gruppledare (översikt)', String(r[0] || ''), key + '_mailA', cfgAlla));
@@ -2611,10 +2660,11 @@ function loadCourse(listId, listName) {
     var _cg = document.getElementById('vz-cv-closegaps');
     if (_cg) { _cg.addEventListener('click', function (e) { e.preventDefault(); offerGapClose(res[1] || []); }); }
     loadGenderSplit(model.participants);
-    loadStaff(res[0]);
     // Ladda panel-layout + kollaps + ARKIV-fallback (avslutad kurs) FÖRST → paneler placeras deterministiskt OCH
-    // per-kurs-loaders (allergi/mejl/e-post) har COURSE_ARCHIVE redo att falla tillbaka på.
+    // per-kurs-loaders (allergi/mejl/e-post/assistent-emails) har COURSE_ARCHIVE redo att falla tillbaka på.
+    // loadStaff körs HÄR (ej utanför) eftersom assistent-email-loadern (renderStaffPanel) läser via getCoursePersist_.
     Promise.all([loadPanelLayout(), loadPanelCollapsed(), loadCourseArchive_(res[0], res[1] || [])]).then(function () {
+      loadStaff(res[0]);
       loadHfPanel(res[1] || [], res[0]);
       loadStoryMatrix(res[0], model.participants, res[1] || []);
       loadCourseChecklist(res[0]);
@@ -2623,7 +2673,7 @@ function loadCourse(listId, listName) {
       setTimeout(reorderBelowPanels_, 1500);           // säkerhetsnät: sortera om när alla (även sen-laddade) panelerna landat
     });
     loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus — ingen per-kurs-persist)
-    archiveStaleCourse_(res[0], res[1] || []);       // arkiv-på-slut: avslutad kurs (slut+5d) → metadata till frusna kort, frigör board/shared
+    sweepStaleCourses_();                            // arkiv-på-slut: SVEP alla avslutade kurser (slut+5d) → metadata till frusna kort, frigör board/shared (täcker aktuell kurs också)
 
   }).catch(function (err) {
     var diag;
