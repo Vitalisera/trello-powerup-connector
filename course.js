@@ -15,6 +15,11 @@
 var CFG = window.NYA_ZAPIER_CONFIG;
 var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var ROOT = function () { return document.getElementById('root'); };
+// Signalera att APPEN driver renderingen → course-view.js autoBoot renderar INTE DEMO_MODEL. Utan detta ritas
+// mall-/dummydatan ("Astrid Lindholm Bergström…") först och skrivs normalt över av riktig data — MEN om laddningen
+// fastnar för en användare (t.ex. Chrome third-party storage partitioning → isAuthorized() hänger) blir fejkdatan
+// kvar och maskerar det verkliga felet. Sätts vid PARSE (course.js körs efter course-view.js, före DOMContentLoaded/autoBoot).
+(function () { var r = document.getElementById('root'); if (r) { r.setAttribute('data-vz-manual', '1'); } })();
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 // Dedupa e-postlista skiftlägesokänsligt, behåll ordning. Ren funktion (proof-bar). (Granskning 2026-06-18: 3 kopior → en källa.)
@@ -2765,9 +2770,22 @@ function boot() {
     ROOT().innerHTML = msg('Trello-API-nyckel (APP_KEY) är inte ifylld i config.js. Generera den i Power-Up admin → API Key, och lägg in den.');
     return;
   }
+  // Omedelbar återkoppling så en HÄNGANDE isAuthorized() (Chrome third-party storage partitioning → token når ej
+  // iframen → löftet varken resolvar eller rejectar) inte lämnar en tom/demo-maskerad vy. Watchdog → actionabelt fel efter 8s.
+  ROOT().innerHTML = msg('⏳ Ansluter till Trello …');
+  var settled = false;
+  var watchdog = setTimeout(function () {
+    if (settled) { return; }
+    ROOT().innerHTML = msg('⚠️ Trello-anslutningen svarar inte. Vanligaste orsaken: Chrome blockerar Power-Upens '
+      + 'lagring (Third-Party Storage Partitioning) så din sparade Trello-token inte når den här vyn.'
+      + '<br><button class="vzbtn" id="reauth">Anslut om</button> &nbsp; <button class="vzbtn" id="retry">Försök igen</button>');
+    var rb = document.getElementById('retry'); if (rb) { rb.addEventListener('click', function () { boot(); }); }
+    var ab = document.getElementById('reauth'); if (ab) { ab.addEventListener('click', function () { showAuth(); }); }
+  }, 8000);
   t.getRestApi().isAuthorized().then(function (ok) {
+    settled = true; clearTimeout(watchdog);
     if (ok) { pickAndLoad(); } else { showAuth(); }
-  }).catch(function () { showAuth('Kunde inte kontrollera Trello-anslutningen.'); });
+  }).catch(function () { settled = true; clearTimeout(watchdog); showAuth('Kunde inte kontrollera Trello-anslutningen.'); });
 }
 
 // Esc stänger modalen oavsett var fokus ligger i iframen.
