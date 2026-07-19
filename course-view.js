@@ -787,6 +787,11 @@
   function autoBoot() {
     var root = document.getElementById('root') || document.querySelector('[data-course-root]');
     if (!root) return;
+    // ROBUST demo-spärr (Robert 2026-07-19, Malin såg demon på v128): rendera ALDRIG DEMO_MODEL i en riktig Trello-
+    // modal — den är alltid en iframe (self !== top), och där driver course.js renderingen. Bara FRISTÅENDE
+    // förhandsgranskning (top-level) får demo. Oberoende av course.js-timing/init: om course.js kastar tidigt (t.ex.
+    // p.trellocdn.com blockerat av ett tillägg) hann data-vz-manual aldrig sättas → detta fångar det ändå.
+    if (window.self !== window.top && !window.NYA_ZAPIER_COURSE_MODEL) return;
     if (root.getAttribute('data-vz-manual') === '1') return; // app:en wirar själv
     var model = window.NYA_ZAPIER_COURSE_MODEL || DEMO_MODEL;
     render(root, model, {

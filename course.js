@@ -12,14 +12,33 @@
  */
 'use strict';
 
-var CFG = window.NYA_ZAPIER_CONFIG;
-var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var ROOT = function () { return document.getElementById('root'); };
-// Signalera att APPEN driver renderingen → course-view.js autoBoot renderar INTE DEMO_MODEL. Utan detta ritas
-// mall-/dummydatan ("Astrid Lindholm Bergström…") först och skrivs normalt över av riktig data — MEN om laddningen
-// fastnar för en användare (t.ex. Chrome third-party storage partitioning → isAuthorized() hänger) blir fejkdatan
-// kvar och maskerar det verkliga felet. Sätts vid PARSE (course.js körs efter course-view.js, före DOMContentLoaded/autoBoot).
-(function () { var r = document.getElementById('root'); if (r) { r.setAttribute('data-vz-manual', '1'); } })();
+// Demo-spärr FÖRST — före allt som kan kasta. Signalerar att APPEN driver renderingen → course-view.js autoBoot
+// renderar ej DEMO_MODEL. (V=128 satte detta EFTER TrelloPowerUp.iframe → om den raden kastade hann spärren aldrig
+// sättas och demon maskerade felet. Malin v128 2026-07-19.) course-view.js har OCKSÅ en oberoende iframe-spärr.
+(function () { var r = ROOT(); if (r) { r.setAttribute('data-vz-manual', '1'); } })();
+
+var CFG = window.NYA_ZAPIER_CONFIG;
+// FAIL-LOUD init: om Trello-scriptet (p.trellocdn.com) eller config.js inte laddats — vanligast ett webbläsar-tillägg
+// (annonsblockerare/integritet) eller brandvägg som blockerar trellocdn, per-användare + durabelt — visa ett LÄSBART
+// fel istället för att kasta tyst (då blev #root kvar med autoBoot-demon = vilseledande fejkdata).
+var t;
+try {
+  if (typeof TrelloPowerUp === 'undefined' || !TrelloPowerUp) { throw new Error('Trello Power-Up-scriptet (p.trellocdn.com) kunde inte laddas'); }
+  if (!CFG) { throw new Error('config.js kunde inte laddas'); }
+  t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
+} catch (e) {
+  var _r = ROOT();
+  if (_r) {
+    _r.innerHTML = '<div style="font-family:Calibri,system-ui,sans-serif;max-width:540px;margin:40px auto;padding:18px 20px;'
+      + 'background:#fdecea;border:1px solid #f5c6c2;border-radius:10px;color:#8a1c1c;line-height:1.5">'
+      + '<b>⚠️ Kunde inte starta Power-Upen.</b><br>' + esc(e.message) + '.<br><br>'
+      + 'Vanligaste orsaken: ett webbläsar-tillägg (annonsblockerare/integritetsskydd) eller en brandvägg som '
+      + 'blockerar <code>p.trellocdn.com</code>. Prova: ladda om sidan, pausa tillägg för trello.com, eller använd '
+      + 'en annan webbläsare.</div>';
+  }
+  throw e;   // avbryt resten (t saknas → inget nedanför kan köra)
+}
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 // Dedupa e-postlista skiftlägesokänsligt, behåll ordning. Ren funktion (proof-bar). (Granskning 2026-06-18: 3 kopior → en källa.)
