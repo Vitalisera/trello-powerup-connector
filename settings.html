@@ -54,7 +54,7 @@
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || '';
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
-      ['https://p.trellocdn.com/power-up.min.js', './config.js' + q, './settings.js' + q]
+      ['https://p.trellocdn.com/power-up.min.js?vz=1', './config.js' + q, './settings.js' + q]
         .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
     })();
   </script>
