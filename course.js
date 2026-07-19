@@ -29,12 +29,33 @@ try {
   if (!CFG) { throw new Error('config.js kunde inte laddas'); }
   t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 } catch (e) {
+  var _loadFail = /kunde inte laddas/.test(String(e && e.message));   // (1) resurs laddades ej vs (2) SDK kastade internt
+  // SELF-HEAL (Robert 2026-07-20): TrelloPowerUp.iframe() kan krascha SYNKRONT ("t is not iterable") på en KORRUPT
+  // localStorage-post som SDK:n läser vid init (Trello-token/member-cache/Statsig-overrides). Sådant state är per-origin
+  // (vitalisera.github.io i Trello-kontexten) + DURABELT → överlever hard-reload OCH Chrome-omstart → förklarar varför
+  // INGET av Malins försök hjälpte (cache/minne rensas då, localStorage inte). course.js kör i SAMMA origin → vi kan
+  // rensa den och ladda om EN gång (guard i sessionStorage → ingen reload-loop). Kostar bara en engångs-omauth. Görs
+  // ej vid _loadFail (då är det trellocdn-blockering, ej korrupt state).
+  var _healed = false;
+  if (!_loadFail) {
+    try {
+      if (window.sessionStorage && !sessionStorage.getItem('vz_sdk_selfheal')) {
+        sessionStorage.setItem('vz_sdk_selfheal', '1');
+        try { window.localStorage.clear(); } catch (_) {}
+        _healed = true;
+        location.reload();
+      }
+    } catch (_) {}
+  }
   var _r = ROOT();
-  if (_r) {
-    var _loadFail = /kunde inte laddas/.test(String(e && e.message));   // (1) resurs laddades ej vs (2) SDK kastade internt
+  if (_r && !_healed) {
+    var _healTried = false;
+    try { _healTried = !!(window.sessionStorage && sessionStorage.getItem('vz_sdk_selfheal')); } catch (_) {}
     var _cause = _loadFail
       ? 'Vanligaste orsaken: ett webbläsar-tillägg (annonsblockerare/integritetsskydd) eller en brandvägg som blockerar <code>p.trellocdn.com</code>. Prova: ladda om sidan, pausa tillägg för trello.com, eller använd en annan webbläsare.'
-      : 'Trello-scriptet laddades men kunde inte initieras i den här webbläsaren. Prova: ladda om sidan, uppdatera webbläsaren till senaste version, eller öppna Trello i Google Chrome.';
+      : (_healTried
+        ? 'Vi försökte automatiskt rensa skadad lagrad data i din webbläsare, men felet kvarstår. Prova en annan webbläsare, eller skicka skärmdumpen nedan till support.'
+        : 'Trello-scriptet laddades men kunde inte initieras i den här webbläsaren.');
     _r.innerHTML = '<div style="font-family:Calibri,system-ui,sans-serif;max-width:560px;margin:40px auto;padding:18px 20px;'
       + 'background:#fdecea;border:1px solid #f5c6c2;border-radius:10px;color:#8a1c1c;line-height:1.5">'
       + '<b>⚠️ Kunde inte starta Power-Upen.</b><br>' + _cause
