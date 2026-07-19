@@ -19,9 +19,10 @@ var ROOT = function () { return document.getElementById('root'); };
 (function () { var r = ROOT(); if (r) { r.setAttribute('data-vz-manual', '1'); } })();
 
 var CFG = window.NYA_ZAPIER_CONFIG;
-// FAIL-LOUD init: om Trello-scriptet (p.trellocdn.com) eller config.js inte laddats — vanligast ett webbläsar-tillägg
-// (annonsblockerare/integritet) eller brandvägg som blockerar trellocdn, per-användare + durabelt — visa ett LÄSBART
-// fel istället för att kasta tyst (då blev #root kvar med autoBoot-demon = vilseledande fejkdata).
+// FAIL-LOUD init med SJÄLV-DIAGNOSTIK. Två felklasser fångas: (1) resurs laddades ej (TrelloPowerUp/config saknas →
+// vanligast tillägg/brandvägg som blockerar trellocdn); (2) SDK:n laddade men TrelloPowerUp.iframe() KASTAR internt
+// (Malin 2026-07-20: "t is not iterable" — reproduceras EJ i annan Chrome → webbläsar-/miljöspecifikt). Felrutan visar
+// userAgent + stack så orsaken syns via en skärmdump UTAN DevTools. Utan detta maskerade autoBoot-demon felet helt.
 var t;
 try {
   if (typeof TrelloPowerUp === 'undefined' || !TrelloPowerUp) { throw new Error('Trello Power-Up-scriptet (p.trellocdn.com) kunde inte laddas'); }
@@ -30,12 +31,19 @@ try {
 } catch (e) {
   var _r = ROOT();
   if (_r) {
-    _r.innerHTML = '<div style="font-family:Calibri,system-ui,sans-serif;max-width:540px;margin:40px auto;padding:18px 20px;'
+    var _loadFail = /kunde inte laddas/.test(String(e && e.message));   // (1) resurs laddades ej vs (2) SDK kastade internt
+    var _cause = _loadFail
+      ? 'Vanligaste orsaken: ett webbläsar-tillägg (annonsblockerare/integritetsskydd) eller en brandvägg som blockerar <code>p.trellocdn.com</code>. Prova: ladda om sidan, pausa tillägg för trello.com, eller använd en annan webbläsare.'
+      : 'Trello-scriptet laddades men kunde inte initieras i den här webbläsaren. Prova: ladda om sidan, uppdatera webbläsaren till senaste version, eller öppna Trello i Google Chrome.';
+    _r.innerHTML = '<div style="font-family:Calibri,system-ui,sans-serif;max-width:560px;margin:40px auto;padding:18px 20px;'
       + 'background:#fdecea;border:1px solid #f5c6c2;border-radius:10px;color:#8a1c1c;line-height:1.5">'
-      + '<b>⚠️ Kunde inte starta Power-Upen.</b><br>' + esc(e.message) + '.<br><br>'
-      + 'Vanligaste orsaken: ett webbläsar-tillägg (annonsblockerare/integritetsskydd) eller en brandvägg som '
-      + 'blockerar <code>p.trellocdn.com</code>. Prova: ladda om sidan, pausa tillägg för trello.com, eller använd '
-      + 'en annan webbläsare.</div>';
+      + '<b>⚠️ Kunde inte starta Power-Upen.</b><br>' + _cause
+      + '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">Teknisk info (visa för support)</summary>'
+      + '<div style="margin-top:8px;font:12px/1.45 monospace;white-space:pre-wrap;word-break:break-word;color:#5a2020">'
+      + 'Fel: ' + esc(String(e && e.message)) + '\n'
+      + 'Webbläsare: ' + esc(String(navigator.userAgent)) + '\n'
+      + 'Stack: ' + esc(String((e && e.stack) || '(ingen)').slice(0, 600))
+      + '</div></details></div>';
   }
   throw e;   // avbryt resten (t saknas → inget nedanför kan köra)
 }
