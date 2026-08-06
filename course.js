@@ -210,6 +210,21 @@ function daysToStart(listName) {
   today.setHours(0, 0, 0, 0);
   return Math.round((start - today) / 86400000);
 }
+// Default-kurs vid board-entry: minsta ICKE-negativa daysToStart (närmast kommande; idag = 0 räknas som
+// kommande), annars senast passerade (minst negativ). null (odaterad lista) ignoreras när daterade finns.
+function pickDefaultCourseIdx(days) {
+  var best = 0, bestD = null, bestFuture = false;
+  for (var i = 0; i < days.length; i++) {
+    var d = days[i];
+    if (d === null || d === undefined) { continue; }
+    var future = d >= 0;
+    var better = bestD === null
+      || (future && !bestFuture)
+      || (future === bestFuture && (future ? d < bestD : d > bestD));
+    if (better) { best = i; bestD = d; bestFuture = future; }
+  }
+  return best;
+}
 // Deadline = startdatum minus N dagar, formaterat "D mån" (sv). Ren funktion. '' om ogiltigt.
 var MONTHS_SV = ['jan', 'feb', 'mars', 'apr', 'maj', 'juni', 'juli', 'aug', 'sep', 'okt', 'nov', 'dec'];
 function deadlineDateStr(listName, daysBefore) {
@@ -2785,7 +2800,7 @@ function pickAndLoad() {
     lists = (lists || []).filter(function (l) { return l && l.name; });
     var courses = lists.filter(function (l) { return daysToStart(l.name) !== null; });
     if (!courses.length) { courses = lists; }
-    var chosen = courses[0];
+    var chosen = courses[pickDefaultCourseIdx(courses.map(function (c) { return daysToStart(c.name); }))];
     if (!chosen) { ROOT().innerHTML = msg('Inga kurslistor hittades på boarden.'); return; }
     if (courses.length > 1) { renderSwitcher(courses, chosen); }
     loadCourse(chosen.id, chosen.name);
