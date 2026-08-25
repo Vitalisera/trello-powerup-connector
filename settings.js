@@ -68,7 +68,7 @@ function render(s) {
     + '</div>'
     + '<div class="vz-field">'
     + '<label for="vz-admin">Admin-e-post (kopia + kvittens)</label>'
-    + '<p class="hint">Får kopia på skarpa utskick: cc på gruppledar-mejlen, och på praktisk info <b>både en hemlig kopia av varje deltagarmejl och en kvittens</b> som listar vilka som fick det och vilka som inte gjorde det. Lämna tom = ingen kopia alls, och då syns utskicket inte för någon annan än den som skickade. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>
+    + '<p class="hint">Får kopia på skarpa utskick: cc på gruppledar-mejlen, och på praktisk info <b>både en hemlig kopia av varje deltagarmejl och en kvittens</b> som listar vilka som fick det och vilka som inte gjorde det. Lämna tom = ingen kopia alls, och då syns utskicket inte för någon annan än den som skickade. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>'
     + '<input type="email" id="vz-admin" placeholder="admin@vitalisera.se" value="' + esc(s.adminEmail || '') + '">'
     + '</div>'
     + '<div class="vz-field">'
