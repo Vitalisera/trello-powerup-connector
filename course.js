@@ -1415,9 +1415,16 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
     var mode = resolveSendMode(settings);
     var tokens = practicalTokens(courseName);
     var tokenLines = 'Kursdatum: ' + (tokens.KURSDATUM || '–') + '\nStart: ' + (tokens.STARTDAG || '–') + ' kl. ' + tokens.STARTTID + '\nSlut: ' + (tokens.SLUTDAG || '–');
-    var modeWarn = mode.live
+    var admin = String(settings.adminEmail || '').trim();
+    var copyLine = mode.live
+      ? (admin
+        ? '\nKopia + kvittens går till ' + admin + '.'
+        : '\n⚠️ Ingen admin-e-post är satt i Inställningar — ingen får kopia eller kvittens på utskicket.')
+      : '';
+    var modeWarn = (mode.live
       ? '⚠️ SKARPT LÄGE — PDF:en mejlas till ' + targets.length + ' RIKTIGA deltagare.'
-      : 'TESTLÄGE — mejlen redirectas till ' + (mode.redirect || '(ingen redirect satt!)') + '. Inga deltagare nås, steg 7 bockas ej.';
+      : 'TESTLÄGE — mejlen redirectas till ' + (mode.redirect || '(ingen redirect satt!)') + '. Inga deltagare nås, steg 7 bockas ej.')
+      + copyLine;
     courseInModalConfirm(
       'Skicka praktisk information (' + label + ') till ' + targets.length + ' deltagare?\n\n' + tokenLines + '\n\n' + modeWarn + '\n\nVerifiera datumen ovan innan du skickar.',
       'Skicka', function () {
@@ -1430,6 +1437,10 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
             dryRun: false, live: mode.live === true, redirectEmail: mode.redirect, courseName: courseName, docId: doc.docId,
             recipients: targets.map(function (r) { return { code: r.code, email: r.email }; }),
             senderName: settings.senderName, replyTo: settings.replyTo,
+            // Admin-adressen ger Malin BÅDE en hemlig kopia av varje mejl och en kvittens över utfallet.
+            // Utan den syns utskicket aldrig för henne: Apps Script kör som Roberts konto, så mejlen
+            // hamnar i hans skickat-mapp. (Robert 2026-08-25.)
+            adminEmail: settings.adminEmail,
           });
         }).then(function (res) {
           if (!res || !res.ok) { throw new Error('Utskick misslyckades (' + ((res && res.error) || 'okänt') + ').'); }
@@ -1456,7 +1467,8 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
             rr.notBocked.forEach(function (r) { r.sentNoBock = true; });
             if (onSent) { onSent(rr.bocked); }   // markera BARA bockade done; paint visar sentNoBock-rader distinkt
             var msg = '✓ Skickade praktisk info till ' + okTargets.length + ' deltagare'
-              + (rr.notBocked.length ? '. ⚠️ ' + rr.notBocked.length + ' steg 7-bock misslyckades — bocka manuellt i korten (mejlen ÄR skickade, skicka INTE igen).' : ' och bockade steg 7.');
+              + (rr.notBocked.length ? '. ⚠️ ' + rr.notBocked.length + ' steg 7-bock misslyckades — bocka manuellt i korten (mejlen ÄR skickade, skicka INTE igen).' : ' och bockade steg 7.')
+              + (res.receipt && res.receipt.sent ? ' Kvittens + kopior skickade till ' + res.receipt.to + '.' : '');
             try { t.alert({ message: msg, duration: rr.notBocked.length ? 13 : 9, display: rr.notBocked.length ? 'warning' : 'success' }); } catch (e) {}
           }).catch(function (err) {
             btn.disabled = false; btn.textContent = orig;

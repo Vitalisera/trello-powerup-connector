@@ -8,7 +8,9 @@
  *
  * Fält (MVP):
  *   - doctorEmail        : läkarens e-post (HF-mappen delas hit; fast adress, B1)
- *   - adminEmail         : cc på skarpa utskick (gruppledar-mejl) → admin får kopia
+ *   - adminEmail         : kopia på skarpa utskick → cc på gruppledar-mejl, och hemlig kopia +
+ *                          kvittens på praktisk info (Malin såg annars inte att mejlen gick iväg —
+ *                          Apps Script kör som Roberts konto, så de hamnar i HANS skickat-mapp)
  *   - testMode           : test-läge på/av (fail-closed grind för skarpa mutationer/utskick)
  *   - testRedirectEmail  : i test-läge går utskick/delning HIT istället för skarp mottagare
  *
@@ -65,8 +67,8 @@ function render(s) {
     + '<input type="email" id="vz-doctor" placeholder="lakare@exempel.se" value="' + esc(s.doctorEmail || '') + '">'
     + '</div>'
     + '<div class="vz-field">'
-    + '<label for="vz-admin">Admin-e-post (cc)</label>'
-    + '<p class="hint">Läggs som cc på skarpa utskick (t.ex. gruppledar-mejl) så admin får en kopia. Lämna tom för ingen cc. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>'
+    + '<label for="vz-admin">Admin-e-post (kopia + kvittens)</label>'
+    + '<p class="hint">Får kopia på skarpa utskick: cc på gruppledar-mejlen, och på praktisk info <b>både en hemlig kopia av varje deltagarmejl och en kvittens</b> som listar vilka som fick det och vilka som inte gjorde det. Lämna tom = ingen kopia alls, och då syns utskicket inte för någon annan än den som skickade. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>
     + '<input type="email" id="vz-admin" placeholder="admin@vitalisera.se" value="' + esc(s.adminEmail || '') + '">'
     + '</div>'
     + '<div class="vz-field">'
@@ -76,7 +78,7 @@ function render(s) {
     + '</div>'
     + '<div class="vz-field">'
     + '<label for="vz-replyto">Svara-till (reply-to)</label>'
-    + '<p class="hint">Svar på utskicken går hit, t.ex. malin.kraft@vitalisera.se. Tom = sändande kontot. (Rensas i testläge.)</p>'
+    + '<p class="hint">Utskicken kommer från <b>info@vitalisera.se</b>. Svar går hit i stället, t.ex. malin.kraft@vitalisera.se — sätt den som ska ta emot svaren. Tom = svar går till info@vitalisera.se. (Rensas i testläge.)</p>'
     + '<input type="email" id="vz-replyto" placeholder="malin.kraft@vitalisera.se" value="' + esc(s.replyTo || '') + '">'
     + '</div>'
     + '</div>'
