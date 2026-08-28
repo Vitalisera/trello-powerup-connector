@@ -7,6 +7,14 @@
   {
    "source": "/marine-business",
    "destination": "/index.html"
+  },
+  {
+   "source": "/program",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/intresse",
+   "destination": "/index.html"
   }
  ]
 }
