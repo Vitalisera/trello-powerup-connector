@@ -1,0 +1,12 @@
+{
+ "rewrites": [
+  {
+   "source": "/batmassan",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/marine-business",
+   "destination": "/index.html"
+  }
+ ]
+}
