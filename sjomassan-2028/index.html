@@ -182,6 +182,16 @@ function closeModal(){
 backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
 backdrop.querySelector('.vz-close').addEventListener('click', closeModal);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !backdrop.hidden) closeModal(); });
+const VZ_ENDPOINT = ''; // Apps Script-webappens /exec-URL – fylls i när mottagaren är live
+function sendIntresse(kalla, roll, namn, epost, meddelande) {
+  if (!VZ_ENDPOINT) return;
+  try {
+    fetch(VZ_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ kalla: kalla, roll: roll, namn: namn, epost: epost, meddelande: meddelande, sida: location.pathname + location.hash, tid: new Date().toISOString() })
+    }).catch(() => {});
+  } catch (err) {}
+}
+if (VZ_ENDPOINT) document.querySelectorAll('.vz-note').forEach(n => { n.textContent = 'Din anmälan skickas till Sjömässans team och används bara för att kontakta dig om Sjömässan 2028.'; });
 const piForm = document.getElementById('pi-form');
 piForm.addEventListener('submit', e => {
   e.preventDefault();
@@ -189,6 +199,7 @@ piForm.addEventListener('submit', e => {
   const epost = document.getElementById('pi-epost');
   if (!namn.value.trim()) { namn.focus(); return; }
   if (!epost.value.trim() || !epost.checkValidity()) { epost.focus(); return; }
+  sendIntresse('sidan', (document.querySelector('input[name="pi-roll"]:checked')||{}).value||'', namn.value.trim(), epost.value.trim(), document.getElementById('pi-msg').value.trim());
   piForm.hidden = true;
   document.getElementById('pi-done').hidden = false;
   document.getElementById('pi-done').scrollIntoView({behavior:'smooth', block:'center'});
@@ -199,6 +210,7 @@ vzForm.addEventListener('submit', e => {
   const epost = document.getElementById('vz-epost');
   if (!namn.value.trim()) { namn.focus(); return; }
   if (!epost.value.trim() || !epost.checkValidity()) { epost.focus(); return; }
+  sendIntresse('modalen', (document.querySelector('input[name="roll"]:checked')||{}).value||'', namn.value.trim(), epost.value.trim(), document.getElementById('vz-msg').value.trim());
   document.getElementById('vz-form-wrap').hidden = true;
   document.getElementById('vz-done').hidden = false;
   backdrop.querySelector('.vz-close').focus();
