@@ -15,6 +15,10 @@
   {
    "source": "/intresse",
    "destination": "/index.html"
+  },
+  {
+   "source": "/utstallare",
+   "destination": "/index.html"
   }
  ]
 }
