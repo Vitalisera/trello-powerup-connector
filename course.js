@@ -2076,6 +2076,10 @@ function loadStoryMatrix(courseName, participants, cards) {
   var slug = norm(courseName).replace(/[^a-z0-9]+/g, '_');
   var key = 'vz_story_' + slug;
   var followKey = 'vz_followup_' + slug;
+  // Läs in kursens sammanfattningslänk (gemensam källa för BÅDA uppföljningsmejlen). getCoursePersist_
+  // ger arkiv-fallback → fungerar även på kurser som hunnit arkiveras.
+  COURSE_SUMMARY_URL = '';
+  getCoursePersist_(summaryUrlKey_(courseName)).then(function (u) { COURSE_SUMMARY_URL = String(u || ''); }).catch(function () {});
   // Livsberättelse-länk per deltagare ur kort-kommentar + kontaktuppgifter ur kort-desc (#10 uppf-enskild).
   var storyLinks = {}, contactByKey = {};
   (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); contactByKey[c.id] = parseContactFromDesc(c.desc); });
@@ -2300,6 +2304,10 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
     var docBtn = document.createElement('button'); docBtn.className = 'vz-btn'; docBtn.textContent = 'Skapa sammanfattningsdok';
     docBtn.style.marginLeft = '6px';
     function insertSummaryLink(url) {
+      // Spara som KURSDATA först — det är den källa båda mejltyperna läser vid bygget.
+      COURSE_SUMMARY_URL = String(url || '');
+      if (docCfg.courseName) { persistText(summaryUrlKey_(docCfg.courseName), COURSE_SUMMARY_URL); }
+      // Skriv även in länken i översiktsrutans text, så Malin SER den i mejlet hon granskar.
       ta.value = upsertSummaryLink_(ta.value, url);
       if (pkey) { persistText(pkey, ta.value); }
       fit();
@@ -2357,6 +2365,31 @@ function applyTokens(tpl, map) {
 }
 // Sätt in/uppdatera sammanfattningsdok-länken UTAN att ackumulera (Robert 2026-06-18-bugg: "skapa om" lade till ny varje gång).
 // Prioritet: (1) finns redan minst en länk → ersätt FÖRSTA in-place + ta bort dubbletter; (2) token kvar → fyll; (3) annars sist. Ren funktion.
+/* Sammanfattningslänken som GEMENSAM KURSDATA (Roberts analys 2026-08-29).
+ *
+ * 🔴 BUGGEN DEN LÖSER: {SAMMANFATTNINGSLÄNK} fylldes bara i den TEXTRUTA som hade "Skapa
+ * sammanfattningsdok"-knappen — översiktsmejlet. Det enskilda kontaktmejlet har samma token men ingen
+ * knapp, så där låg den kvar orörd. {GRUPPLEDARE} och {DELTAGARKONTAKTER} fylls däremot när varje
+ * mejl BYGGS, och blev därför alltid rätt. Vid utskick hittade failsafe-kontrollen den ofyllda
+ * platshållaren och stoppade hela utskicket: "⚠️ Ofylld platshållare: {SAMMANFATTNINGSLÄNK}".
+ *
+ * Det var alltså inte dokumentet, länken eller de andra ersättningarna som var fel — det var att en av
+ * tre platshållare hade en helt annan livscykel än de två andra.
+ *
+ * Nu lagras länken per kurs och ersätts när mejlet byggs, precis som de andra två. Båda mejltyperna
+ * läser samma källa, och den överlever omladdning, stängd dialog och ändrade mallar.
+ * Läses via getCoursePersist_ → fungerar även på arkiverade kurser. */
+var COURSE_SUMMARY_URL = '';
+function summaryUrlKey_(courseName) { return 'vz_summary_url_' + courseSlug(courseName); }
+function summaryMdLink_(url) { return '[länk till sammanfattningsdokumentet](' + url + ')'; }
+/* Ersätter {SAMMANFATTNINGSLÄNK} med den lagrade länken. Saknas länk lämnas token ORÖRD — då stoppar
+ * failsafe utskicket, vilket är rätt: ett mejl utan länk till dokumentet är oanvändbart för mottagaren. */
+function fillSummaryLink_(text) {
+  var t2 = String(text == null ? '' : text);
+  if (!COURSE_SUMMARY_URL) { return t2; }
+  return t2.replace(/\{SAMMANFATTNINGSLÄNK\}/g, summaryMdLink_(COURSE_SUMMARY_URL));
+}
+
 function upsertSummaryLink_(text, url) {
   var mdLink = '[länk till sammanfattningsdokumentet](' + url + ')';
   text = String(text == null ? '' : text);
@@ -2658,7 +2691,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
   var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
     var r = allLeaderEmailsFor(leaders, contacts);
-    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
+    var body = fillSummaryLink_(taVal);   // samma källa som det enskilda mejlet
+    return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(body), bodyText: mdToPlain(body) }] : [], missing: r.missing };
   } };
   // #10: uppföljning enskilt kontaktmejl per gruppledare (kontaktuppgifter + sammanfattningslänk).
   var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
@@ -2667,7 +2701,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var em = glContactEmail(a.leaderName, contacts);
       if (!em) { missing.push(a.leaderName); return; }
       var items = leaderParticipantContacts(sel, participants, a.leaderName, opts.contacts);
-      var filled = applyTokens(String(taVal == null ? '' : taVal), { GRUPPLEDARE: firstNameOf(a.leaderName), DELTAGARKONTAKTER: kontaktBlockText(items) });
+      // Alla TRE platshållarna fylls nu på samma ställe och vid samma tidpunkt — det var att
+      // {SAMMANFATTNINGSLÄNK} hade en annan livscykel som gjorde att den låg kvar ofylld.
+      var filled = applyTokens(fillSummaryLink_(taVal), { GRUPPLEDARE: firstNameOf(a.leaderName), DELTAGARKONTAKTER: kontaktBlockText(items) });
       emails.push({ to: em, cc: cc, subject: 'Kontaktuppgifter uppföljningssamtal', bodyHtml: plainToHtml(filled), bodyText: mdToPlain(filled) });
     });
     return { emails: emails, missing: missing };
