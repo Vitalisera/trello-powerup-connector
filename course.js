@@ -2118,6 +2118,52 @@ function unassignedParticipants(sel, participants, leaders) {
   }).map(function (p) { return p.name; });
 }
 function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+
+/* Kopplar sammanfattningsdokumentets rader till deltagarkorten (Robert 2026-08-29: >25 ord = samtalet
+ * utfört → bocka "Uppföljningssamtal utfört").
+ *
+ * Dokumentet bär FÖRNAMN (så skapar createSummaryDoc det), matrisen fullständiga namn. Vi matchar
+ * därför på förnamn — men BARA inom rätt gruppledares avsnitt, vilket smalnar av sökrymden rejält.
+ *
+ * 🔴 TVETYDIGHET STOPPAR, GISSAR ALDRIG. Två deltagare med samma förnamn hos samma gruppledare går
+ * inte att skilja åt i doket. Då markeras båda `ambiguous` och föreslås ALDRIG för bockning.
+ * Samma princip som nya-zapiers läkaruppslag: hellre stanna än välja fel.
+ *
+ * 🔴 FELRIKTNINGEN: allt okänt faller mot "inte utförd". En utebliven bock kostar att Malin bockar
+ * för hand. En falsk bock döljer att samtalet aldrig hölls, och deltagaren glöms bort.
+ *
+ * Ren funktion (proof-bar).
+ * @param {Array} groups svarets [{leader, rows:[{name, words, done}]}] (förnamn)
+ * @param {Object} sel urvalskartan 'pKey||Gruppledarnamn' = true
+ * @param {Array} participants [{key, name}]
+ * @param {Array} leaders fullständiga gruppledarnamn
+ * @returns {Object} { byKey: {pKey: {words, done, ambiguous, leader}}, unmatched: [namn] }
+ */
+function matchFollowupRows(groups, sel, participants, leaders) {
+  groups = groups || []; sel = sel || {}; participants = participants || []; leaders = leaders || [];
+  var byKey = {}, unmatched = [];
+  groups.forEach(function (g) {
+    if (!g || !g.leader) { return; }
+    // Doket har ledarens FÖRNAMN → hitta den fullständiga gruppledaren igen.
+    var full = leaders.filter(function (l) { return norm(firstNameOf(l)) === norm(g.leader); });
+    if (full.length !== 1) { (g.rows || []).forEach(function (r) { unmatched.push(r.name); }); return; }
+    var leader = full[0];
+    // Deltagarna som är bockade på just den gruppledaren i matrisen.
+    var mine = participants.filter(function (p) { return sel[p.key + '||' + leader]; });
+    (g.rows || []).forEach(function (r) {
+      if (!r || !r.name) { return; }
+      var hits = mine.filter(function (p) { return norm(firstNameOf(p.name)) === norm(r.name); });
+      if (hits.length === 0) { unmatched.push(r.name); return; }
+      if (hits.length > 1) {
+        // Samma förnamn hos samma ledare → omöjligt att veta vem raden gäller. Visa, bocka aldrig.
+        hits.forEach(function (p) { byKey[p.key] = { words: r.words, done: false, ambiguous: true, leader: leader }; });
+        return;
+      }
+      byKey[hits[0].key] = { words: r.words, done: r.done === true, ambiguous: false, leader: leader };
+    });
+  });
+  return { byKey: byKey, unmatched: unmatched };
+}
 // "A" / "A och B" / "A, B och C"
 function swedishList(arr) {
   arr = (arr || []).filter(Boolean);
@@ -2575,12 +2621,19 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
       // Robert 2026-06-21: färgkoda namnet efter dok-status (klart/ej) + tooltip med %/bild. Bara livsberättelse-matrisen (har dok).
       var docAttr = (opts.kind === 'livsberattelse') ? ' data-doc-pk="' + esc(p.key) + '" data-doc-kind="livs"' : '';
+      // Uppföljningsmatrisen färgkodas ur sammanfattningsdokumentet — SAMMA klasser och färger som
+      // dok-namnen (grön klar / orange påbörjad / grå okänd). Ingen egen färgskala (Robert 2026-08-29).
+      if (opts.kind === 'uppfoljning') { docAttr = ' data-uppf-pk="' + esc(p.key) + '"'; }
       return '<tr><td class="vz-story-namecell"' + docAttr + '>' + nm + '</td>' + cells + '</tr>';
     }).join('');
     sec.innerHTML = head
       + '<div class="vz-panel-note">' + esc(opts.note || '') + '</div>'
       + '<div id="vz-story-saveerr" style="display:none;margin:6px 0;padding:8px 10px;background:#fdecea;border:1px solid #f5c6c2;border-radius:8px;color:#8a1c1c;font-weight:600;font-size:13px"></div>'
       + '<div class="vz-story-scroll"><table class="vz-tbl vz-story-tbl"><thead><tr><th class="vz-story-corner">Deltagare</th>' + ths + '</tr></thead><tbody>' + trs + '</tbody></table></div>'
+      + (opts.kind === 'uppfoljning'
+        ? '<div id="vz-uppf-status" class="vz-panel-note" style="margin:9px 0 0">⏳ läser sammanfattningsdokumentet…</div>'
+          + '<div id="vz-uppf-actions" class="vz-stub-row" style="display:none"></div>'
+        : '')
       + '<div class="vz-stub-row">'
       + '<button class="vz-btn" id="vz-mail-btn">Skapa mejltext</button>'
       + '<span class="vz-stub-note">genererar redigerbar text — du granskar och skickar själv</span></div>'
@@ -2685,6 +2738,107 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   }
   paint();
   placeBelowPanel(sec, matrisKey);
+  if (opts.kind === 'uppfoljning' && opts.courseName) { loadFollowupStatus_(sec, opts.courseName, sel, participants, leaders); }
+}
+
+/* Läser sammanfattningsdokumentet och (a) färgar deltagarnamnen efter om samtalet är sammanfattat,
+ * (b) visar direktlänk till dokumentet, (c) erbjuder ETT klick som bockar de klara i Trello.
+ *
+ * 🔴 VARFÖR ETT KLICK OCH INTE HELT AUTOMATISKT: GAS läser dokumentet men har medvetet ingen
+ * Trello-token, och connectorn kör bara när någon har Kursöversikten öppen. Att ge servern en
+ * skrivtoken vore fel så länge /exec är oautentiserad (granskningsfynd 3) — då kunde vem som helst
+ * som hittar URL:en bocka av saker. Så: skanna automatiskt, bocka på bekräftelse. Det följer också
+ * husets regel om bekräftelse-dialog vid mutationer.
+ *
+ * 🔴 Bockar bara PÅ, aldrig AV: en felaktig av-bockning döljer utfört arbete, och en bock som redan
+ * sitter är någons medvetna beslut. Redan bockade räknas som klara och föreslås inte igen. */
+function loadFollowupStatus_(sec, courseName, sel, participants, leaders) {
+  var statusEl = sec.querySelector('#vz-uppf-status');
+  var actionsEl = sec.querySelector('#vz-uppf-actions');
+  if (!statusEl) { return; }
+  postToGas('courseFollowupStatus', { courseName: courseName }).then(function (res) {
+    if (!res || !res.ok) {
+      var err = (res && res.error) || 'okänt fel';
+      statusEl.innerHTML = err === 'doc_not_found'
+        ? 'Inget sammanfattningsdokument än — klicka <b>Skapa sammanfattningsdok</b> nedan, så kan samtalen bockas av härifrån när gruppledarna skrivit.'
+        : '⚠️ Kunde inte läsa sammanfattningsdokumentet (' + esc(err) + ').';
+      return;
+    }
+    var m = matchFollowupRows(res.groups, sel, participants, leaders);
+    // Färga namnen med SAMMA klasser som dok-namnen (grön klar / orange påbörjad / grå okänd).
+    var toTick = [];
+    Array.prototype.forEach.call(sec.querySelectorAll('[data-uppf-pk]'), function (el) {
+      var pk = el.getAttribute('data-uppf-pk');
+      var st = m.byKey[pk];
+      el.classList.remove('is-doc-done', 'is-doc-part', 'is-doc-none');
+      if (!st) { el.setAttribute('title', 'Uppföljningssamtal: ingen rad i sammanfattningsdokumentet'); return; }
+      var already = participantFollowupTicked_(pk);
+      if (st.done || already) { el.classList.add('is-doc-done'); }
+      else if (st.words > 0) { el.classList.add('is-doc-part'); }
+      el.setAttribute('title', 'Uppföljningssamtal: ' + st.words + ' ord skrivna'
+        + (st.ambiguous ? ' · ⚠️ flera deltagare med samma förnamn hos gruppledaren — bockas ej automatiskt'
+          : (st.done ? ' · räknas som utfört' : ' · under ' + res.minWords + ' ord, räknas ej som utfört'))
+        + (already ? ' · redan bockat' : ''));
+      if (st.done && !st.ambiguous && !already) { toTick.push(pk); }
+    });
+    var amb = Object.keys(m.byKey).filter(function (k) { return m.byKey[k].ambiguous; }).length;
+    var parts = ['<a href="' + esc(res.url) + '" target="_blank" rel="noopener">📄 Öppna sammanfattningsdokumentet ↗</a>'];
+    parts.push('Grönt namn = mer än ' + res.minWords + ' ord skrivna, alltså ett hållet samtal. Orange = påbörjat.');
+    if (amb) { parts.push('⚠️ ' + amb + ' deltagare har samma förnamn som en annan hos samma gruppledare — de bockas aldrig automatiskt.'); }
+    if (m.unmatched.length) { parts.push('⚠️ Namn i dokumentet utan match i matrisen: ' + esc(m.unmatched.join(', ')) + '.'); }
+    statusEl.innerHTML = parts.join('<br>');
+    if (toTick.length && actionsEl) {
+      actionsEl.style.display = '';
+      actionsEl.innerHTML = '<button class="vz-btn" id="vz-uppf-tick">Bocka ' + toTick.length + ' utförda samtal</button>'
+        + '<span class="vz-stub-note" id="vz-uppf-ticknote">bockar "' + esc(flowCheckItem_('uppfoljning')) + '" på de korten</span>';
+      var tickBtn = actionsEl.querySelector('#vz-uppf-tick');
+      tickBtn.addEventListener('click', function () { tickFollowups_(toTick, tickBtn, actionsEl.querySelector('#vz-uppf-ticknote')); });
+    }
+  }).catch(function (e) { statusEl.textContent = '⚠️ Kunde inte läsa sammanfattningsdokumentet: ' + ((e && e.message) || e); });
+}
+/* Är "Uppföljningssamtal utfört" redan bockat på kortet? Läser den redan hämtade kortdatan. */
+function participantFollowupTicked_(cardId) {
+  var card = COURSE_CARDS_BY_ID[cardId];
+  if (!card) { return false; }
+  var ci = findCheckItemByName_(card, flowCheckItem_('uppfoljning'));
+  return !!(ci && ci.complete);
+}
+/* Bockar "Uppföljningssamtal utfört" på de korten. Bekräftelse + fail-closed testläge + seriellt
+ * (samma mönster som steg 7-bockningen). Bockar bara PÅ. */
+function tickFollowups_(cardIds, btn, note) {
+  courseInModalConfirm(
+    'Bocka "' + flowCheckItem_('uppfoljning') + '" på ' + cardIds.length + ' deltagarkort?\n\n'
+      + 'Grundat på att gruppledaren skrivit en sammanfattning i dokumentet. Inget bockas AV, och redan bockade rörs inte.',
+    'Bocka', function () {
+      getCourseSettings().then(function (settings) {
+        if (!resolveSendMode(settings).live) {
+          if (note) { note.textContent = 'Testläge: skulle bockat ' + cardIds.length + ' kort (ingen ändring gjordes).'; }
+          return;
+        }
+        var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Bockar…';
+        t.getRestApi().getToken().then(function (token) {
+          if (!token) { throw new Error('Ingen Trello-token.'); }
+          var okN = 0, failN = 0;
+          return cardIds.reduce(function (p, cardId) {
+            return p.then(function () {
+              var card = COURSE_CARDS_BY_ID[cardId];
+              var ci = card ? findCheckItemByName_(card, flowCheckItem_('uppfoljning')) : null;
+              if (!ci) { failN++; return; }
+              return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + ci.id + '?state=complete')
+                .then(function () { okN++; applyStepChange_(cardId, { checkItemId: ci.id }, 'tick'); })
+                .catch(function () { failN++; });
+            });
+          }, Promise.resolve()).then(function () { return { okN: okN, failN: failN }; });
+        }).then(function (r) {
+          btn.disabled = false; btn.textContent = orig;
+          if (note) { note.textContent = '✓ Bockade ' + r.okN + (r.failN ? '. ⚠️ ' + r.failN + ' misslyckades — bocka dem för hand.' : '.'); }
+          if (!r.failN) { btn.style.display = 'none'; }
+        }).catch(function (e) {
+          btn.disabled = false; btn.textContent = orig;
+          if (note) { note.textContent = '⚠️ ' + ((e && e.message) || e); }
+        });
+      });
+    });
 }
 
 // Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,
