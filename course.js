@@ -703,7 +703,7 @@ var PANEL_HELP = {
   hf: { title: 'Hälsoformulär till läkare', body:
     '<p><b>Vad den gör.</b> Listar alla deltagare och låter dig skapa en <b>anonymiserad kopia</b> av varje deltagares hälsoformulär i läkarens mapp. Att klicka «Skapa läkarkopia» bockar checklistpunkten «Delat Hälsoformulär till läkare/kursledare» på kortet — det är den bocken som triggar nya-zapier att skapa kopian.</p>'
     + '<p><b>Hur du använder den.</b> 1) Klicka «Skapa läkarkopia» på de deltagare som ska till läkaren (namnen är <span style="color:#1f7a53;font-weight:600">gröna</span> när hälsoformuläret är klart). 2) Klicka «Dela mapp till läkare» längst ned — då får läkaren läsrätt på hela mappen + ett mejl från Google Drive.</p>'
-    + '<p><b>Tänk på.</b> Läkarens e-post sätts i Inställningar (kugghjulet). I testläge skapas/delas inget skarpt. Namn med ↗ öppnar deltagarens hälsoformulär.</p>' },
+    + '<p><b>Tänk på.</b> Läkarens e-post sätts per kurs i Inställningar — knappen "Vitalisera – Inställningar" högst upp på brädan. I testläge skapas/delas inget skarpt. Namn med ↗ öppnar deltagarens hälsoformulär.</p>' },
   allergi: { title: 'Matallergier', body:
     '<p><b>Vad den gör.</b> Läser alla deltagares hälsoformulär + personalens kort <b>anonymiserat</b> (koder, inga namn skickas till AI:n) och sammanställer ett färdigt mejl till kocken.</p>'
     + '<p><b>Hur du använder den.</b> 1) «Sammanställ matallergier» → texten genereras i rutan (du kan redigera den). 2) «Skicka till kock» → mejlas till kockens adress (ur listan «Kontaktuppgifter kockar»). Mejltexten redigeras i Inställningar (mall «kock»).</p>'
@@ -1754,7 +1754,7 @@ function shareDoctorFolder(courseName, btn) {
   getCourseSettings().then(function (settings) {
     var doctor = window.NYA_ZAPIER_DOCTOR.lookup(settings, courseName);
     if (!doctor) {
-      try { t.alert({ message: 'Ingen läkaradress är satt för "' + courseName + '". Sätt den per kurs i Inställningar (kugghjulet) — ingen delning görs förrän den finns.', duration: 11, display: 'error' }); } catch (e) {}
+      try { t.alert({ message: 'Ingen läkaradress är satt för "' + courseName + '". Sätt den per kurs under "Vitalisera – Inställningar" högst upp på brädan — ingen delning görs förrän den finns.', duration: 11, display: 'error' }); } catch (e) {}
       return;
     }
     courseInModalConfirm(
@@ -2408,7 +2408,7 @@ function runSendMail(opts) {
       btn.disabled = false; return;
     }
     if (!mode.live && !mode.redirect) {
-      note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare i Inställningar (kugghjul) först.';
+      note.textContent = '⚠️ Testläge utan test-mottagare. Sätt test-mottagare under "Vitalisera – Inställningar" högst upp på brädan först.';
       btn.disabled = false; return;
     }
     // FAILSAFE: blockera om någon platshållare är ofylld (t.ex. {SAMMANFATTNINGSLÄNK} — doc-knappen ej klickad).

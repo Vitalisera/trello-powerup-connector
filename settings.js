@@ -1,6 +1,7 @@
 /* global TrelloPowerUp, window, document */
 /*
- * Inställningar (kugghjul) — Vitalisera Power-Up.
+ * Inställningar — Vitalisera Power-Up. Öppnas via board-knappen "Vitalisera – Inställningar"
+ * (Vitalisera-loggan högst upp på brädan). Det finns inget kugghjul.
  *
  * Samlar konfigurerbara värden som annars vore hårdkodade. Lagras board-shared
  * (pluginData, nyckel 'vz_settings') så de delas av alla vyer på boarden och

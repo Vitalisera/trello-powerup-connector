@@ -21,7 +21,7 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '137';
+var V = '138';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 // Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
@@ -50,7 +50,10 @@ function openCourseFromBoard(t) {
   });
 }
 
-// Inställningar (kugghjul) — konfig som annars vore hårdkodad (läkar-mejl, test-läge…).
+// Inställningar — konfig som annars vore hårdkodad (läkaradresser per kurs, test-läge…).
+// ⚠️ Det finns INGET kugghjul: detta är en BOARD-KNAPP med Vitalisera-loggan som ikon och texten
+// "Vitalisera – Inställningar". Kalla den aldrig kugghjul i text Malin läser — hon letar då efter
+// en ikon som inte finns (Robert frågade "vilket kugghjul?" 2026-08-29).
 function openSettings(t) {
   return resolveTestSuffix(t).then(function (suf) {
     return t.modal({ url: vurl('./settings.html'), fullscreen: true, title: CFG.APP_NAME + ' – Inställningar' + suf, accentColor: '#08445c' });
@@ -71,7 +74,7 @@ TrelloPowerUp.initialize({
     ];
   },
 
-  // Board-knappar: Kursöversikt + Inställningar (kugghjul). icon {dark,light}.
+  // Board-knappar: Kursöversikt + Inställningar. icon {dark,light} = Vitalisera-emblemet, ej kugghjul.
   'board-buttons': function (t, opts) {
     return [
       { icon: { dark: MARK, light: MARK_WHITE }, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromBoard, condition: 'edit' },
