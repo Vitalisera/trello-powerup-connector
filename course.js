@@ -2276,6 +2276,28 @@ function glContactEmail(name, contacts) {
   var hit = (contacts || []).filter(function (c) { return glNameMatch(name, c.name); })[0];
   return hit ? hit.email : '';
 }
+/* ALLA gruppledare på kursen → e-post, oavsett om de har tilldelade samtal (Robert 2026-08-29).
+ * Uppföljningsmejlet "till alla" bär uppföljningsRESULTATET, och det vill hela gruppledargänget kunna
+ * läsa — inte bara de som råkade få ett samtal tilldelat.
+ *
+ * Skiljer sig MEDVETET från leaderEmailsFor (tilldelningsstyrd), som livsberättelse-mejlet använder:
+ * det mejlet handlar om vilka texter man ska LÄSA, och utan tilldelad deltagare finns inget att läsa.
+ * Ändra inte den ena för att den ser ut som den andra — skillnaden är avsiktlig.
+ *
+ * `leaders` är matrisens gruppledarnamn (Vitaliseraperson på plats redan bortfiltrerad i leadersP).
+ * Ren funktion (testbar). Gruppledare utan e-post hamnar i `missing` → fail-loud, aldrig tyst tappad.
+ * @returns {{tos:string[], missing:string[]}}
+ */
+function allLeaderEmailsFor(leaders, contacts) {
+  var tos = [], missing = [], seen = {};
+  (leaders || []).forEach(function (name) {
+    if (!name || seen[name]) { return; }         // samma gruppledare två gånger → en mottagare
+    seen[name] = true;
+    var em = glContactEmail(name, contacts);
+    if (em) { tos.push(em); } else { missing.push(name); }
+  });
+  return { tos: tos, missing: missing };
+}
 // Kursledare + biträdande kursledares mejl (cc på enskilda läs-mejl). Ur COURSE_LEADERS-rollerna + kontakter.
 function leaderCcEmails(contacts) {
   return (COURSE_LEADERS || [])
@@ -2471,8 +2493,10 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     });
     return { emails: emails, missing: missing };
   } };
+  // ALLA gruppledare, inte bara de med tilldelade samtal (Robert 2026-08-29) — mejlet bär
+  // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
   var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
-    var r = leaderEmailsFor(contacts);
+    var r = allLeaderEmailsFor(leaders, contacts);
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   // #10: uppföljning enskilt kontaktmejl per gruppledare (kontaktuppgifter + sammanfattningslänk).
