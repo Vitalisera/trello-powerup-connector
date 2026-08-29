@@ -225,9 +225,14 @@ function render(s) {
           + '<span style="min-width:250px;font-size:13px;color:#0d3142">' + esc(r.course)
           + (r.orphan ? ' <span title="Adressen är sparad under ett namn som inte finns bland brädans kurslistor. Kursen kan ha bytt namn i Trello — mappen i Drive bär i så fall kvar det gamla namnet, så adressen behövs fortfarande här." style="background:#fbe9c6;color:#8a5a00;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:600">okänt kursnamn</span>' : '')
           + '</span>'
-          + '<input type="email" data-vz-doctor-course="' + esc(r.course) + '" placeholder="lakare@exempel.se" value="' + esc(r.email) + '" style="flex:1;min-width:210px;padding:7px 9px;border:1px solid #cfd8dc;border-radius:8px;font-size:13px;font-family:inherit">'
+          + '<input type="email" list="vz-doctor-known" autocomplete="off" data-vz-doctor-course="' + esc(r.course) + '" placeholder="lakare@exempel.se" value="' + esc(r.email) + '" style="flex:1;min-width:210px;padding:7px 9px;border:1px solid #cfd8dc;border-radius:8px;font-size:13px;font-family:inherit">'
           + '</div>';
       }).join('');
+      // Samma förslagslista som i Kursöversiktens HF-panel — tidigare använda läkaradresser, härledda
+      // ur de som redan är satta. Att välja i stället för att skriva tar bort felskrivningsrisken.
+      host.innerHTML += '<datalist id="vz-doctor-known">' + DOCTOR.knownEmails(SAVED).map(function (e) {
+        return '<option value="' + esc(e.email) + '" label="' + esc(e.label) + '"></option>';
+      }).join('') + '</datalist>';
       if (rows.some(function (r) { return r.orphan; })) {
         host.innerHTML += '<p class="hint" style="margin-top:9px">En rad märkt <b>okänt kursnamn</b> har en sparad adress men matchar ingen kurslista på brädan — kursen kan ha döpts om. '
           + 'Ta inte bort den utan att veta: mappen i Drive bär kvar det gamla namnet, så det är den adressen som används. Lägg hellre till en rad för det nya namnet också.</p>';

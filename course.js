@@ -1517,7 +1517,8 @@ function renderHfPanel(rows, courseName) {
     + '<div style="margin-top:12px;padding-top:11px;border-top:1px solid #e4eef0">'
     + '<label for="vz-hf-doctor" style="display:block;font-weight:600;color:#08445c;font-size:13px;margin-bottom:3px">Läkarens e-postadress för denna kurs</label>'
     + '<div class="vz-panel-note" style="margin:0 0 6px">Gäller <b>' + esc(courseName) + '</b>. Varje kurs har sin egen adress — saknas den delas ingenting. Sparas automatiskt, och syns även under "Vitalisera – Inställningar".</div>'
-    + '<input type="email" id="vz-hf-doctor" placeholder="lakare@exempel.se" style="width:100%;max-width:420px;box-sizing:border-box;padding:8px 10px;border:1px solid #cfd8dc;border-radius:8px;font-size:14px;font-family:inherit">'
+    + '<input type="email" id="vz-hf-doctor" list="vz-hf-doctor-list" placeholder="lakare@exempel.se" autocomplete="off" style="width:100%;max-width:420px;box-sizing:border-box;padding:8px 10px;border:1px solid #cfd8dc;border-radius:8px;font-size:14px;font-family:inherit">'
+    + '<datalist id="vz-hf-doctor-list"></datalist>'
     + '<span id="vz-hf-doctor-note" class="vz-panel-note" style="margin-left:9px"></span>'
     + '</div>'
     + '<div class="vz-stub-row" style="margin-top:12px">'
@@ -1559,8 +1560,19 @@ function renderHfPanel(rows, courseName) {
   if (docInput) {
     var docTimer = null;
     function docFlash(txt, color) { if (docNote) { docNote.textContent = txt; docNote.style.color = color || ''; } }
+    /* Förslagslistan: tidigare använda läkaradresser (datalist → man kan fortfarande skriva en NY
+     * läkare, men slipper skriva om en återkommande). Fylls om efter varje sparning, så en adress
+     * man just satt blir valbar för nästa kurs direkt. */
+    function fillDoctorSuggestions(settings) {
+      var dl = sec.querySelector('#vz-hf-doctor-list');
+      if (!dl) { return; }
+      dl.innerHTML = window.NYA_ZAPIER_DOCTOR.knownEmails(settings).map(function (e) {
+        return '<option value="' + esc(e.email) + '" label="' + esc(e.label) + '"></option>';
+      }).join('');
+    }
     getCourseSettings().then(function (s0) {
       docInput.value = window.NYA_ZAPIER_DOCTOR.lookup(s0, courseName);
+      fillDoctorSuggestions(s0);
     }).catch(function () {});
     docInput.addEventListener('input', function () {
       if (docTimer) { clearTimeout(docTimer); }
@@ -1573,6 +1585,7 @@ function renderHfPanel(rows, courseName) {
           return t.set('board', 'shared', 'vz_settings', window.NYA_ZAPIER_DOCTOR.withCourseEmail(fresh, courseName, v));
         }).then(function () {
           docFlash(v ? '✓ sparad' : '✓ borttagen', '#1f7a53');
+          getCourseSettings().then(fillDoctorSuggestions).catch(function () {});   // ny adress → valbar direkt
           setTimeout(function () { docFlash(''); }, 2500);
         }).catch(function (e) { docFlash('⚠️ kunde inte spara: ' + ((e && e.message) || e), '#b23a2e'); });
       }, 600);

@@ -289,5 +289,49 @@ window.NYA_ZAPIER_DOCTOR = (function () {
     return out;
   }
 
-  return { lookup: lookup, buildRows: buildRows, toSaved: toSaved, withCourseEmail: withCourseEmail };
+  /* Tidigare använda läkaradresser, härledda ur de adresser som redan är satta (Robert 2026-08-29:
+   * "slipper skriva in den varje gång för hand med risk för felskrivningar").
+   *
+   * Det är SÄKERHET, inte bekvämlighet. En felskriven adress delar hälsoformulär till fel person —
+   * exakt vad som hände 22 augusti 2026. Att välja i stället för att skriva tar bort hela felklassen
+   * för återkommande läkare.
+   *
+   * Härledd, inte lagrad: ingen separat historik-nyckel som kan bli inaktuell eller äta av board-
+   * lagringens 8192-teckenbudget. Källan är doctorEmailByCourse, som ändå bevarar alla nycklar.
+   *
+   * Skiftlägesokänslig dedup — 'Lakare@VC.se' och 'lakare@vc.se' är samma brevlåda och ska inte ge två
+   * rader i listan. Den form som senast användes vinner som visningsform.
+   * Sorterad med senast använda kurs först, så den mest sannolika ligger överst.
+   * @returns {Array<{email:string, courses:string[], label:string}>}
+   */
+  function knownEmails(settings) {
+    var D = window.NYA_ZAPIER_DATE;
+    var by = (settings && settings.doctorEmailByCourse) || {};
+    var acc = {};
+    Object.keys(by).forEach(function (k) {
+      var email = trim(by[k]), course = trim(k);
+      if (!email || !course) { return; }
+      var id = email.toLowerCase();
+      if (!acc[id]) { acc[id] = { email: email, courses: [], newest: null }; }
+      acc[id].email = email;                                  // senaste stavningen vinner
+      acc[id].courses.push(course);
+      var end = D.courseEndDate(course);
+      if (end && (!acc[id].newest || end.getTime() > acc[id].newest.getTime())) { acc[id].newest = end; }
+    });
+    return Object.keys(acc).map(function (id) { return acc[id]; })
+      .sort(function (a, b) {
+        if (a.newest && b.newest) { return b.newest.getTime() - a.newest.getTime(); }
+        if (a.newest) { return -1; }
+        if (b.newest) { return 1; }
+        return 0;
+      })
+      .map(function (e) {
+        return {
+          email: e.email, courses: e.courses,
+          label: e.courses.length === 1 ? ('användes för ' + e.courses[0]) : ('användes för ' + e.courses.length + ' kurser'),
+        };
+      });
+  }
+
+  return { lookup: lookup, buildRows: buildRows, toSaved: toSaved, withCourseEmail: withCourseEmail, knownEmails: knownEmails };
 })();
