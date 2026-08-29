@@ -2838,17 +2838,12 @@ function loadFollowupStatus_(sec, courseName, sel, participants, leaders) {
     });
     var amb = Object.keys(m.byKey).filter(function (k) { return m.byKey[k].ambiguous; }).length;
     var parts = ['<a href="' + esc(res.url) + '" target="_blank" rel="noopener">📄 Öppna sammanfattningsdokumentet ↗</a>'];
-    parts.push('Grönt namn = mer än ' + res.minWords + ' ord skrivna, alltså ett hållet samtal. Orange = påbörjat.');
+    parts.push('Grönt namn = mer än ' + res.minWords + ' ord skrivna, alltså ett hållet samtal. Orange = påbörjat. '
+      + 'Gröna samtal bockas av automatiskt när den här vyn öppnas.');
     if (amb) { parts.push('⚠️ ' + amb + ' deltagare har samma förnamn som en annan hos samma gruppledare — de bockas aldrig automatiskt.'); }
     if (m.unmatched.length) { parts.push('⚠️ Namn i dokumentet utan match i matrisen: ' + esc(m.unmatched.join(', ')) + '.'); }
     statusEl.innerHTML = parts.join('<br>');
-    if (toTick.length && actionsEl) {
-      actionsEl.style.display = '';
-      actionsEl.innerHTML = '<button class="vz-btn" id="vz-uppf-tick">Bocka ' + toTick.length + ' utförda samtal</button>'
-        + '<span class="vz-stub-note" id="vz-uppf-ticknote">bockar "' + esc(flowCheckItem_('uppfoljning')) + '" på de korten</span>';
-      var tickBtn = actionsEl.querySelector('#vz-uppf-tick');
-      tickBtn.addEventListener('click', function () { tickFollowups_(toTick, tickBtn, actionsEl.querySelector('#vz-uppf-ticknote')); });
-    }
+    if (toTick.length && actionsEl) { autoTickFollowups_(toTick, actionsEl, sec); }
   }).catch(function (e) { statusEl.textContent = '⚠️ Kunde inte läsa sammanfattningsdokumentet: ' + ((e && e.message) || e); });
 }
 /* Är "Uppföljningssamtal utfört" redan bockat på kortet? Läser den redan hämtade kortdatan. */
@@ -2858,42 +2853,55 @@ function participantFollowupTicked_(cardId) {
   var ci = findCheckItemByName_(card, flowCheckItem_('uppfoljning'));
   return !!(ci && ci.complete);
 }
-/* Bockar "Uppföljningssamtal utfört" på de korten. Bekräftelse + fail-closed testläge + seriellt
- * (samma mönster som steg 7-bockningen). Bockar bara PÅ. */
-function tickFollowups_(cardIds, btn, note) {
-  courseInModalConfirm(
-    'Bocka "' + flowCheckItem_('uppfoljning') + '" på ' + cardIds.length + ' deltagarkort?\n\n'
-      + 'Grundat på att gruppledaren skrivit en sammanfattning i dokumentet. Inget bockas AV, och redan bockade rörs inte.',
-    'Bocka', function () {
-      getCourseSettings().then(function (settings) {
-        if (!resolveSendMode(settings).live) {
-          if (note) { note.textContent = 'Testläge: skulle bockat ' + cardIds.length + ' kort (ingen ändring gjordes).'; }
-          return;
-        }
-        var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Bockar…';
-        t.getRestApi().getToken().then(function (token) {
-          if (!token) { throw new Error('Ingen Trello-token.'); }
-          var okN = 0, failN = 0;
-          return cardIds.reduce(function (p, cardId) {
-            return p.then(function () {
-              var card = COURSE_CARDS_BY_ID[cardId];
-              var ci = card ? findCheckItemByName_(card, flowCheckItem_('uppfoljning')) : null;
-              if (!ci) { failN++; return; }
-              return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + ci.id + '?state=complete')
-                .then(function () { okN++; applyStepChange_(cardId, { checkItemId: ci.id }, 'tick'); })
-                .catch(function () { failN++; });
-            });
-          }, Promise.resolve()).then(function () { return { okN: okN, failN: failN }; });
-        }).then(function (r) {
-          btn.disabled = false; btn.textContent = orig;
-          if (note) { note.textContent = '✓ Bockade ' + r.okN + (r.failN ? '. ⚠️ ' + r.failN + ' misslyckades — bocka dem för hand.' : '.'); }
-          if (!r.failN) { btn.style.display = 'none'; }
-        }).catch(function (e) {
-          btn.disabled = false; btn.textContent = orig;
-          if (note) { note.textContent = '⚠️ ' + ((e && e.message) || e); }
+/* Bockar "Uppföljningssamtal utfört" AUTOMATISKT när vyn läst dokumentet — ingen knapp, inget
+ * bekräftelseklick (Robert 2026-08-29: "Jag ville ju ha det automatiskt").
+ *
+ * Jag byggde först en knapp med bekräftelse, av vana från husets mutationsregel. Det var fel läsning
+ * av kravet: regeln finns för att skydda mot IRREVERSIBLA och UTÅTRIKTADE åtgärder — skickade mejl,
+ * delade mappar. Att bocka en checklistpunkt i Trello är varken. Den syns direkt, kan bockas av med
+ * ett klick, och når ingen utanför teamet.
+ *
+ * 🔴 SKYDDEN SOM STÅR KVAR, och som är skälet till att automatiken är försvarbar:
+ *   - Bockar bara PÅ. Aldrig av. En bock som redan sitter är någons beslut och rörs inte.
+ *   - Tvetydiga deltagare (samma namn hos samma gruppledare) bockas ALDRIG.
+ *   - Fail-closed i testläge: ingenting skrivs, det står i klartext vad som SKULLE ha hänt.
+ *   - Utfallet syns i panelen. En tyst automatik vore värre än en knapp; den här berättar.
+ * Kvarstående risk är alltså att en bock sätts som Malin inte bett om — reversibelt med ett klick,
+ * och grundat på att gruppledaren faktiskt skrivit en sammanfattning. */
+function autoTickFollowups_(cardIds, host, sec) {
+  host.style.display = '';
+  host.innerHTML = '<span class="vz-stub-note" id="vz-uppf-ticknote">⏳ bockar ' + cardIds.length + ' utförda samtal…</span>';
+  var note = host.querySelector('#vz-uppf-ticknote');
+  getCourseSettings().then(function (settings) {
+    if (!resolveSendMode(settings).live) {
+      note.textContent = 'Testläge: ' + cardIds.length + ' samtal hade bockats som utförda (ingen ändring gjordes).';
+      return;
+    }
+    return t.getRestApi().getToken().then(function (token) {
+      if (!token) { throw new Error('Ingen Trello-token — kunde inte bocka automatiskt.'); }
+      var okN = 0, failed = [];
+      return cardIds.reduce(function (p, cardId) {
+        return p.then(function () {
+          var card = COURSE_CARDS_BY_ID[cardId];
+          var ci = card ? findCheckItemByName_(card, flowCheckItem_('uppfoljning')) : null;
+          if (!ci) { failed.push(cardId); return; }
+          return restWrite(token, 'PUT', 'cards/' + cardId + '/checkItem/' + ci.id + '?state=complete')
+            .then(function () {
+              okN++;
+              applyStepChange_(cardId, { checkItemId: ci.id }, 'tick');
+              // Namnet är redan grönt av dok-statusen; markera att bocken nu också sitter.
+              var cell = sec.querySelector('[data-uppf-pk="' + cardId + '"]');
+              if (cell) { cell.setAttribute('title', (cell.getAttribute('title') || '') + ' · bockad automatiskt'); }
+            })
+            .catch(function () { failed.push(cardId); });
         });
+      }, Promise.resolve()).then(function () {
+        note.textContent = okN
+          ? '✓ Bockade ' + okN + ' utförda samtal automatiskt' + (failed.length ? '. ⚠️ ' + failed.length + ' misslyckades — bocka dem för hand.' : '.')
+          : '⚠️ Kunde inte bocka någon — gör det för hand i korten.';
       });
     });
+  }).catch(function (e) { note.textContent = '⚠️ Kunde inte bocka automatiskt: ' + ((e && e.message) || e) + ' Bocka för hand.'; });
 }
 
 // Kön-fördelning (M/K) överst i kursvyn. Skickar BARA deltagarnas förnamn (låg PII) till GAS,

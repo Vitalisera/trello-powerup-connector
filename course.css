@@ -632,9 +632,15 @@
 .vz-course .vz-tbl-link .vz-ext{font-size:12px;opacity:.8}
 .vz-course .vz-tbl-name{font-size:14px}
 /* Robert 2026-06-21: färgkoda deltagar-namnen efter dok-status (klart/del/ej) i livs-matrisen + HF-panelen. Tooltip på cellen. */
-.vz-course [data-doc-pk]{cursor:help}
-.vz-course [data-doc-pk].is-doc-done .vz-tbl-link,.vz-course [data-doc-pk].is-doc-done .vz-tbl-name{color:var(--success);font-weight:600}
-.vz-course [data-doc-pk].is-doc-part .vz-tbl-link,.vz-course [data-doc-pk].is-doc-part .vz-tbl-name{color:var(--amber);font-weight:600}
+/* 🔴 BÅDA attributen måste stå i varje selektor. Uppföljningsmatrisen märker sina namnceller med
+   data-uppf-pk (dok-status kommer från sammanfattningsdokumentet, inte från deltagarens eget dok).
+   2026-08-29 satte JS klassen is-doc-done på en uppf-cell men CSS krävde [data-doc-pk] → namnet
+   förblev svart fastän koden räknat rätt. Lägger du till ett tredje ursprung: lägg till det HÄR OCKSÅ. */
+.vz-course [data-doc-pk],.vz-course [data-uppf-pk]{cursor:help}
+.vz-course [data-doc-pk].is-doc-done .vz-tbl-link,.vz-course [data-doc-pk].is-doc-done .vz-tbl-name,
+.vz-course [data-uppf-pk].is-doc-done .vz-tbl-link,.vz-course [data-uppf-pk].is-doc-done .vz-tbl-name{color:var(--success);font-weight:600}
+.vz-course [data-doc-pk].is-doc-part .vz-tbl-link,.vz-course [data-doc-pk].is-doc-part .vz-tbl-name,
+.vz-course [data-uppf-pk].is-doc-part .vz-tbl-link,.vz-course [data-uppf-pk].is-doc-part .vz-tbl-name{color:var(--amber);font-weight:600}
 .vz-course [data-doc-pk].is-doc-none .vz-tbl-link,.vz-course [data-doc-pk].is-doc-none .vz-tbl-name{color:#b23a2e}
 /* Praktisk info-panel: härledda kurs-tokens (verifiera-rutan) + e-post under namn */
 .vz-course .vz-pi-tokens{display:flex;flex-direction:column;gap:3px;margin:0 0 12px;padding:9px 12px;
