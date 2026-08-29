@@ -2145,11 +2145,25 @@ function matchFollowupRows(groups, sel, participants, leaders) {
   /* Namn i doket → person. FULLSTÄNDIGT namn först; förnamn bara som fallback.
    * Fallbacken finns för dokument som SKAPADES före 2026-08-29 och alltså bär förnamn. Den ärver
    * förnamnens tvetydighet, vilket är korrekt: de dokumenten ÄR tvetydiga, och då ska inget bockas. */
+  /* Namnjämförelse som tål osynliga skillnader i blanksteg.
+   *
+   * 🔴 VERKLIGT FALL 2026-08-29: "Anna Karlen" stod identiskt i dokumentet och i matrisen — men
+   * matchade inte. Dokumentet visade sig vara rent (11 tecken, vanligt mellanslag 32), alltså satt
+   * skillnaden i Trello-kortets namn: ett dubbelt mellanslag eller ett hårt blanksteg (U+00A0).
+   * **HTML kollapsar sådant vid rendering**, så det är OSYNLIGT i vyn — namnen såg identiska ut.
+   *
+   * `norm()` trimmar bara kanterna och missar därför inre variation. Här kollapsas allt blanksteg
+   * (mellanslag, hårt blanksteg, tabb, radbrytning) till ETT. Att göra jämförelsen okänslig för
+   * blanksteg gör den inte lösare på något farligt sätt: blanksteg är aldrig meningsbärande i ett
+   * personnamn, och två OLIKA personer skiljs fortfarande åt av bokstäverna. */
+  function normName_(v) {
+    return String(v == null ? '' : v).replace(/[\s\u00a0]+/g, ' ').trim().toLowerCase();
+  }
   function findByName(list, nameInDoc, getName) {
-    var want = norm(nameInDoc);
-    var exact = list.filter(function (x) { return norm(getName(x)) === want; });
+    var want = normName_(nameInDoc);
+    var exact = list.filter(function (x) { return normName_(getName(x)) === want; });
     if (exact.length) { return exact; }
-    return list.filter(function (x) { return norm(firstNameOf(getName(x))) === want; });
+    return list.filter(function (x) { return normName_(firstNameOf(getName(x))) === want; });
   }
   groups.forEach(function (g) {
     if (!g || !g.leader) { return; }
