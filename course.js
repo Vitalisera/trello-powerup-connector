@@ -1908,11 +1908,31 @@ function unpackSel_(stored) {
 // nyckeln (frigör den delade budgeten). Legacy-format (packat/cell-karta) hanteras av unpackSel_.
 function loadCardScopeSel_(participants, cardKey, legacyBoardKey) {
   var ids = (participants || []).map(function (p) { return p.key; }).filter(Boolean);
+  /* 🔴 ARKIV-FALLBACK (Robert 2026-08-29: "Fortfarande bara 3").
+   *
+   * Juni-kursens uppföljningskryss sattes FÖRE kort-scope infördes (V=124, 10 juli) och låg alltså i
+   * board/shared under `vz_followup_<slug>`. Arkiv-på-slut flyttade sedan hela kursens board/shared-
+   * nycklar till ankarkortens `vz_archive_<slug>` och RADERADE originalen — innan någon öppnat vyn och
+   * utlöst migreringen till kort-scope.
+   *
+   * Resultat: board-nyckeln borta, kort-scope aldrig skrivet, och den här funktionen läste bara de två.
+   * `sel` blev tom → ingen deltagare tillhörde någon gruppledare → varje namn i sammanfattnings-
+   * dokumentet hamnade i "utan match" och INGET kunde bockas. Tyst, och bara på gamla kurser.
+   *
+   * `getCoursePersist_` har haft arkiv-fallback för texterna hela tiden; matriskryssen saknade den.
+   * COURSE_ARCHIVE är laddad före matrisen (loadCourseArchive_ ligger i Promise.all före loadStoryMatrix). */
+  function legacyFromBoardOrArchive() {
+    return t.get('board', 'shared', legacyBoardKey).catch(function () { return null; }).then(function (v) {
+      if (v && typeof v === 'object' && Object.keys(v).length) { return { data: v, fromArchive: false }; }
+      var a = Object.prototype.hasOwnProperty.call(COURSE_ARCHIVE, legacyBoardKey) ? COURSE_ARCHIVE[legacyBoardKey] : null;
+      return { data: (a && typeof a === 'object') ? a : null, fromArchive: true };
+    });
+  }
   return Promise.all([
     Promise.all(ids.map(function (id) { return t.get(id, 'shared', cardKey).catch(function () { return null; }); })),
-    t.get('board', 'shared', legacyBoardKey).catch(function () { return null; }),
+    legacyFromBoardOrArchive(),
   ]).then(function (r) {
-    var perCard = r[0] || [], legacy = r[1];
+    var perCard = r[0] || [], legacySrc = r[1] || {}, legacy = legacySrc.data;
     var legacySel = unpackSel_(legacy && typeof legacy === 'object' ? legacy : {});
     // Så länge den gamla board-nyckeln FINNS är den sanningen (pre-migration). Kort-scope blir sanning först när
     // board-nyckeln raderats — efter FULL migrering. Undviker både data-förlust (partiell skrivning) OCH att
@@ -1923,7 +1943,12 @@ function loadCardScopeSel_(participants, cardKey, legacyBoardKey) {
       // INVÄNTA migreringen före render (engångskostnad första loaden): då är board-nyckeln borta innan Malin kan
       // bocka → ingen race där en async migrering skriver över hennes färska bock med stale legacy-data.
       return Promise.all(Object.keys(byCard).map(function (id) { return t.set(id, 'shared', cardKey, byCard[id]); }))   // skriv alla kort
-        .then(function () { return (t.remove ? t.remove('board', 'shared', legacyBoardKey) : t.set('board', 'shared', legacyBoardKey, undefined)); })   // radera BARA vid full succé
+        .then(function () {
+          // Kom datan ur ARKIVET finns ingen board-nyckel att radera — arkivbloben lämnas orörd (den är
+          // kursens enda kvarvarande original tills kort-scope-skrivningen bekräftats nästa load).
+          if (legacySrc.fromArchive) { return null; }
+          return (t.remove ? t.remove('board', 'shared', legacyBoardKey) : t.set('board', 'shared', legacyBoardKey, undefined));   // radera BARA vid full succé
+        })
         .catch(function () { /* partiell → behåll board-nyckeln, retry nästa load (legacy förblir sanning) */ })
         .then(function () { return legacySel; });   // använd legacy denna session (kort-scope autoritativt först nästa load)
     }
