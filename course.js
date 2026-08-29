@@ -2139,8 +2139,9 @@ function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] ||
  * @param {Array} leaders fullständiga gruppledarnamn
  * @returns {Object} { byKey: {pKey: {words, done, ambiguous, leader}}, unmatched: [namn] }
  */
-function matchFollowupRows(groups, sel, participants, leaders) {
+function matchFollowupRows(groups, sel, participants, leaders, minWords) {
   groups = groups || []; sel = sel || {}; participants = participants || []; leaders = leaders || [];
+  minWords = (typeof minWords === 'number') ? minWords : 25;   // servern skickar sitt värde; detta är bara en reserv
   var byKey = {}, unmatched = [];
   /* Namn i doket → person. FULLSTÄNDIGT namn först; förnamn bara som fallback.
    * Fallbacken finns för dokument som SKAPADES före 2026-08-29 och alltså bär förnamn. Den ärver
@@ -2195,10 +2196,18 @@ function matchFollowupRows(groups, sel, participants, leaders) {
       if (hits.length === 0) { unmatched.push(r.name); return; }
       if (hits.length > 1) {
         // Samma förnamn hos samma ledare → omöjligt att veta vem raden gäller. Visa, bocka aldrig.
-        hits.forEach(function (p) { byKey[p.key] = { words: r.words, done: false, ambiguous: true, leader: leader }; });
+        hits.forEach(function (p) { byKey[p.key] = { words: r.words, done: false, ambiguous: true, leader: leader }; });   // done låst false: vem raden gäller är okänt
         return;
       }
-      byKey[hits[0].key] = { words: r.words, done: r.done === true, ambiguous: false, leader: leader };
+      // Ord på namnraden UTÖVER själva namnet räknas med. Google Docs kan inte låsa en cell eller
+      // en rad (bara Sheets kan skydda områden), så vi kan inte hindra en gruppledare från att
+      // skriva sin sammanfattning rakt efter namnet — då får koden i stället sluta bry sig om VAR
+      // i rutan texten står (Robert 2026-08-29).
+      var p0 = hits[0];
+      var nameWords = normName_(p0.name) ? normName_(p0.name).split(' ').length : 0;
+      var extra = Math.max(0, (r.firstLineWords || 0) - nameWords);
+      var total = (r.words || 0) + extra;
+      byKey[p0.key] = { words: total, done: total > minWords, ambiguous: false, leader: leader };
     });
   });
   return { byKey: byKey, unmatched: unmatched };
@@ -2810,7 +2819,7 @@ function loadFollowupStatus_(sec, courseName, sel, participants, leaders) {
         : '⚠️ Kunde inte läsa sammanfattningsdokumentet (' + esc(err) + ').';
       return;
     }
-    var m = matchFollowupRows(res.groups, sel, participants, leaders);
+    var m = matchFollowupRows(res.groups, sel, participants, leaders, res.minWords);
     // Färga namnen med SAMMA klasser som dok-namnen (grön klar / orange påbörjad / grå okänd).
     var toTick = [];
     Array.prototype.forEach.call(sec.querySelectorAll('[data-uppf-pk]'), function (el) {
