@@ -1934,6 +1934,20 @@ function loadCardScopeSel_(participants, cardKey, legacyBoardKey) {
   ]).then(function (r) {
     var perCard = r[0] || [], legacySrc = r[1] || {}, legacy = legacySrc.data;
     var legacySel = unpackSel_(legacy && typeof legacy === 'object' ? legacy : {});
+
+    /* 🔴 ARKIVET ÄR HISTORIK — LEVANDE KORT-DATA VINNER ALLTID ÖVER DEN.
+     *
+     * Regression jag införde i V=147 och upptäckte samma dag: arkiv-fallbacken behandlade arkivbloben
+     * som "legacy", och legacy vinner enligt regeln nedan. Eftersom arkivet ALDRIG raderas (det är
+     * kursens enda kvarvarande original) betydde det att arkivets kryss skrevs tillbaka över kort-scope
+     * VID VARJE ÖPPNING. Robert hade just kryssat om hela juni-matrisen för hand — det arbetet hade
+     * raderats nästa gång vyn öppnades, tyst.
+     *
+     * Skillnaden mot board/shared-fallet är avgörande: en board-nyckel RADERAS efter lyckad migrering,
+     * så den kan bara vinna en gång. Arkivet finns kvar för alltid. Därför: arkivet används BARA när
+     * kort-scope är tomt. Board/shared-regeln nedan står oförändrad. */
+    var hasCardScope = perCard.some(function (v) { return Array.isArray(v) && v.length; });
+    if (legacySrc.fromArchive && hasCardScope) { legacySel = {}; }
     // Så länge den gamla board-nyckeln FINNS är den sanningen (pre-migration). Kort-scope blir sanning först när
     // board-nyckeln raderats — efter FULL migrering. Undviker både data-förlust (partiell skrivning) OCH att
     // avbockade tilldelningar återuppstår (union med stale legacy). Robert 2026-07-10.
