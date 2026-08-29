@@ -411,7 +411,7 @@ function renderInlineStepDetail(host, p, stepKey, card) {
     var piEmail = parseContactFromDesc(card.desc).epost || '';
     var piAction = !piEmail ? '<span class="vz-pd-note">deltagaren saknar e-post i kortet</span>'
       : (!d.checkItemId ? '<span class="vz-pd-note">checkItem "Praktisk info skickat" saknas — bocka i kortet</span>'
-        : '<button class="vz-btn vz-pd-act" data-act="sendpi">Skicka praktisk info</button>');
+        : '<button class="vz-btn vz-pd-act" data-act="sendpi">Mejla praktisk info till deltagaren</button>');
     fas2 = vzPhaseCard_('2', 'Skicka', 'Praktisk info som PDF', '<span class="vz-pd-note">Mejlar den kursgemensamma PDF:en till deltagaren och bockar steget (fail-closed i testläge).</span>', piAction);
   } else if (d.always) {
     fas2 = vzPhaseCard_('2', 'Bock', 'Klart', '<span class="vz-pd-ok">Steget är alltid klart.</span>', '');
@@ -1350,7 +1350,7 @@ function renderPracticalInfoPanel(rows, courseName) {
       + '<span>Start: <b>' + esc((tokens.STARTDAG || '–') + (tokens.STARTTID ? ' kl. ' + tokens.STARTTID : '')) + '</b></span>'
       + '<span>Slut: <b>' + esc(tokens.SLUTDAG || '–') + '</b></span></div>'
       + table
-      + '<div class="vz-stub-row" style="margin-top:12px"><button class="vz-btn" id="vz-pi-batch"' + (nPending ? '' : ' disabled') + '>Skicka till alla som inte fått (' + nPending + ')</button>'
+      + '<div class="vz-stub-row" style="margin-top:12px"><button class="vz-btn" id="vz-pi-batch"' + (nPending ? '' : ' disabled') + '>Mejla praktisk info till ' + nPending + ' som inte fått</button>'
       + '<span class="vz-stub-note">skapar/återanvänder kurs-PDF:en, mejlar per deltagare (fail-closed i testläge), bockar steg 7</span></div>';
     Array.prototype.forEach.call(sec.querySelectorAll('.vz-pi-send'), function (btn) {
       btn.addEventListener('click', function () { var r = byCode[btn.getAttribute('data-code')]; if (r) { sendPracticalInfoFlow([r], courseName, btn, 'enstaka', onSent); } });
@@ -1534,7 +1534,7 @@ function renderHfPanel(rows, courseName) {
     + '<div class="vz-panel-note">Läser hälsoformulär + assistentkort anonymiserat (koder, ej namn) och sammanställer ett mejl till kocken.</div>'
     + '<textarea id="vz-allergi" placeholder="Matallergier sammanställs här…" class="vz-textarea"></textarea>'
     + '<div class="vz-allergi-actions"><button class="vz-btn" id="vz-allergi-btn">Sammanställ matallergier</button>'
-    + '<button class="vz-btn" id="vz-allergi-kock">Skicka till kock</button></div>'
+    + '<button class="vz-btn" id="vz-allergi-kock">Mejla matallergierna till kocken</button></div>'
     + '<div id="vz-allergi-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
     + '<div id="vz-allergi-kock-out" class="vz-panel-note" style="display:none"></div>';
   placeBelowPanel(allergiSec, 'allergi');
@@ -2687,11 +2687,17 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     asg.forEach(function (a) { var em = glContactEmail(a.leaderName, contacts); if (em) { tos.push(em); } else { missing.push(a.leaderName); } });
     return { tos: tos, missing: missing };
   }
-  var cfgAlla = { kind: 'livsberattelse', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
+  /* 🔴 KNAPPTEXTER SÄGER VAD DE GÖR OCH TILL VEM (Robert 2026-08-29: "Det är alldeles för lätt att
+   * trycka på fel knapp"). Tidigare stod det "Skicka till alla" på TVÅ knappar och "Skicka enskilt" på
+   * två andra — i samma vy, olika paneler, olika mottagare och olika innehåll. Ett felklick här skickar
+   * skarpa mejl till riktiga gruppledare; texten är alltså en säkerhetsspärr, inte formulering.
+   * Dokumenttypen kommer från livsPluralForCourse (steg-medveten) — hårdkoda ALDRIG "livsberättelser". */
+  var livsP = livsPluralForCourse(COURSE_NAME).p;
+  var cfgAlla = { kind: 'livsberattelse', btnLabel: 'Mejla ' + livsP + ' till alla gruppledare', build: function (contacts, taVal) {
     var r = leaderEmailsFor(contacts);
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: livsLabelForCourse(COURSE_NAME) + ' inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
-  var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
+  var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Mejla varje gruppledare sina egna ' + livsP, hideCopy: true, build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
     asg.forEach(function (a) {
       var em = glContactEmail(a.leaderName, contacts);
@@ -2703,13 +2709,13 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
   } };
   // ALLA gruppledare, inte bara de med tilldelade samtal (Robert 2026-08-29) — mejlet bär
   // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
-  var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Skicka till alla', build: function (contacts, taVal) {
+  var cfgUppf = { kind: 'uppfoljning', btnLabel: 'Mejla uppföljningsöversikten till alla gruppledare', build: function (contacts, taVal) {
     var r = allLeaderEmailsFor(leaders, contacts);
     var body = fillSummaryLink_(taVal);   // samma källa som det enskilda mejlet
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: 'Uppföljningssamtal', bodyHtml: plainToHtml(body), bodyText: mdToPlain(body) }] : [], missing: r.missing };
   } };
   // #10: uppföljning enskilt kontaktmejl per gruppledare (kontaktuppgifter + sammanfattningslänk).
-  var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Skicka enskilt', hideCopy: true, build: function (contacts, taVal) {
+  var cfgUppfEnskild = { kind: 'uppfoljning', btnLabel: 'Mejla varje gruppledare sina deltagarkontakter', hideCopy: true, build: function (contacts, taVal) {
     var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
     asg.forEach(function (a) {
       var em = glContactEmail(a.leaderName, contacts);
@@ -2762,7 +2768,7 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
           + '<div id="vz-uppf-actions" class="vz-stub-row" style="display:none"></div>'
         : '')
       + '<div class="vz-stub-row">'
-      + '<button class="vz-btn" id="vz-mail-btn">Skapa mejltext</button>'
+      + '<button class="vz-btn" id="vz-mail-btn">Skriv mejltexterna (skickar inget)</button>'
       + '<span class="vz-stub-note">genererar redigerbar text — du granskar och skickar själv</span></div>'
       + '<div id="vz-mail-warn" class="vz-panel-note" style="color:#b5710b"></div>'
       + '<div id="vz-mail-out"></div>';
