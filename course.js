@@ -2159,10 +2159,27 @@ function matchFollowupRows(groups, sel, participants, leaders) {
   function normName_(v) {
     return String(v == null ? '' : v).replace(/[\s\u00a0]+/g, ' ').trim().toLowerCase();
   }
+  /* Börjar dokumentraden med personens namn, följt av en ordgräns?
+   *
+   * 🔴 VERKLIGT BEHOV (Robert 2026-08-29): gruppledare skriver ofta datumet på namnraden —
+   * "Mikael Karlsson (8 juli)". Utan detta matchas raden inte alls, och ett hållet och sammanfattat
+   * samtal skulle aldrig bockas av. Bevisat genom körning innan fixen: raden hamnade i omatchade.
+   *
+   * ORDGRÄNSEN ÄR SÄKERHETEN, inte en detalj. Ett rent prefixtest hade låtit "Anna Karl" matcha
+   * raden "Anna Karlen (8 juli)" — alltså fel person bockad som färdig. Genom att kräva att tecknet
+   * efter namnet inte är en bokstav eller siffra stoppas det: efter "anna karl" kommer "e". */
+  function startsWithName_(hay, needle) {
+    if (!needle || hay.indexOf(needle) !== 0) { return false; }
+    if (hay.length === needle.length) { return true; }
+    return !/[0-9a-zà-öø-ÿ]/i.test(hay.charAt(needle.length));
+  }
   function findByName(list, nameInDoc, getName) {
     var want = normName_(nameInDoc);
     var exact = list.filter(function (x) { return normName_(getName(x)) === want; });
     if (exact.length) { return exact; }
+    // Namnet plus ett tillägg ("(8 juli)", "– bokat", "2/9"). Ordgräns krävs, se startsWithName_.
+    var prefixed = list.filter(function (x) { return startsWithName_(want, normName_(getName(x))); });
+    if (prefixed.length) { return prefixed; }
     return list.filter(function (x) { return normName_(firstNameOf(getName(x))) === want; });
   }
   groups.forEach(function (g) {
