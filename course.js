@@ -1514,9 +1514,15 @@ function renderHfPanel(rows, courseName) {
     + '<div class="vz-panel-meta">' + done + ' av ' + sharable + ' läkarkopior skapade</div></div>'
     + '<div class="vz-panel-note">Klicka <b>Skapa läkarkopia</b> för att skapa den anonymiserade kopian i läkarens mapp (bockar "Delat Hälsoformulär till läkare/kursledare"). Här avgör du vilka som går till läkaren. Dela sedan hela mappen till läkaren med knappen nedan. Namn med ↗ öppnar hälsoformuläret.</div>'
     + table
+    + '<div style="margin-top:12px;padding-top:11px;border-top:1px solid #e4eef0">'
+    + '<label for="vz-hf-doctor" style="display:block;font-weight:600;color:#08445c;font-size:13px;margin-bottom:3px">Läkarens e-postadress för denna kurs</label>'
+    + '<div class="vz-panel-note" style="margin:0 0 6px">Gäller <b>' + esc(courseName) + '</b>. Varje kurs har sin egen adress — saknas den delas ingenting. Sparas automatiskt, och syns även under "Vitalisera – Inställningar".</div>'
+    + '<input type="email" id="vz-hf-doctor" placeholder="lakare@exempel.se" style="width:100%;max-width:420px;box-sizing:border-box;padding:8px 10px;border:1px solid #cfd8dc;border-radius:8px;font-size:14px;font-family:inherit">'
+    + '<span id="vz-hf-doctor-note" class="vz-panel-note" style="margin-left:9px"></span>'
+    + '</div>'
     + '<div class="vz-stub-row" style="margin-top:12px">'
     + '<button class="vz-btn" id="vz-hf-sharefolder">Dela mapp till läkare</button>'
-    + '<span class="vz-stub-note">sätter läsrätt på mappen för läkarens e-post (Inställningar) — läkaren får en Google Drive-notis</span></div>';
+    + '<span class="vz-stub-note">sätter läsrätt på mappen för adressen ovan — läkaren får en Google Drive-notis</span></div>';
   placeBelowPanel(sec, 'hf');
   applyDocNameColors_();   // initial HF-namn-färgning (om dok-status cachad); loadDocStatus uppdaterar progressivt
 
@@ -1539,6 +1545,39 @@ function renderHfPanel(rows, courseName) {
   // #18: "Dela mapp till läkare" — sätter läsrätt på "HF till läkare - <kurs>" för läkarens e-post (Inställningar).
   var folderBtn = sec.querySelector('#vz-hf-sharefolder');
   if (folderBtn) { folderBtn.addEventListener('click', function () { shareDoctorFolder(courseName, folderBtn); }); }
+
+  /* Läkaradressen redigeras HÄR, där Malin faktiskt jobbar med läkarmappen (Robert 2026-08-29) —
+   * inte bara under Inställningar. Panelen vet redan vilken kurs det gäller, så hon slipper leta rätt
+   * rad i en lista. Samma nyckel, samma kontrakt (NYA_ZAPIER_DOCTOR) — ingen andra sanning.
+   *
+   * 🔴 LÄS-OM FÖRE VARJE SKRIVNING. vz_settings bär ALLT (mallar, testläge, admin, avsändare) och
+   * delas med Inställningar. Skriver vi från en kopia vi läste när panelen ritades, raderar vi allt
+   * som ändrats däremellan — inklusive en adress Malin just satt i Inställningar i en annan flik.
+   * Att läsa direkt före skrivningen gör fönstret så kort det kan bli utan lås. */
+  var docInput = sec.querySelector('#vz-hf-doctor');
+  var docNote = sec.querySelector('#vz-hf-doctor-note');
+  if (docInput) {
+    var docTimer = null;
+    function docFlash(txt, color) { if (docNote) { docNote.textContent = txt; docNote.style.color = color || ''; } }
+    getCourseSettings().then(function (s0) {
+      docInput.value = window.NYA_ZAPIER_DOCTOR.lookup(s0, courseName);
+    }).catch(function () {});
+    docInput.addEventListener('input', function () {
+      if (docTimer) { clearTimeout(docTimer); }
+      docTimer = setTimeout(function () {
+        var v = (docInput.value || '').trim();
+        // En ogiltig adress får inte sparas — den styr vem som ser hälsoformulär.
+        if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { docFlash('⚠️ ser inte ut som en e-postadress — sparas ej', '#b23a2e'); return; }
+        docFlash('⏳ sparar…');
+        getCourseSettings().then(function (fresh) {
+          return t.set('board', 'shared', 'vz_settings', window.NYA_ZAPIER_DOCTOR.withCourseEmail(fresh, courseName, v));
+        }).then(function () {
+          docFlash(v ? '✓ sparad' : '✓ borttagen', '#1f7a53');
+          setTimeout(function () { docFlash(''); }, 2500);
+        }).catch(function (e) { docFlash('⚠️ kunde inte spara: ' + ((e && e.message) || e), '#b23a2e'); });
+      }, 600);
+    });
+  }
 
   // ── Matallergier: skicka BARA koder + HF-länkar (inga namn) till GAS,
   //    ersätt koderna med riktiga namn lokalt i svaret.

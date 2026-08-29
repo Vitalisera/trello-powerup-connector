@@ -263,5 +263,31 @@ window.NYA_ZAPIER_DOCTOR = (function () {
     return out;
   }
 
-  return { lookup: lookup, buildRows: buildRows, toSaved: toSaved };
+  /* Sätt/ta bort EN kurs adress i ett befintligt settings-objekt, utan att röra något annat.
+   *
+   * 🔴 Finns för att HF-panelen i Kursöversikten också ska kunna sätta adressen (Robert 2026-08-29:
+   * det är där Malin faktiskt jobbar med läkarmappen). Panelen delar `vz_settings` med Inställningar,
+   * och det objektet bär ALLT — mejlmallar, testläge, adminadress, avsändare. En panel som skriver
+   * `{doctorEmailByCourse: {...}}` rakt av skulle radera resten. Därför kopieras hela objektet och
+   * bara den ena nyckeln ändras.
+   *
+   * Tom adress = ta bort posten (samma regel som i Inställningar). Nyckeln trimmas, som överallt.
+   * Ren funktion → anroparen ansvarar för att LÄSA färskt före och skriva direkt efter, så fönstret
+   * för en samtidig skrivning från Inställningar blir så kort som möjligt.
+   * @returns {Object} NYTT settings-objekt (indata muteras aldrig)
+   */
+  function withCourseEmail(settings, courseName, email) {
+    var out = {}, src = settings || {};
+    Object.keys(src).forEach(function (k) { out[k] = src[k]; });
+    var by = {}, prev = src.doctorEmailByCourse || {};
+    Object.keys(prev).forEach(function (k) { by[k] = prev[k]; });
+    var course = trim(courseName), addr = trim(email);
+    if (!course) { return out; }                       // utan kurs vet vi inte vad vi skulle ändra
+    Object.keys(by).forEach(function (k) { if (trim(k) === course) { delete by[k]; } });
+    if (addr) { by[course] = addr; }
+    out.doctorEmailByCourse = by;
+    return out;
+  }
+
+  return { lookup: lookup, buildRows: buildRows, toSaved: toSaved, withCourseEmail: withCourseEmail };
 })();
