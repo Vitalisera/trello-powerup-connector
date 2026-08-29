@@ -1,0 +1,24 @@
+{
+ "rewrites": [
+  {
+   "source": "/batmassan",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/marine-business",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/program",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/intresse",
+   "destination": "/index.html"
+  },
+  {
+   "source": "/utstallare",
+   "destination": "/index.html"
+  }
+ ]
+}
