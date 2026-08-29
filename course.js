@@ -2602,6 +2602,58 @@ function withTimeout(p, ms, label) {
 // async-arbete renderar Trello den inte → knappen fastnade på "Förbereder…". Allt async sker i onConfirm.
 // opts: { kind, btn, note, prepare() -> {emails,missing}|Promise<...>, emptyHint }. Källan (kontakter/kock-mejl)
 // hämtas i prepare() → samma orkestrering för gruppledar- OCH kock-mejl. FAIL-CLOSED + in-modal bekräftelse.
+/* Varnar när ett utskick görs i FEL SKEDE av kursen (Robert 2026-08-29, efter en verklig incident:
+ * Malin skickade ut länkar till livsberättelserna igen när hon menade enskilda uppföljningsmejl).
+ *
+ * 🔴 Systemet VET när kursen är men använde aldrig den kunskapen. Varje utskick hör hemma i ett skede:
+ * gruppledarna läser livsberättelser INFÖR kursen, kocken behöver allergierna INNAN maten lagas, och
+ * uppföljningssamtal hålls EFTER. Ett utskick långt utanför sitt fönster är nästan alltid fel knapp.
+ *
+ * VARNAR, STOPPAR INTE. Det finns legitima undantag: en sen anmälan, ett försenat samtal, en
+ * omsändning. Malin ska kunna gå vidare — men inte utan att ha sett vad hon håller på med.
+ *
+ * Ren funktion (proof-bar) med `today` som parameter → tidsoberoende tester.
+ * @returns {string|null} varningstext, eller null när tidpunkten är rimlig
+ */
+function sendTimingWarning_(kind, courseName, today) {
+  var start = courseStartDate(courseName), end = courseEndDate(courseName);
+  if (!start || !end) { return null; }                       // odaterad kurs → kan inte bedöma
+  var now = (today || new Date()).getTime();
+  var dayDiff = function (a, b) { return Math.round((a - b) / 86400000); };
+  var livs = livsPluralForCourse(courseName).p;
+
+  if (kind === 'livsberattelse') {
+    if (now > end.getTime()) {
+      return 'Kursen slutade för ' + dayDiff(now, end.getTime()) + ' dagar sedan. ' + livs.charAt(0).toUpperCase() + livs.slice(1)
+        + ' skickas normalt INFÖR kursen — menade du uppföljningssamtalen?';
+    }
+    return null;
+  }
+  if (kind === 'uppfoljning') {
+    if (now < end.getTime()) {
+      var kvar = dayDiff(end.getTime(), now);
+      return 'Kursen är inte slut än (slutar om ' + kvar + ' dag' + (kvar === 1 ? '' : 'ar') + '). '
+        + 'Uppföljningssamtal hålls efter kursen — menade du ' + livs + ' till gruppledarna?';
+    }
+    // Försenat, inte felaktigt: normen ur mejlmallen (window.NYA_ZAPIER_FOLLOWUP_WINDOW_DAYS) säger att
+    // samtalen ska hållas inom så många dagar efter kursslut. Mildare ton — det är en påminnelse.
+    var fonster = window.NYA_ZAPIER_FOLLOWUP_WINDOW_DAYS;
+    var efter = dayDiff(now, end.getTime());
+    if (efter > fonster) {
+      return 'Det har gått ' + efter + ' dagar sedan kursen slutade. Samtalen skulle hållas inom '
+        + fonster + ' dagar — kontrollera att det här är rätt kurs.';
+    }
+    return null;
+  }
+  if (kind === 'kock') {
+    if (now > end.getTime()) {
+      return 'Kursen slutade för ' + dayDiff(now, end.getTime()) + ' dagar sedan. Matallergierna behövs INNAN maten lagas.';
+    }
+    return null;
+  }
+  return null;
+}
+
 function runSendMail(opts) {
   var note = opts.note, btn = opts.btn;
   btn.disabled = true; note.textContent = '⏳ Förbereder…';
@@ -2639,6 +2691,16 @@ function runSendMail(opts) {
     // verifierad live: knappen blev "stum"). Vi äger modalens DOM → rendera confirm där, garanterat synligt.
     var recN = countRecipients(emails);
     note.textContent = '';
+    // FEL SKEDE AV KURSEN? Visas FÖRST och tydligt — det är den varning som hade förhindrat att
+    // livsberättelselänkarna gick ut igen efter kursen (Robert 2026-08-29).
+    var timing = sendTimingWarning_(opts.kind, COURSE_NAME, new Date());
+    if (timing) {
+      var warn = document.createElement('div');
+      warn.style.cssText = 'margin:0 0 8px;padding:9px 11px;background:#fdecea;border:1px solid #f5c6c2;'
+        + 'border-radius:8px;color:#8a1c1c;font-weight:600;font-size:13px;line-height:1.45';
+      warn.textContent = '⚠️ ' + timing;
+      note.appendChild(warn);
+    }
     var q = document.createElement('span');
     q.textContent = (mode.live ? '⚠️ SKARPT — ' + recN + ' riktig(a) mottagare. ' : 'Testläge → allt till ' + mode.redirect + '. ')
       + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '') + 'Skicka?';

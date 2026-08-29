@@ -139,6 +139,14 @@ window.NYA_ZAPIER_TPL = {
  * courseEndDate: sista dag-månad-paret i namnet. Årskorsande intervall ("28 december 2025 -
  *   4 januari 2026") ger slutåret +1 när slutmånaden är före startmånaden.
  * Båda är RENA funktioner → proof-bara utan Trello. */
+/* Uppföljningssamtalen ska hållas inom detta antal dagar efter kursslut.
+ *
+ * Normen fanns bara som TEXT i mejlmallarna ("inom cirka tio dagar") — Robert påpekade 2026-08-29 att
+ * vi redan har en tidsgräns att pröva utskicken mot. Nu bor den här, så varningen om fel skede och
+ * mallarnas formulering utgår från samma tal i stället för att glida isär.
+ * ⚠️ Ändrar du talet: uppdatera även mall-texterna i NYA_ZAPIER_TPL (uppfoljning / uppfoljningB). */
+window.NYA_ZAPIER_FOLLOWUP_WINDOW_DAYS = 10;
+
 window.NYA_ZAPIER_DATE = (function () {
   var MONTHS = { januari: 0, februari: 1, mars: 2, april: 3, maj: 4, juni: 5, juli: 6, augusti: 7, september: 8, oktober: 9, november: 10, december: 11 };
   function norm(s) { return String(s || '').trim().toLowerCase(); }
