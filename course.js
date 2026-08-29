@@ -2142,17 +2142,25 @@ function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] ||
 function matchFollowupRows(groups, sel, participants, leaders) {
   groups = groups || []; sel = sel || {}; participants = participants || []; leaders = leaders || [];
   var byKey = {}, unmatched = [];
+  /* Namn i doket → person. FULLSTÄNDIGT namn först; förnamn bara som fallback.
+   * Fallbacken finns för dokument som SKAPADES före 2026-08-29 och alltså bär förnamn. Den ärver
+   * förnamnens tvetydighet, vilket är korrekt: de dokumenten ÄR tvetydiga, och då ska inget bockas. */
+  function findByName(list, nameInDoc, getName) {
+    var want = norm(nameInDoc);
+    var exact = list.filter(function (x) { return norm(getName(x)) === want; });
+    if (exact.length) { return exact; }
+    return list.filter(function (x) { return norm(firstNameOf(getName(x))) === want; });
+  }
   groups.forEach(function (g) {
     if (!g || !g.leader) { return; }
-    // Doket har ledarens FÖRNAMN → hitta den fullständiga gruppledaren igen.
-    var full = leaders.filter(function (l) { return norm(firstNameOf(l)) === norm(g.leader); });
+    var full = findByName(leaders, g.leader, function (l) { return l; });
     if (full.length !== 1) { (g.rows || []).forEach(function (r) { unmatched.push(r.name); }); return; }
     var leader = full[0];
     // Deltagarna som är bockade på just den gruppledaren i matrisen.
     var mine = participants.filter(function (p) { return sel[p.key + '||' + leader]; });
     (g.rows || []).forEach(function (r) {
       if (!r || !r.name) { return; }
-      var hits = mine.filter(function (p) { return norm(firstNameOf(p.name)) === norm(r.name); });
+      var hits = findByName(mine, r.name, function (p) { return p.name; });
       if (hits.length === 0) { unmatched.push(r.name); return; }
       if (hits.length > 1) {
         // Samma förnamn hos samma ledare → omöjligt att veta vem raden gäller. Visa, bocka aldrig.
@@ -2605,7 +2613,11 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     courseName: opts.courseName,
     getGroups: function () {
       return buildLeaderAssignments(sel, participants, leaders).map(function (a) {
-        return { leader: firstNameOf(a.leaderName), deltagare: a.participants.map(firstNameOf) };
+        // FULLSTÄNDIGA namn (Robert 2026-08-29, med skärmdump som bevis): augustikursens dokument
+        // fick rubriken "Roger" TVÅ gånger och deltagaren "Anna" under båda, eftersom två gruppledare
+        // och två deltagare delade förnamn. Då kan varken automatiken ELLER gruppledarna själva veta
+        // vem en rad gäller. Förnamn räcker bara så länge inga två personer delar det.
+        return { leader: a.leaderName, deltagare: a.participants.slice() };
       });
     },
   } : null;
@@ -2679,9 +2691,12 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         }
         mailBtn.disabled = true;
         mailOut.innerHTML = '<div class="vz-panel-note">⏳ Skapar mejltext…</div>';
-        // Tilldelnings-rader ("Gruppledare-förnamn: deltagare1, deltagare2 och deltagare3").
+        // Tilldelnings-rader ("Gruppledare: deltagare1, deltagare2 och deltagare3").
+        // FULLSTÄNDIGA namn av samma skäl som i sammanfattningsdokumentet (Robert 2026-08-29): står
+        // det "Roger: Anna och Kristina" när kursen har två Roger och två Anna, vet ingen gruppledare
+        // vem hen ska ringa. Detta är den rad de FAKTISKT agerar på, så tvetydigheten är värst här.
         var assignLines = assignments.map(function (a) {
-          return firstNameOf(a.leaderName) + ': ' + swedishList(a.participants.map(firstNameOf));
+          return a.leaderName + ': ' + swedishList(a.participants.slice());
         }).join('\n');
         var MALL_LBL = 'Enskilt mejl – mall (fylls per gruppledare vid utskick; cc kursledare)';
         // Läs ev. redigerade malltexter ur Inställningar (vz_settings.tpl_*); tomt → default-mall.
