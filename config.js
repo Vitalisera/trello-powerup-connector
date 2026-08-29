@@ -126,3 +126,142 @@ window.NYA_ZAPIER_TPL = {
     + 'Personal:\n{PERSONAL}\n\n'
     + 'Jag återkommer om det blir ändring i antal eller om någon ny allergi dyker upp.',
 };
+
+/* ── Delade kursdatum-hjälpare (EN källa, används av course.js OCH settings.js) ────────────────
+ * Låg 2026-08-29 i course.js, men Inställningar behöver samma logik för att kunna lista kurserna
+ * i läkaradress-fältet — och settings.html laddar inte course.js. Duplicering hade varit exakt den
+ * literal-läcka spårbarhetsrutinen finns för att förhindra, så koden bor här och course.js läser
+ * härifrån. Ändra ALDRIG kursdatum-tolkning på två ställen.
+ *
+ * courseStartDate: "24 juni - 2 juli 2026 (Steg 1)" → Date(2026-06-24). Kompakt samma-månad-intervall
+ *   ("22-30 juli 2026") tar FÖRSTA talet som startdag (buggfix Robert 2026-06-21 — annars blev
+ *   slutdagen startdag).
+ * courseEndDate: sista dag-månad-paret i namnet. Årskorsande intervall ("28 december 2025 -
+ *   4 januari 2026") ger slutåret +1 när slutmånaden är före startmånaden.
+ * Båda är RENA funktioner → proof-bara utan Trello. */
+window.NYA_ZAPIER_DATE = (function () {
+  var MONTHS = { januari: 0, februari: 1, mars: 2, april: 3, maj: 4, juni: 5, juli: 6, augusti: 7, september: 8, oktober: 9, november: 10, december: 11 };
+  function norm(s) { return String(s || '').trim().toLowerCase(); }
+  function courseStartDate(listName) {
+    var s = String(listName || '');
+    var rng = s.match(/(\d{1,2})\s*[-–]\s*\d{1,2}\s+([a-zåäö]+).*?(\d{4})/i);
+    if (rng && MONTHS[norm(rng[2])] !== undefined) { return new Date(parseInt(rng[3], 10), MONTHS[norm(rng[2])], parseInt(rng[1], 10)); }
+    var m = s.match(/(\d{1,2})\s+([a-zåäö]+).*?(\d{4})/i);
+    if (!m) { return null; }
+    var mon = MONTHS[norm(m[2])];
+    if (mon === undefined) { return null; }
+    return new Date(parseInt(m[3], 10), mon, parseInt(m[1], 10));
+  }
+  function courseEndDate(listName) {
+    var s = String(listName || '');
+    var ym = s.match(/(\d{4})/); if (!ym) { return null; }
+    var year = parseInt(ym[1], 10);
+    var dm = [], re = /(\d{1,2})\s+([a-zåäö]+)/gi, m;
+    while ((m = re.exec(s))) { var mon = MONTHS[norm(m[2])]; if (mon !== undefined) { dm.push({ d: parseInt(m[1], 10), mon: mon }); } }
+    if (!dm.length) { return null; }
+    var first = dm[0], last = dm[dm.length - 1];
+    var endYear = (last.mon < first.mon) ? year + 1 : year;
+    return new Date(endYear, last.mon, last.d);
+  }
+  /* Kurslistor som fortfarande behöver en läkaradress: allt framåt i tiden, plus kurser vars SLUT
+   * ligger högst `backDays` dagar bakåt.
+   *
+   * 🔴 SLUT, inte start. nya-zapier behåller läkarmappen i 30 dagar efter kursslut och slår upp
+   * adressen för varje mapp som ännu inte gallrats. En kurs som startade för länge sedan men slutade
+   * i förrgår MÅSTE alltså finnas med — filtrerar man på startdatum tappas den, och deras svep får
+   * "ingen adress" och stannar. Default 45 dagar = marginal mot deras 30.
+   *
+   * Odaterade listor (som inte är kurser) faller bort. `today` är en PARAMETER så testerna inte blir
+   * tidsberoende. Ren funktion. */
+  function needsDoctorEmail(listName, today, backDays) {
+    var end = courseEndDate(listName);
+    if (!end) { return false; }
+    var days = Math.round((today.getTime() - end.getTime()) / 86400000);
+    return days <= (backDays === undefined ? 45 : backDays);
+  }
+  return {
+    MONTHS: MONTHS, norm: norm,
+    courseStartDate: courseStartDate, courseEndDate: courseEndDate,
+    needsDoctorEmail: needsDoctorEmail,
+  };
+})();
+
+/* ── Läkaradress PER KURS (vz_settings.doctorEmailByCourse) ───────────────────────────────────
+ * EN källa för hela kontraktet: Inställningar bygger sina rader här, och "Dela mapp till läkare"
+ * slår upp adressen här. Två implementationer av samma uppslag vore precis det fel som orsakade
+ * läckan 22 augusti 2026.
+ *
+ * 🔴 BAKGRUNDEN, läs innan du ändrar något: koden hade tidigare EN global läkaradress med
+ * per-kurs-uppslag som föll tillbaka på den globala när kursen saknades. Augustikursen saknades.
+ * Den globala pekade på en KURSDELTAGARE. Mappen med fyra deltagares hälsoformulär delades till
+ * henne. Därför: INGEN FALLBACK. Saknas kursens adress ska flödet STANNA, aldrig gissa.
+ *
+ * Nyckeln är Trello-listans namn EXAKT (bekräftat mot nya-zapiers kod 2026-08-29: läkarmappen heter
+ * 'HF till läkare - ' + listnamn, och deras svep skalar av just det prefixet). Vi trimmar vid
+ * sparning, de trimmar vid uppslag — båda sidor, så kontraktet inte förutsätter att detta UI är
+ * enda skrivaren. */
+window.NYA_ZAPIER_DOCTOR = (function () {
+  function trim(v) { return String(v == null ? '' : v).trim(); }
+
+  /* Adressen för en kurs. Speglar nya-zapiers doctorEmailFromSettings_: trimmad nyckeljämförelse,
+   * INGEN fallback till någon global adress. '' = ingen adress satt → anroparen ska stanna. */
+  function lookup(settings, courseName) {
+    var by = (settings && settings.doctorEmailByCourse) || {};
+    var want = trim(courseName);
+    if (!want) { return ''; }                      // tomt kursnamn får ALDRIG plocka en slumpvis nyckel
+    var keys = Object.keys(by);
+    for (var i = 0; i < keys.length; i++) {
+      if (trim(keys[i]) === want) { return trim(by[keys[i]]); }
+    }
+    return '';
+  }
+
+  /* Raderna som Inställningar ska visa.
+   *
+   * 🔴 UNIONEN ÄR POÄNGEN: fönstrets kurslistor PLUS varje redan sparad nyckel. Panelen sparar hela
+   * objektet på en gång, så en sparad adress som INTE renderas skulle raderas tyst första gången
+   * Malin rör ett fält. Det gäller särskilt en kurs som döpts om i Trello: mappen bär kvar det gamla
+   * namnet, alltså är den gamla nyckeln fortfarande den nya-zapier letar efter — den får inte
+   * försvinna bara för att den inte längre matchar någon lista.
+   *
+   * En sparad nyckel utan matchande kurslista märks `orphan:true` → UI:t varnar om möjligt namnbyte.
+   * @returns {Array<{course:string, email:string, orphan:boolean}>} kommande kurser först
+   */
+  function buildRows(listNames, settings, today, backDays) {
+    var D = window.NYA_ZAPIER_DATE;
+    var by = (settings && settings.doctorEmailByCourse) || {};
+    var rows = [], seen = {};
+    (listNames || []).forEach(function (n) {
+      var name = trim(n);
+      if (!name || seen[name] || !D.needsDoctorEmail(name, today, backDays)) { return; }
+      seen[name] = true;
+      rows.push({ course: name, email: lookup(settings, name), orphan: false });
+    });
+    Object.keys(by).forEach(function (k) {
+      var name = trim(k);
+      if (!name || seen[name]) { return; }
+      seen[name] = true;
+      rows.push({ course: name, email: trim(by[k]), orphan: true });
+    });
+    rows.sort(function (a, b) {
+      if (a.orphan !== b.orphan) { return a.orphan ? 1 : -1; }      // föräldralösa sist
+      var da = D.courseEndDate(a.course), db = D.courseEndDate(b.course);
+      if (!da || !db) { return 0; }
+      return db.getTime() - da.getTime();                            // senaste slut först
+    });
+    return rows;
+  }
+
+  /* Rader → objektet som sparas. Trimmade nycklar, BARA ifyllda adresser: ett tömt fält betyder
+   * "ta bort adressen för den kursen", vilket är den enda raderingsvägen (ingen separat knapp). */
+  function toSaved(rows) {
+    var out = {};
+    (rows || []).forEach(function (r) {
+      var c = trim(r && r.course), e = trim(r && r.email);
+      if (c && e) { out[c] = e; }
+    });
+    return out;
+  }
+
+  return { lookup: lookup, buildRows: buildRows, toSaved: toSaved };
+})();

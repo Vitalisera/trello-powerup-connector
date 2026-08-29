@@ -188,21 +188,12 @@ function courseHasUppfoljning(courseName) {
   return !m || norm(m[1]) === '1';   // okänt steg → visa (bakåtkompat)
 }
 
-/* ---------- Datum ur listnamn → dagar till start ---------- */
-var MONTHS = { januari: 0, februari: 1, mars: 2, april: 3, maj: 4, juni: 5, juli: 6, augusti: 7, september: 8, oktober: 9, november: 10, december: 11 };
-// Kursens startdatum ur listnamnet (ex "24 juni - 2 juli 2026 (Steg 1)") → Date, eller null. Ren funktion.
-function courseStartDate(listName) {
-  var s = String(listName || '');
-  // BUGGFIX (Robert 2026-06-21): kompakt samma-månad-intervall "22-30 juli 2026" → FÖRSTA talet är startdagen
-  // (annars matchade "30 juli" = slutdagen). Kräver siffra-bindestreck-siffra-mellanslag-månad.
-  var rng = s.match(/(\d{1,2})\s*[-–]\s*\d{1,2}\s+([a-zåäö]+).*?(\d{4})/i);
-  if (rng && MONTHS[norm(rng[2])] !== undefined) { return new Date(parseInt(rng[3], 10), MONTHS[norm(rng[2])], parseInt(rng[1], 10)); }
-  var m = s.match(/(\d{1,2})\s+([a-zåäö]+).*?(\d{4})/i);
-  if (!m) { return null; }
-  var mon = MONTHS[norm(m[2])];
-  if (mon === undefined) { return null; }
-  return new Date(parseInt(m[3], 10), mon, parseInt(m[1], 10));
-}
+/* ---------- Datum ur listnamn → dagar till start ----------
+ * Tolkningen bor i config.js (window.NYA_ZAPIER_DATE) sedan 2026-08-29, eftersom Inställningar
+ * behöver EXAKT samma logik för läkaradress-fältet och inte laddar course.js. Dessa är tunna
+ * genomsläpp — lägg ALDRIG tillbaka en egen datumtolkning här, då finns två sanningar. */
+var MONTHS = window.NYA_ZAPIER_DATE.MONTHS;
+function courseStartDate(listName) { return window.NYA_ZAPIER_DATE.courseStartDate(listName); }
 function daysToStart(listName) {
   var start = courseStartDate(listName);
   if (!start) { return null; }
@@ -256,18 +247,7 @@ function deadlineDateInfo(listName, daysBefore) {
 // standardtiden 19:00 (kvällsfika). Ren funktion → proof-bar. Plats är hårdkodad i mallen (ingen token).
 var WEEKDAYS_SV = ['söndagen', 'måndagen', 'tisdagen', 'onsdagen', 'torsdagen', 'fredagen', 'lördagen'];
 var MONTHS_SV_FULL = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
-function courseEndDate(listName) {
-  var s = String(listName || '');
-  var ym = s.match(/(\d{4})/); if (!ym) { return null; }
-  var year = parseInt(ym[1], 10);
-  var dm = [], re = /(\d{1,2})\s+([a-zåäö]+)/gi, m;
-  while ((m = re.exec(s))) { var mon = MONTHS[norm(m[2])]; if (mon !== undefined) { dm.push({ d: parseInt(m[1], 10), mon: mon }); } }
-  if (!dm.length) { return null; }
-  var first = dm[0], last = dm[dm.length - 1];
-  // Årskorsande intervall ("28 december 2025 - 4 januari 2026"): slutmånad < startmånad → slutdatum nästa år.
-  var endYear = (last.mon < first.mon) ? year + 1 : year;
-  return new Date(endYear, last.mon, last.d);
-}
+function courseEndDate(listName) { return window.NYA_ZAPIER_DATE.courseEndDate(listName); }
 function practicalTokens(courseName) {
   var start = courseStartDate(courseName), end = courseEndDate(courseName);
   function fmt(d) { return d.getDate() + ' ' + MONTHS_SV_FULL[d.getMonth()]; }
@@ -1759,17 +1739,27 @@ function shareHfToDoctor(cardId, checkItemId, name, btn) {
   );
 }
 
-/* #18: "Dela mapp till läkare" — sätter läsrätt på mappen "HF till läkare - <kurs>" för läkarens e-post
- * (vz_settings.doctorEmail) via GAS. Läkaren får en Google Drive-notis. Bekräftelse + fail-closed test-läge. */
+/* #18: "Dela mapp till läkare" — sätter läsrätt på mappen "HF till läkare - <kurs>" för KURSENS
+ * läkare (vz_settings.doctorEmailByCourse[listnamn]) via GAS. Bekräftelse + fail-closed test-läge.
+ *
+ * 🔴 INGEN FALLBACK TILL NÅGON GLOBAL ADRESS (Robert 2026-08-23, efter läckan 22 augusti).
+ * Fram till 2026-08-29 läste denna funktion `settings.doctorEmail` — en enda adress för alla kurser.
+ * Den pekade på en KURSDELTAGARE, och nya-zapiers svep delade fyra deltagares hälsoformulär till
+ * henne. De tog bort sin fallback 23 augusti; den här knappen hade den kvar i sex dagar till och
+ * kunde alltså göra om samma läcka från connectorn. Saknas kursens adress STANNAR vi nu.
+ *
+ * Uppslaget går via NYA_ZAPIER_DOCTOR.lookup (config.js) — samma kontrakt som Inställningar skriver
+ * och som nya-zapiers doctorEmailFromSettings_ läser. Bygg ALDRIG ett eget uppslag här. */
 function shareDoctorFolder(courseName, btn) {
   getCourseSettings().then(function (settings) {
-    var doctor = String(settings.doctorEmail || '').trim();
+    var doctor = window.NYA_ZAPIER_DOCTOR.lookup(settings, courseName);
     if (!doctor) {
-      try { t.alert({ message: 'Sätt läkarens e-postadress i Inställningar (kugghjulet) först.', duration: 8, display: 'error' }); } catch (e) {}
+      try { t.alert({ message: 'Ingen läkaradress är satt för "' + courseName + '". Sätt den per kurs i Inställningar (kugghjulet) — ingen delning görs förrän den finns.', duration: 11, display: 'error' }); } catch (e) {}
       return;
     }
     courseInModalConfirm(
-      'Dela mappen "HF till läkare - ' + courseName + '" till läkaren (' + doctor + ')?\n\n'
+      'Dela mappen "HF till läkare - ' + courseName + '" till ' + doctor + '?\n\n'
+        + 'Kontrollera att det är kursens läkare och inte en deltagare.\n\n'
         + 'Läkaren får läsrätt + ett mejl från Google Drive. Mappen innehåller de anonymiserade läkarkopiorna.',
       'Dela mapp till läkare',
       function () {

@@ -7,7 +7,9 @@
  * överlever stäng/öppna. Andra vyer läser dem via t.get('board','shared','vz_settings').
  *
  * Fält (MVP):
- *   - doctorEmail        : läkarens e-post (HF-mappen delas hit; fast adress, B1)
+ *   - doctorEmailByCourse: läkarens e-post PER KURS ({listnamn: adress}). ERSATTE den globala
+ *                          doctorEmail 2026-08-29. Se NYA_ZAPIER_DOCTOR i config.js för varför
+ *                          (kort: den globala pekade på en kursdeltagare och läckte hälsoformulär)
  *   - adminEmail         : kopia på skarpa utskick → cc på gruppledar-mejl, och hemlig kopia +
  *                          kvittens på praktisk info (Malin såg annars inte att mejlen gick iväg —
  *                          Apps Script kör som Roberts konto, så de hamnar i HANS skickat-mapp)
@@ -23,6 +25,27 @@ var CFG = window.NYA_ZAPIER_CONFIG;
 var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var KEY = 'vz_settings';
 var TPL = (window.NYA_ZAPIER_TPL) || {}; // delade default-mallar (config.js) → förifyll textrutorna
+var DOCTOR = window.NYA_ZAPIER_DOCTOR;   // läkaradress-kontraktet (config.js) — delas med course.js
+var SAVED = {};                          // senast lästa vz_settings (fail-safe-källa för payload)
+var DOCTOR_ROWS_READY = false;           // false = kursraderna ej renderade → rör INTE sparade adresser
+
+// Trello REST (samma mönster som course.js): kurslistorna måste hämtas live — Malin ska slippa
+// skriva kursnamn för hand, och en felstavning ger tyst utebliven delning.
+function settingsRestGet(token, path) {
+  var sep = path.indexOf('?') === -1 ? '?' : '&';
+  return fetch('https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY)
+    + '&token=' + encodeURIComponent(token)).then(function (r) {
+    if (!r.ok) { throw new Error('Trello ' + r.status); }
+    return r.json();
+  });
+}
+// Läser tillbaka kursraderna ur DOM:en → [{course, email}]. Kursnamnet bärs i data-attributet,
+// aldrig i ett redigerbart fält (nyckeln måste matcha Trello-listan exakt).
+function readDoctorRows() {
+  return Array.prototype.map.call(document.querySelectorAll('[data-vz-doctor-course]'), function (el) {
+    return { course: el.getAttribute('data-vz-doctor-course'), email: (el.value || '').trim() };
+  });
+}
 // Spara TOM om rutan är oförändrad från default → genereringen fortsätter följa default (auto-uppdateras);
 // bara en faktisk ändring lagras. @param {string} id @param {string} def @return {string}
 function tplVal(id, def) { var v = document.getElementById(id).value || ''; return v === (def || '') ? '' : v; }
@@ -60,12 +83,15 @@ function render(s) {
     + '<div class="vz-set-head"><img src="' + esc(CFG.MARK_URL) + '" alt=""><h1>Inställningar</h1></div>'
     + '<p class="vz-set-sub">Konfiguration för Power-Up:en. Sparas på boarden och delas av alla vyer.</p>'
 
-    + '<div class="vz-fieldgrid">'
     + '<div class="vz-field">'
-    + '<label for="vz-doctor">Läkarens e-postadress</label>'
-    + '<p class="hint">Hit delas mappen "HF till läkare" (läkaren får läs-åtkomst till de anonymiserade hälsoformulären).</p>'
-    + '<input type="email" id="vz-doctor" placeholder="lakare@exempel.se" value="' + esc(s.doctorEmail || '') + '">'
+    + '<label>Läkarens e-postadress <span style="font-weight:normal;color:#6a7a82">— per kurs</span></label>'
+    + '<p class="hint">Hit delas mappen "HF till läkare" för respektive kurs (läkaren får läs-åtkomst till de anonymiserade hälsoformulären). '
+    + '<b>Varje kurs måste ha sin egen adress.</b> Saknas den delas ingenting — det är avsiktligt: en gemensam adress '
+    + 'för alla kurser delade hälsoformulär till fel person i augusti 2026. Lämna tom för att ta bort en adress.</p>'
+    + '<div id="vz-doctor-rows" class="hint">⏳ hämtar kurser…</div>'
     + '</div>'
+
+    + '<div class="vz-fieldgrid">'
     + '<div class="vz-field">'
     + '<label for="vz-admin">Admin-e-post (kopia + kvittens)</label>'
     + '<p class="hint">Får kopia på skarpa utskick: cc på gruppledar-mejlen, och på praktisk info <b>både en hemlig kopia av varje deltagarmejl och en kvittens</b> som listar vilka som fick det och vilka som inte gjorde det. Lämna tom = ingen kopia alls, och då syns utskicket inte för någon annan än den som skickade. (I testläge skickas inget hit — allt går till test-mottagaren.)</p>'
@@ -133,13 +159,20 @@ function render(s) {
   function val(id) { var el = document.getElementById(id); return el ? (el.value || '').trim() : ''; }
   // Validera e-postfälten → första felet (inline-varning) eller null. Tomt = OK (frivilligt).
   function validationError() {
-    var checks = [['vz-doctor', 'Läkar-e-posten'], ['vz-admin', 'Admin-e-posten'], ['vz-testredirect', 'Test-mottagarens e-post'], ['vz-replyto', 'Svara-till-adressen']];
+    var checks = [['vz-admin', 'Admin-e-posten'], ['vz-testredirect', 'Test-mottagarens e-post'], ['vz-replyto', 'Svara-till-adressen']];
     for (var i = 0; i < checks.length; i++) { var v = val(checks[i][0]); if (v && !isEmail(v)) { return '⚠️ ' + checks[i][1] + ' ser inte giltig ut — sparas ej.'; } }
+    // Läkaradresserna: en ogiltig adress får inte sparas — den styr vem som ser hälsoformulär.
+    var bad = readDoctorRows().filter(function (r) { return r.email && !isEmail(r.email); })[0];
+    if (bad) { return '⚠️ Läkar-e-posten för "' + bad.course + '" ser inte giltig ut — sparas ej.'; }
     return null;
   }
   function payload() {
     return {
-      doctorEmail: val('vz-doctor'), adminEmail: val('vz-admin'),
+      // 🔴 Panelen skriver HELA objektet, så allt som ska överleva måste finnas här. Har kurs-
+      // raderna inte hunnit laddas (eller kunde inte hämtas) återanvänds det SPARADE objektet
+      // oförändrat — annars raderar en tidig sparning varje läkaradress vi har.
+      doctorEmailByCourse: DOCTOR_ROWS_READY ? DOCTOR.toSaved(readDoctorRows()) : (SAVED.doctorEmailByCourse || {}),
+      adminEmail: val('vz-admin'),
       testMode: !!document.getElementById('vz-testmode').checked, testRedirectEmail: val('vz-testredirect'),
       senderName: val('vz-sendername'), replyTo: val('vz-replyto'),
       tpl_livsAlla: tplVal('vz-tpl-livsalla', TPL.livsAlla), tpl_livsEnskild: tplVal('vz-tpl-livsenskild', TPL.livsEnskild),
@@ -167,6 +200,43 @@ function render(s) {
   Array.prototype.forEach.call(document.querySelectorAll('#root input[type=email], #root input[type=text], #root textarea'), function (el) {
     el.addEventListener('input', scheduleSave);
   });
+  /* Kursraderna: hämta boardens listor live → en rad per kurs som fortfarande kan behöva delas,
+   * PLUS varje redan sparad adress (se NYA_ZAPIER_DOCTOR.buildRows — en sparad nyckel som inte
+   * renderas skulle raderas tyst vid nästa sparning).
+   * Misslyckas hämtningen renderas INGA fält och DOCTOR_ROWS_READY förblir false → payload()
+   * återanvänder de sparade adresserna oförändrade. En trasig hämtning får inte radera något. */
+  (function () {
+    var host = document.getElementById('vz-doctor-rows');
+    if (!host) { return; }
+    function fail(msg) { host.innerHTML = '<span style="color:#b23a2e">⚠️ ' + esc(msg) + '</span>'; }
+    var ctx = {};
+    try { ctx = t.getContext() || {}; } catch (e) { ctx = {}; }
+    if (!ctx.board) { fail('Kunde inte läsa vilken bräda det gäller — öppna Inställningar från brädan.'); return; }
+    t.getRestApi().getToken().then(function (token) {
+      if (!token) { throw new Error('Trello är inte anslutet. Öppna Kursöversikt och klicka Anslut först, kom sedan tillbaka hit.'); }
+      return settingsRestGet(token, 'boards/' + ctx.board + '/lists?fields=name');
+    }).then(function (lists) {
+      var names = (lists || []).map(function (l) { return (l && l.name) || ''; });
+      var rows = DOCTOR.buildRows(names, SAVED, new Date());
+      if (!rows.length) { host.innerHTML = '<span>Inga kurser i fönstret just nu (kommande, samt de som slutade för mindre än 45 dagar sedan).</span>'; DOCTOR_ROWS_READY = true; return; }
+      host.innerHTML = rows.map(function (r) {
+        return '<div style="display:flex;align-items:center;gap:10px;margin:7px 0;flex-wrap:wrap">'
+          + '<span style="min-width:250px;font-size:13px;color:#0d3142">' + esc(r.course)
+          + (r.orphan ? ' <span title="Adressen är sparad under ett namn som inte finns bland brädans kurslistor. Kursen kan ha bytt namn i Trello — mappen i Drive bär i så fall kvar det gamla namnet, så adressen behövs fortfarande här." style="background:#fbe9c6;color:#8a5a00;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:600">okänt kursnamn</span>' : '')
+          + '</span>'
+          + '<input type="email" data-vz-doctor-course="' + esc(r.course) + '" placeholder="lakare@exempel.se" value="' + esc(r.email) + '" style="flex:1;min-width:210px;padding:7px 9px;border:1px solid #cfd8dc;border-radius:8px;font-size:13px;font-family:inherit">'
+          + '</div>';
+      }).join('');
+      if (rows.some(function (r) { return r.orphan; })) {
+        host.innerHTML += '<p class="hint" style="margin-top:9px">En rad märkt <b>okänt kursnamn</b> har en sparad adress men matchar ingen kurslista på brädan — kursen kan ha döpts om. '
+          + 'Ta inte bort den utan att veta: mappen i Drive bär kvar det gamla namnet, så det är den adressen som används. Lägg hellre till en rad för det nya namnet också.</p>';
+      }
+      DOCTOR_ROWS_READY = true;
+      Array.prototype.forEach.call(host.querySelectorAll('input[data-vz-doctor-course]'), function (el) {
+        el.addEventListener('input', scheduleSave);
+      });
+    }).catch(function (e) { fail(((e && e.message) || e) + ' Inga läkaradresser ändras.'); });
+  })();
   // Lagringsdiagnostik: läs ALL board/shared plugin-data (t.getAll) → summera tecken mot 8192-budgeten + topp-nycklar.
   (function () {
     var el = document.getElementById('vz-storage-readout');
@@ -196,5 +266,5 @@ function render(s) {
   }
 }
 
-t.get('board', 'shared', KEY).then(function (s) { render(s || {}); }).catch(function () { render({}); });
+t.get('board', 'shared', KEY).then(function (s) { SAVED = s || {}; render(SAVED); }).catch(function () { SAVED = {}; render({}); });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { try { t.closeModal(); } catch (x) {} } });
