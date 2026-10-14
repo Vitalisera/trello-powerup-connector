@@ -1164,6 +1164,9 @@ var STEP_CARRIED_DOC = {
   '2': {
     label: 'Livsberättelse', labelBest: 'livsberättelsen', fromStep: 'steg 1',
     commentPrefix: 'Länk till Livsberättelsen:',
+    // Delsträng i FILNAMNET när servern letar i deltagarens mapp (Robert 2026-10-14: "leta efter en
+    // livsberättelse i samma mapp som nulägesbeskrivningen"). Servern får mönstret härifrån.
+    fileNameContains: 'livsber',
     // Ankrad på "Länk till Livsberättelsen:" — samma nyckel som kursstartskyddet ("Länk till "). En lösare
     // substrängmatch ("Har läst livsberättelsen. Hälsoformulär: <url>") hade här öppnat hälsoformuläret.
     // Ingen radbrytning före kolonet, så nästa rads "Länk till Hälsoformuläret:" aldrig sväljs.
@@ -1196,6 +1199,21 @@ function storyLinkForCard(card, courseName) {
 }
 // Instruktionen när det medförda dokumentet saknas. Säger EXAKT kommentarsformatet: både panelen och
 // kursstartskyddet nyckel på "Länk till …", en kommentar med annan lydelse hittas av ingen av dem.
+// Kommentarer som ska skrivas på korten vid utskicket: det medförda dokumentet hittades i MAPPEN, inte i en
+// kommentar. Kommentaren är det kursstartskyddet läser när det stänger dokumentet kl 19, så den måste finnas
+// innan dokumentet öppnas. Ur de byggda mejlen, dedupad per länk. Ren funktion.
+function carriedPendingComments(itemsPerMail, carriedSource, cd) {
+  var out = [], seen = {};
+  carriedSource = carriedSource || {};
+  (itemsPerMail || []).forEach(function (items) {
+    (items || []).forEach(function (it) {
+      if (!it || !it.link2 || !it.key || carriedSource[it.key] !== 'folder' || seen[it.link2]) { return; }
+      seen[it.link2] = true;
+      out.push({ cardId: it.key, url: it.link2, text: cd.commentPrefix + ' ' + it.link2 });
+    });
+  });
+  return out;
+}
 function carriedMissingText(cd, names) {
   if (!cd || !names || !names.length) { return ''; }
   return cd.label + ' saknas för: ' + names.join(', ') + '. Lägg filen i deltagarens mapp i Drive och skriv en '
@@ -2248,13 +2266,29 @@ function loadStoryMatrix(courseName, participants, cards) {
   COURSE_SUMMARY_URL = '';
   getCoursePersist_(summaryUrlKey_(courseName)).then(function (u) { COURSE_SUMMARY_URL = String(u || ''); }).catch(function () {});
   // Livsberättelse-länk per deltagare ur kort-kommentar + kontaktuppgifter ur kort-desc (#10 uppf-enskild).
-  var storyLinks = {}, carriedLinks = {}, contactByKey = {};
+  var storyLinks = {}, carriedLinks = {}, carriedSource = {}, contactByKey = {};
   var carriedCfg = carriedDocForCourse(courseName);   // steg 2: livsberättelsen från steg 1 (Robert 2026-10-14)
   (cards || []).forEach(function (c) {
     storyLinks[c.id] = storyLinkForCard(c, courseName);
-    if (carriedCfg) { carriedLinks[c.id] = carriedLinkForCard(c, courseName); }
+    if (carriedCfg) { carriedLinks[c.id] = carriedLinkForCard(c, courseName); if (carriedLinks[c.id]) { carriedSource[c.id] = 'comment'; } }
     contactByKey[c.id] = parseContactFromDesc(c.desc);
   });
+  // Saknas kommentaren: servern letar i SAMMA mapp som stegets eget dokument (Robert 2026-10-14). Fail-soft —
+  // svarar den inte står namnen som "saknas", precis som utan sökningen. Fyndet märks 'folder' så att
+  // utskicket vet att kommentaren måste skrivas på kortet innan dokumentet öppnas.
+  var carriedP = Promise.resolve();
+  if (carriedCfg) {
+    var toFind = (cards || []).filter(function (c) { return !carriedLinks[c.id] && storyLinks[c.id]; })
+      .map(function (c) { return { key: c.id, storyUrl: storyLinks[c.id] }; });
+    if (toFind.length) {
+      carriedP = withTimeout(postToGas('findCarriedDocs', { items: toFind, namePattern: carriedCfg.fileNameContains }), 30000, 'Mappsökningen')
+        .then(function (r) {
+          ((r && r.ok && r.items) || []).forEach(function (row) {
+            if (row && row.found && row.url && !carriedLinks[row.key]) { carriedLinks[row.key] = row.url; carriedSource[row.key] = 'folder'; }
+          });
+        }).catch(function () {});
+    }
+  }
   var GL = STAFF_BOARDS[0];
   // Gruppledar-namnen (matris-kolumnerna) ur Gruppledare-boarden, exkl. "Vitaliseraperson på plats".
   var leadersP = t.getRestApi().getToken().then(function (token) {
@@ -2278,11 +2312,12 @@ function loadStoryMatrix(courseName, participants, cards) {
     leadersP,
     loadCardScopeSel_(participants, 'vz_livs_leaders', key),
     loadCardScopeSel_(participants, 'vz_uppf_leaders', followKey),
+    carriedP,
   ]).then(function (r) {
     var leaders = r[0] || [], selStory = r[1] || {}, selFollow = r[2] || {};
     renderStoryMatrix(key, participants || [], leaders, selStory, {
       title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse', cardKey: 'vz_livs_leaders',   // steg-medveten titel
-      carried: carriedCfg, carriedLinks: carriedLinks,
+      carried: carriedCfg, carriedLinks: carriedLinks, carriedSource: carriedSource,
       note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.'
         + (carriedCfg ? ' Gruppledarna får även ' + carriedCfg.labelBest + ' från ' + carriedCfg.fromStep + '.' : ''),
     });
@@ -2713,7 +2748,7 @@ function leaderCcEmails(contacts) {
 function leaderParticipantLinks(sel, participants, leaderName, storyLinks, carriedLinks) {
   sel = sel || {}; storyLinks = storyLinks || {}; carriedLinks = carriedLinks || {};
   return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
-    .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '', link2: carriedLinks[p.key] || '' }; });
+    .map(function (p) { return { key: p.key, name: p.name, link: storyLinks[p.key] || '', link2: carriedLinks[p.key] || '' }; });
 }
 // Per-gruppledare deltagare + kontakt (#10): ur urvalskartan + contactByKey. Ren funktion.
 function leaderParticipantContacts(sel, participants, leaderName, contactByKey) {
@@ -2909,12 +2944,13 @@ function runSendMail(opts) {
       warn.textContent = '⚠️ ' + timing;
       note.appendChild(warn);
     }
-    var shareReader = built.shareReader || [];
+    var shareReader = built.shareReader || [], pendingComments = built.pendingComments || [];
     var q = document.createElement('span');
     q.textContent = (mode.live ? '⚠️ SKARPT — ' + recN + ' riktig(a) mottagare. ' : 'Testläge → allt till ' + mode.redirect + '. ')
       + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '')
-      // Dialogen säger vad knappen GÖR, inte bara vad den heter: delningen är en ändring i Drive.
-      + (shareReader.length ? (mode.live ? 'Sätter "alla med länken – läsare" på ' + shareReader.length + ' dokument från tidigare steg. ' : '(' + shareReader.length + ' dokument delas INTE i testläge.) ') : '')
+      // Dialogen säger vad knappen GÖR, inte bara vad den heter: kommentaren och delningen är ändringar i Trello och Drive.
+      + (pendingComments.length && mode.live ? 'Skriver länken till dokumentet från tidigare steg som kommentar på ' + pendingComments.length + ' kort. ' : '')
+      + (shareReader.length ? (mode.live ? 'Öppnar ' + shareReader.length + ' dokument från tidigare steg för gruppledarna (alla med länken – läsare). ' : 'I testläge öppnas inga dokument och inga kortkommentarer skrivs (' + shareReader.length + ' dokument berörs skarpt). ') : '')
       + 'Skicka?';
     var yes = document.createElement('button'); yes.className = 'vz-btn vz-btn--send'; yes.textContent = 'Bekräfta';
     yes.style.cssText = 'margin-left:6px;padding:4px 11px;font-size:12px';
@@ -2924,7 +2960,23 @@ function runSendMail(opts) {
     no.addEventListener('click', function () { note.textContent = ''; btn.disabled = false; });
     yes.addEventListener('click', function () {
       note.textContent = '⏳ Skickar…';
-      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo, shareReader: shareReader }).then(function (res) {
+      // Kortkommentarerna FÖRST, bara skarpt: kommentaren är vad kursstartskyddet läser när det stänger
+      // dokumentet kl 19. Misslyckas en kommentar öppnas inte det dokumentet (öppna aldrig något som ingen
+      // stänger); det redovisas i utfallsraden. Testläge skriver inget.
+      var commentsP = (mode.live && pendingComments.length)
+        ? t.getRestApi().getToken().then(function (token) {
+            return Promise.all(pendingComments.map(function (pc) {
+              return restWrite(token, 'POST', 'cards/' + pc.cardId + '/actions/comments?text=' + encodeURIComponent(pc.text))
+                .then(function () { return { ok: true, url: pc.url }; })
+                .catch(function (e) { return { ok: false, url: pc.url, error: (e && e.message) || String(e) }; });
+            }));
+          }).catch(function (e) { return pendingComments.map(function (pc) { return { ok: false, url: pc.url, error: (e && e.message) || String(e) }; }); })
+        : Promise.resolve([]);
+      commentsP.then(function (cr) {
+      var commentFailed = (cr || []).filter(function (x) { return !x.ok; });
+      var failedUrls = commentFailed.map(function (x) { return x.url; });
+      var shareNow = shareReader.filter(function (u) { return failedUrls.indexOf(u) === -1; });
+      return postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo, shareReader: shareNow }).then(function (res) {
         if (res && res.ok) {
           var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
           var failed = (res.sent || []).filter(function (s) { return !s.ok; });
@@ -2932,9 +2984,11 @@ function runSendMail(opts) {
             + (failed.length ? ', ⚠️ ' + failed.length + ' misslyckades (' + ((failed[0] && failed[0].error) || 'okänt') + ')' : '')
             + (missing.length ? ' · saknad adress: ' + missing.join(', ') : '')
             + shareOutcomeText(res.shared)
+            + (cr && cr.length ? ' · kortkommentarer: ' + (cr.length - commentFailed.length) + ' skrivna' + (commentFailed.length ? ', ⚠️ ' + commentFailed.length + ' MISSLYCKADES (' + commentFailed.map(function (x) { return x.url; }).join(', ') + ') — de dokumenten öppnades INTE' : '') : '')
             + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
         } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel') + (res && res.detail ? ' — ' + res.detail : ''); }
         btn.disabled = false;
+      });
       }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
     });
   }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
@@ -2963,7 +3017,7 @@ function shareOutcomeText(sh) {
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
   opts = opts || {}; sel = sel || {};
   var storyLinks = opts.storyLinks || {};
-  var carried = opts.carried || null, carriedLinks = opts.carriedLinks || {};
+  var carried = opts.carried || null, carriedLinks = opts.carriedLinks || {}, carriedSource = opts.carriedSource || {};
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -3005,7 +3059,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     // Medförda dokument i mejlen → servern sätter "alla med länken – läsare" på dem direkt före utskicket
     // (Robert 2026-10-14: från gruppledarmejlet till kl 19 på kursstartdagen, läsare). EXAKT de länkar som
     // mejlas: en ledare utan e-post får inget mejl, och hens deltagares dokument ska då inte öppnas.
-    return { emails: emails, missing: missing, shareReader: carried ? carriedShareList(sentItems) : [] };
+    return { emails: emails, missing: missing, shareReader: carried ? carriedShareList(sentItems) : [],
+      pendingComments: carried ? carriedPendingComments(sentItems, carriedSource, carried) : [] };
   } };
   // ALLA gruppledare, inte bara de med tilldelade samtal (Robert 2026-08-29) — mejlet bär
   // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
@@ -3054,8 +3109,9 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
       if (carried) {
         var lk2 = carriedLinks[p.key];
+        var fromFolder = carriedSource[p.key] === 'folder';
         nm += lk2
-          ? ' <a href="' + esc(lk2) + '" target="_blank" rel="noopener" class="vz-tbl-link vz-carried" title="Öppna ' + esc(carried.labelBest) + '">' + esc(carried.labelBest) + ' <span class="vz-ext">↗</span></a>'
+          ? ' <a href="' + esc(lk2) + '" target="_blank" rel="noopener" class="vz-tbl-link vz-carried" title="' + (fromFolder ? 'Hittad i deltagarens mapp. Länken skrivs som kommentar på kortet när mejlet skickas.' : 'Öppna ' + esc(carried.labelBest)) + '">' + esc(carried.labelBest) + (fromFolder ? ' (ur mappen)' : '') + ' <span class="vz-ext">↗</span></a>'
           : ' <span class="vz-carried vz-carried--missing" title="' + esc(carriedMissingText(carried, [p.name])) + '">⚠ ' + esc(carried.labelBest) + ' saknas</span>';
       }
       // Robert 2026-06-21: färgkoda namnet efter dok-status (klart/ej) + tooltip med %/bild. Bara livsberättelse-matrisen (har dok).
