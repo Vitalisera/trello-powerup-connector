@@ -1163,6 +1163,9 @@ function commentLink(card, regexes) {
 var STEP_CARRIED_DOC = {
   '2': {
     label: 'Livsberättelse', labelBest: 'livsberättelsen', plural: 'livsberättelser', pluralBest: 'livsberättelserna', fromStep: 'steg 1',
+    // Stegets EGET dokument i bestämd form, för mejlraden "Namn: nulägesbeskrivningen · livsberättelsen"
+    // (Robert 2026-10-14: namnet som länk till det ena och ett ord för det andra var förvirrande).
+    ownLabelBest: 'nulägesbeskrivningen',
     commentPrefix: 'Länk till Livsberättelsen:',
     // Delsträng i FILNAMNET när servern letar i deltagarens mapp (Robert 2026-10-14: "leta efter en
     // livsberättelse i samma mapp som nulägesbeskrivningen"). Servern får mönstret härifrån.
@@ -2824,15 +2827,18 @@ function enskildBodyHtml(template, leaderName, items, carried) {
     var n = esc(it.name);
     // Länka BARA http(s)-URL:er (defense-in-depth mot javascript:/data:-scheman, utöver att
     // storyLinks redan är domän-begränsade vid källan via STORY_LINK_RES).
-    var row = (it.link && /^https?:\/\//i.test(it.link)) ? '<a href="' + esc(it.link) + '">' + n + '</a>' : n;
-    // Medfört dokument (steg 2: livsberättelsen) som egen länk efter namnet; saknas den står det i mejlet
-    // så gruppledaren inte letar — och Malin ser det i förhandsvisningen.
+    var okUrl = function (u) { return u && /^https?:\/\//i.test(u); };
+    // Med medfört dokument (steg 2): namnet är text, BÅDA dokumenten är ord som länkar
+    // ("Namn: nulägesbeskrivningen · livsberättelsen"). Robert 2026-10-14: namnet som länk till det ena
+    // och ett ord för det andra var förvirrande. Saknas ett dokument står det i mejlet så gruppledaren
+    // inte letar, och Malin ser det i förhandsvisningen. Utan medfört (steg 1): namnet är länken, som förut.
     if (carried) {
-      row += (it.link2 && /^https?:\/\//i.test(it.link2))
-        ? ' · <a href="' + esc(it.link2) + '">' + esc(carried.labelBest) + '</a>'
-        : ' · ' + esc(carried.labelBest) + ' saknas';
+      return n + ': '
+        + (okUrl(it.link) ? '<a href="' + esc(it.link) + '">' + esc(carried.ownLabelBest) + '</a>' : esc(carried.ownLabelBest) + ' saknas')
+        + ' · '
+        + (okUrl(it.link2) ? '<a href="' + esc(it.link2) + '">' + esc(carried.labelBest) + '</a>' : esc(carried.labelBest) + ' saknas');
     }
-    return row;
+    return okUrl(it.link) ? '<a href="' + esc(it.link) + '">' + n + '</a>' : n;
   }).join('<br>');
   return esc(String(template == null ? '' : template))
     .replace(/\{GRUPPLEDARE\}/g, esc(firstNameOf(leaderName)))
@@ -2842,9 +2848,11 @@ function enskildBodyHtml(template, leaderName, items, carried) {
 // Enskild-mall → plaintext per gruppledare: namn + ev. länk på egen rad.
 function enskildBodyText(template, leaderName, items, carried) {
   var namesTxt = (items || []).map(function (it) {
-    var row = it.link ? (it.name + ' — ' + it.link) : it.name;
-    if (carried) { row += it.link2 ? (' · ' + carried.labelBest + ': ' + it.link2) : (' · ' + carried.labelBest + ' saknas'); }
-    return row;
+    if (carried) {
+      return it.name + ': ' + (it.link ? carried.ownLabelBest + ': ' + it.link : carried.ownLabelBest + ' saknas')
+        + ' · ' + (it.link2 ? carried.labelBest + ': ' + it.link2 : carried.labelBest + ' saknas');
+    }
+    return it.link ? (it.name + ' — ' + it.link) : it.name;
   }).join('\n');
   return String(template == null ? '' : template)
     .replace(/\{GRUPPLEDARE\}/g, firstNameOf(leaderName))
