@@ -1162,7 +1162,7 @@ function commentLink(card, regexes) {
  * skyddet i Actions-lib stänger dem kl 19 på kursstartdagen eftersom de står i en "Länk till …"-kommentar. */
 var STEP_CARRIED_DOC = {
   '2': {
-    label: 'Livsberättelse', labelBest: 'livsberättelsen', fromStep: 'steg 1',
+    label: 'Livsberättelse', labelBest: 'livsberättelsen', plural: 'livsberättelser', pluralBest: 'livsberättelserna', fromStep: 'steg 1',
     commentPrefix: 'Länk till Livsberättelsen:',
     // Delsträng i FILNAMNET när servern letar i deltagarens mapp (Robert 2026-10-14: "leta efter en
     // livsberättelse i samma mapp som nulägesbeskrivningen"). Servern får mönstret härifrån.
@@ -1213,6 +1213,34 @@ function carriedPendingComments(itemsPerMail, carriedSource, cd) {
     });
   });
   return out;
+}
+// Räknar dokumenten i de byggda mejlen: stegets egna (link) och medförda (link2). Ren funktion.
+function mailDocCounts(itemsPerMail) {
+  var seen = {}, story = 0, carried = 0, missingCarried = 0;
+  (itemsPerMail || []).forEach(function (items) {
+    (items || []).forEach(function (it) {
+      if (!it || !it.key || seen[it.key]) { return; }
+      seen[it.key] = true;
+      if (it.link) { story++; }
+      if (it.link2) { carried++; } else { missingCarried++; }
+    });
+  });
+  return { story: story, carried: carried, missingCarried: missingCarried };
+}
+// Bekräftelsens beskrivning av innehållet (Robert 2026-10-14: "borde det inte stå 14 livsberättelser och 14
+// nulägesbeskrivningar?"). Säger vad mejlen bär OCH vad som ändras: stegets dokument är redan öppna sedan
+// de skapades, det medförda öppnas nu. Ren funktion.
+function mailDocSummaryText(counts, courseName, cd, live) {
+  if (!counts || !cd) { return ''; }
+  var storyP = livsPluralForCourse(courseName).p;
+  var s = 'Mejlen innehåller ' + counts.story + ' ' + storyP + ' och ' + counts.carried + ' ' + cd.plural
+    + (counts.missingCarried ? ' (' + counts.missingCarried + ' saknar ' + cd.labelBest + ')' : '') + '. ';
+  if (counts.carried) {
+    s += live
+      ? 'Öppnar ' + cd.pluralBest + ' för gruppledarna (alla med länken – läsare); ' + storyP + ' är redan öppna sedan de skapades. '
+      : 'I testläge öppnas inga ' + cd.plural + ' och inga kortkommentarer skrivs. ';
+  }
+  return s;
 }
 function carriedMissingText(cd, names) {
   if (!cd || !names || !names.length) { return ''; }
@@ -2949,8 +2977,8 @@ function runSendMail(opts) {
     q.textContent = (mode.live ? '⚠️ SKARPT — ' + recN + ' riktig(a) mottagare. ' : 'Testläge → allt till ' + mode.redirect + '. ')
       + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '')
       // Dialogen säger vad knappen GÖR, inte bara vad den heter: kommentaren och delningen är ändringar i Trello och Drive.
-      + (pendingComments.length && mode.live ? 'Skriver länken till dokumentet från tidigare steg som kommentar på ' + pendingComments.length + ' kort. ' : '')
-      + (shareReader.length ? (mode.live ? 'Öppnar ' + shareReader.length + ' dokument från tidigare steg för gruppledarna (alla med länken – läsare). ' : 'I testläge öppnas inga dokument och inga kortkommentarer skrivs (' + shareReader.length + ' dokument berörs skarpt). ') : '')
+      + mailDocSummaryText(built.docCounts, COURSE_NAME, built.carried, mode.live)
+      + (pendingComments.length && mode.live ? 'Skriver länken till ' + built.carried.labelBest + ' som kommentar på ' + pendingComments.length + ' kort. ' : '')
       + 'Skicka?';
     var yes = document.createElement('button'); yes.className = 'vz-btn vz-btn--send'; yes.textContent = 'Bekräfta';
     yes.style.cssText = 'margin-left:6px;padding:4px 11px;font-size:12px';
@@ -3060,7 +3088,8 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     // (Robert 2026-10-14: från gruppledarmejlet till kl 19 på kursstartdagen, läsare). EXAKT de länkar som
     // mejlas: en ledare utan e-post får inget mejl, och hens deltagares dokument ska då inte öppnas.
     return { emails: emails, missing: missing, shareReader: carried ? carriedShareList(sentItems) : [],
-      pendingComments: carried ? carriedPendingComments(sentItems, carriedSource, carried) : [] };
+      pendingComments: carried ? carriedPendingComments(sentItems, carriedSource, carried) : [],
+      docCounts: carried ? mailDocCounts(sentItems) : null, carried: carried };
   } };
   // ALLA gruppledare, inte bara de med tilldelade samtal (Robert 2026-08-29) — mejlet bär
   // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
