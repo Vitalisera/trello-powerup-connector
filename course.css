@@ -630,6 +630,9 @@
 .vz-course .vz-tbl-link{color:var(--accent);text-decoration:none;font-size:14px}  /* P2.3: teal (paletten) ist. för Trello-blå #0c66e4 */
 .vz-course .vz-tbl-link:hover{text-decoration:underline}
 .vz-course .vz-tbl-link .vz-ext{font-size:12px;opacity:.8}
+/* Medfört dokument från tidigare steg (steg 2: livsberättelsen) efter namnet i matrisen — mindre och dämpat, så stegets eget dokument förblir huvudlänken. */
+.vz-course .vz-carried{font-size:12px;margin-left:4px;white-space:nowrap}
+.vz-course .vz-carried--missing{color:#b5710b;cursor:help}
 .vz-course .vz-tbl-name{font-size:14px}
 /* Robert 2026-06-21: färgkoda deltagar-namnen efter dok-status (klart/del/ej) i livs-matrisen + HF-panelen. Tooltip på cellen. */
 /* 🔴 BÅDA attributen måste stå i varje selektor. Uppföljningsmatrisen märker sina namnceller med

@@ -256,15 +256,31 @@ function practicalTokens(courseName) {
     STARTDAG: start ? (WEEKDAYS_SV[start.getDay()] + ' den ' + fmt(start)) : '',
     STARTTID: '19:00',
     SLUTDAG: end ? fmt(end) : '',
+    // Steg 2/3a/3b slutar MITT PÅ sista dagen ("Kursen slutar vid 14-tiden torsdagen den 29 oktober"),
+    // medan Steg 1 checkar ut morgonen efter ceremonin och bara behöver datumet. Därför två slut-tokens:
+    // SLUTDAG = "29 oktober", SLUTDAGFULL = "torsdagen den 29 oktober". Malin skrev veckodagen för hand
+    // i varje dokument; den räknas nu ut ur datumet (stickprov 2026-10-21/29 och 2026-07-22/30 stämde).
+    SLUTDAGFULL: end ? (WEEKDAYS_SV[end.getDay()] + ' den ' + fmt(end)) : '',
   };
+}
+
+// ENDA KÄLLAN för vilket kurssteg ett listnamn avser ('1' | '2' | '3a' | '3b' | ''). Allt steg-medvetet
+// nedan går via den: dokumenttypen i mejlen, och sedan 2026-09-21 även VILKEN praktisk info-mall som
+// kopieras. Tom sträng = odaterat/okänt steg — den som slår upp något måste själv bestämma vad som gäller
+// då, funktionen gissar aldrig åt anroparen.
+function courseStepKey(courseName) {
+  // Siffran är obligatorisk. Den gamla regexen (/steg\s*([0-9a-zåäö]+)/) plockade bokstäverna i vilket ord
+  // som helst som börjar på "steg" — "Kurs utan stegangivelse" gav nyckeln "angivelse". Ofarligt så länge
+  // nyckeln bara valde en ETIKETT, men sedan 2026-09-21 väljer den vilken mall som kopieras. Fångat av prov.
+  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9]+[a-zåäö]?)/i);
+  return m ? norm(m[1]) : '';
 }
 
 // Steg-medveten etikett för livsberättelse-MOTSVARIGHETEN (Robert 2026-06-21; verifierat mot nya-zapier Step_Configs.js).
 // CheckItem-namnet ("Levnadsbeskrivning klar") är samma över alla steg → bara ETIKETTEN är steg-beroende.
 var STEP_LIVS_LABELS = { '1': 'Livsberättelse', '2': 'Nulägesbeskrivning', '3a': 'Du och dina relationer', '3b': 'Steg 3B-formulär' };
 function livsLabelForCourse(courseName) {
-  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
-  return (m && STEP_LIVS_LABELS[norm(m[1])]) || 'Livsberättelse';
+  return STEP_LIVS_LABELS[courseStepKey(courseName)] || 'Livsberättelse';
 }
 // Steg-medveten PLURAL för gruppledar-mejlets brödtext ({DOKTYP}=obest, {DOKTYP_BEST}=best form). 3A/3B
 // pluraliseras ej naturligt ("Du och dina relationer") → generiskt "formulär(en)". Robert 2026-06-22 (mejl sa
@@ -276,8 +292,7 @@ var STEP_LIVS_PLURAL = {
   '3b': { p: 'formulär',             pd: 'formulären' }
 };
 function livsPluralForCourse(courseName) {
-  var m = String(courseName == null ? '' : courseName).match(/steg\s*([0-9a-zåäö]+)/i);
-  return (m && STEP_LIVS_PLURAL[norm(m[1])]) || STEP_LIVS_PLURAL['1'];
+  return STEP_LIVS_PLURAL[courseStepKey(courseName)] || STEP_LIVS_PLURAL['1'];
 }
 // "Steg 3A" / "Steg 1" ur kursnamnet (för steg-formulär-rubriken steg 7). Versaliserar suffixet (3a → 3A).
 function courseStegDisplay(courseName) {
@@ -368,7 +383,7 @@ function docStatFas1_(stepKey, card) {
   var isLivs = stepKey === 'livs_klar';
   var docName = isLivs ? livsLabelForCourse(COURSE_NAME) : 'Hälsoformulär';   // steg-medveten rubrik i fold-out
   var st = (DOC_BYKEY[card.id] || {})[isLivs ? 'livs' : 'hf'];
-  var docUrl = commentLink(card, isLivs ? STORY_LINK_RES : HF_LINK_RES);
+  var docUrl = isLivs ? storyLinkForCard(card, COURSE_NAME) : commentLink(card, HF_LINK_RES);   // samma spärr som loadDocStatus, annars evig ⏳ på steg 2
   var openBtn = docUrl ? '<a class="vz-btn vz-pd-act" href="' + esc(docUrl) + '" target="_blank" rel="noopener">Öppna dokumentet ↗</a>' : '';
   if ((st && st.loading) || (!st && docUrl)) {   // skannas just nu, eller har länk men ej skannat än
     return vzPhaseCard_('1', docName, 'Läser dokumentet…', '<span class="vz-pd-note">⏳ Skannar svar och bilder — vänta några sekunder.</span>', '');
@@ -698,7 +713,30 @@ function savePanelCollapsed_() {
 // ?-hjälp per modul (Robert 2026-06-21): pedagogisk förklaring + relevanta länkar (mall-dok, listor). Konsoliderar
 // "lyft fram i Inställningar" → kontextuell hjälp där modulen är. {{länk}} till Praktisk info-mallen besvarar
 // Roberts fråga "hur vet Malin vilken mall hon ska redigera". HTML tillåts (courseLightbox renderar det).
-var PRACTICAL_TEMPLATE_DOC_URL = 'https://docs.google.com/document/d/1OT-7wIMTKGsbsH5QqEg-DRJtuNToVEEwfIlPG3jCDEI/edit';
+// EN MALL PER KURSSTEG (Robert 2026-09-21). Hjälptexten pekade till dess på Steg 1-dokumentet oavsett
+// kurs — den som ville rätta praktisk info för en Steg 2-kurs redigerade alltså fel fil. Nyckeln kommer
+// från courseStepKey, samma källa som avgör vilken mall servern kopierar.
+var PRACTICAL_TEMPLATE_DOC_URL_BY_STEP = {
+  '1':  'https://docs.google.com/document/d/1OT-7wIMTKGsbsH5QqEg-DRJtuNToVEEwfIlPG3jCDEI/edit',
+  '2':  'https://docs.google.com/document/d/1BNMFbkXZZ8w7sK6_J4ScZQjWT1a0iNdYFxCCLdKv-u0/edit',
+  '3a': 'https://docs.google.com/document/d/1oMvCnh-WaWpG50HzON26SoP41_oRLELsg3NxPywRfWg/edit',
+  '3b': 'https://docs.google.com/document/d/10qsB9DXaTmvpcGlFKpS5VmMngzgmy2boDITsqHEZNew/edit'
+};
+// 🔴 PANEL_HELP byggs vid SIDLADDNING, innan någon kurs är vald — `COURSE_NAME` är '' där. En body som
+// beror på kursen måste alltså fyllas i när rutan ÖPPNAS, inte när objektet skapas. Första bygget
+// 2026-09-21 anropade den här funktionen direkt i objektliteralen och fick därför alltid "steg saknas":
+// hjälpen blev sämre än den enda hårdkodade länk den ersatte, och fyra gröna prov intygade motsatsen
+// eftersom de grep:ade källtexten i stället för att utvärdera resultatet. Markören nedan byts i
+// openPanelHelp. Fångat av kodgranskningen, inte av provsviten.
+function practicalTemplateHelpHtml_(courseName) {
+  var k = courseStepKey(courseName), url = PRACTICAL_TEMPLATE_DOC_URL_BY_STEP[k];
+  if (!url) { return '<p><b>Mall-dokumentet.</b> ⚠️ Kursnamnet saknar steg, så ingen mall kan pekas ut. Lägg till t.ex. «(Steg 2)» i kurslistans namn.</p>'; }
+  return '<p><b>Mall-dokumentet.</b> Varje kurssteg har en EGEN mall — de skiljer sig i mat, sluttid och vad som ska förberedas, så redigera alltid den som hör till kursen du står i. '
+    + '👉 <a href="' + url + '" target="_blank" rel="noopener">Öppna mallen för Steg ' + k.toUpperCase() + ' för att redigera ↗</a>. '
+    + 'Den innehåller tokens — <code>{{KURSDATUM}}</code>, <code>{{STARTDAG}}</code>, <code>{{STARTTID}}</code> och '
+    + (k === '1' ? '<code>{{SLUTDAG}}</code>' : '<code>{{SLUTDAGFULL}}</code>')
+    + ' — som fylls per kurs. <b>Ta inte bort dem:</b> står en kvar ofylld stoppas utskicket och dokumentet läggs i papperskorgen. Plats är hårdkodad i mallen.</p>';
+}
 var PANEL_HELP = {
   hf: { title: 'Hälsoformulär till läkare', body:
     '<p><b>Vad den gör.</b> Listar alla deltagare och låter dig skapa en <b>anonymiserad kopia</b> av varje deltagares hälsoformulär i läkarens mapp. Att klicka «Skapa läkarkopia» bockar checklistpunkten «Delat Hälsoformulär till läkare/kursledare» på kortet — det är den bocken som triggar nya-zapier att skapa kopian.</p>'
@@ -710,7 +748,7 @@ var PANEL_HELP = {
     + '<p><b>Tänk på.</b> Oklara/saknade formulär listas separat (ej med i kock-mejlet) så du kan följa upp dem manuellt. Fail-closed i testläge.</p>' },
   praktisk: { title: 'Praktisk information till deltagare', body:
     '<p><b>Vad den gör.</b> Skickar den kursgemensamma praktiska informationen som <b>PDF-bilaga</b> till varje deltagare och bockar steg 7 «Praktisk info skickat». Dokumentet skapas ur en mall där kursdatumen fylls i automatiskt.</p>'
-    + '<p><b>Mall-dokumentet.</b> 👉 <a href="' + PRACTICAL_TEMPLATE_DOC_URL + '" target="_blank" rel="noopener">Öppna mallen för att redigera ↗</a>. Den innehåller tokens — <code>{{KURSDATUM}}</code>, <code>{{STARTDAG}}</code>, <code>{{STARTTID}}</code>, <code>{{SLUTDAG}}</code> — som fylls per kurs. <b>Ta inte bort dem.</b> Plats är hårdkodad i mallen.</p>'
+    + '<!--VZ_MALLSTYCKE-->'
     + '<p><b>Hur du använder den.</b> Verifiera kursdatumen i rutan. «Skicka» per deltagare, eller «Skicka till alla som inte fått». Klicka länken «kursgemensamma praktiska informationen» i panelen för att öppna/förhandsgranska själva dokumentet (skapas om det inte finns).</p>'
     + '<p><b>Tänk på.</b> Fail-closed: i testläge går allt till test-mottagaren. Bockas steg 7 inte (nät-fel) markeras raden «Skickad · bocka steg 7 manuellt» så samma deltagare inte dubbel-mejlas.</p>' },
   checklist: { title: 'Kurschecklista', body:
@@ -729,7 +767,10 @@ var PANEL_HELP = {
 function openPanelHelp(key) {
   var h = PANEL_HELP[key];
   if (!h) { return; }
-  courseLightbox('❓ ' + h.title, '<div class="vz-help-body">' + h.body + '</div>');
+  // Kursberoende stycken fylls HÄR, när kursen faktiskt är vald. Se kommentaren vid
+  // practicalTemplateHelpHtml_ om varför de inte får bakas in när PANEL_HELP skapas.
+  var body = String(h.body).replace('<!--VZ_MALLSTYCKE-->', function () { return practicalTemplateHelpHtml_(COURSE_NAME); });
+  courseLightbox('❓ ' + h.title, '<div class="vz-help-body">' + body + '</div>');
 }
 function makeWrap_(sec, key) {
   var wrap = document.createElement('div');
@@ -1109,6 +1150,58 @@ function commentLink(card, regexes) {
   }
   return null;
 }
+/* ---------- Medfört dokument från ett tidigare steg (Robert 2026-10-14) ----------
+ * På en steg 2-kurs ska gruppledarna läsa TVÅ dokument per deltagare: nulägesbeskrivningen (stegets eget
+ * formulär = STORY_LINK_RES) och livsberättelsen från steg 1. Automationen postar inte livsberättelsen på
+ * steg 2-kortet; den kommer dit som kommentaren `Länk till Livsberättelsen: <url>`, antingen från
+ * "Skapa formulär för steg 2" (när det byggts) eller från Malin för hand (deltagare som raderat sin hos
+ * oss, eller som skickat en PDF från Mullingstorp-tiden). Därför godtas även PDF-filer i Drive.
+ * STORY_LINK_RES rörs INTE: dess prioritet (nulägesbeskrivning före livsberättelse) är avsiktlig sedan
+ * Jannes 3A-kort. EN källa för etikett, kommentarsformat och regex — render-lagret hårdkodar inget.
+ * Delningen: servern sätter "alla med länken – läsare" på länkarna vid gruppledarutskicket; kursstart-
+ * skyddet i Actions-lib stänger dem kl 19 på kursstartdagen eftersom de står i en "Länk till …"-kommentar. */
+var STEP_CARRIED_DOC = {
+  '2': {
+    label: 'Livsberättelse', labelBest: 'livsberättelsen', fromStep: 'steg 1',
+    commentPrefix: 'Länk till Livsberättelsen:',
+    // Ankrad på "Länk till Livsberättelsen:" — samma nyckel som kursstartskyddet ("Länk till "). En lösare
+    // substrängmatch ("Har läst livsberättelsen. Hälsoformulär: <url>") hade här öppnat hälsoformuläret.
+    // Ingen radbrytning före kolonet, så nästa rads "Länk till Hälsoformuläret:" aldrig sväljs.
+    regexes: [
+      /l[äa]nk till livsber[äa]ttelsen?[^:\n]*:\s*(?:\[[^\]]*\]\()?(https:\/\/(?:zpr\.io|docs\.google\.com|drive\.google\.com)[^\s)\]"]+)/i,
+    ],
+  },
+};
+function carriedDocForCourse(courseName) { return STEP_CARRIED_DOC[courseStepKey(courseName)] || null; }
+// Länkar servern delar automatiskt (= vad kursstartskyddet kan stänga): Google-dokument, direkt eller bakom
+// kortlänk. Speglar protectableDocId_ i Code.gs. En PDF visas och mejlas, men måste delas för hand.
+var CARRIED_AUTOSHARE_RE = /docs\.google\.com\/document\/d\/|^https?:\/\/(?:zpr\.io|bit\.ly|tinyurl\.com)\//i;
+function carriedAutoShareable(url) { return CARRIED_AUTOSHARE_RE.test(String(url || '')); }
+function carriedManualShareText(cd, names) {
+  if (!cd || !names || !names.length) { return ''; }
+  return cd.label + ' för ' + names.join(', ') + ' är en fil, inte ett Google-dokument: den delas INTE automatiskt. '
+    + 'Dela den som "alla med länken – läsare" för hand innan du skickar, och ta bort delningen efter kursstart.';
+}
+function carriedLinkForCard(card, courseName) {
+  var cd = carriedDocForCourse(courseName);
+  return cd ? commentLink(card, cd.regexes) : null;
+}
+// Stegets EGET dokument. STORY_LINK_RES faller tillbaka på en livsberättelse-länk när ingen nulägesbeskrivning
+// finns — på steg 2 är det då det medförda dokumentet, inte stegets eget. Utan spärren hade samma dokument
+// visats som båda, och färgkodningen skannat livsberättelsen i stället för nulägesbeskrivningen.
+function storyLinkForCard(card, courseName) {
+  var link = commentLink(card, STORY_LINK_RES);
+  var carried = carriedLinkForCard(card, courseName);
+  return (link && carried && link === carried) ? null : link;
+}
+// Instruktionen när det medförda dokumentet saknas. Säger EXAKT kommentarsformatet: både panelen och
+// kursstartskyddet nyckel på "Länk till …", en kommentar med annan lydelse hittas av ingen av dem.
+function carriedMissingText(cd, names) {
+  if (!cd || !names || !names.length) { return ''; }
+  return cd.label + ' saknas för: ' + names.join(', ') + '. Lägg filen i deltagarens mapp i Drive och skriv en '
+    + 'kommentar på kortet: "' + cd.commentPrefix + ' <länken>". Ladda sedan om panelen. Mejlet går ändå, '
+    + 'med "' + cd.labelBest + ' saknas" vid namnet.';
+}
 var HF_ITEM_RE = /h[äa]lsoformul[äa]r.*(l[äa]kare|kursledare)|(l[äa]kare|kursledare).*h[äa]lsoformul[äa]r/i;
 function hfDoneForCard(card) {
   var done = false, exists = false, id = null;
@@ -1193,7 +1286,7 @@ function applyDocNameColors_() {
 }
 function loadDocStatus(courseName, cards) {
   var withDocs = (cards || []).map(function (c) {
-    return { key: c.id, hfUrl: commentLink(c, HF_LINK_RES), livsUrl: commentLink(c, STORY_LINK_RES) };
+    return { key: c.id, hfUrl: commentLink(c, HF_LINK_RES), livsUrl: storyLinkForCard(c, courseName) };
   }).filter(function (it) { return it.hfUrl || it.livsUrl; });
   if (!withDocs.length) { return; }
 
@@ -1348,7 +1441,7 @@ function renderPracticalInfoPanel(rows, courseName) {
       + '<div class="vz-panel-note">Skickar den <a id="vz-pi-doclink" class="vz-tbl-link" href="#" title="Öppna dokumentet (skapas om det inte finns)">kursgemensamma praktiska informationen <span class="vz-ext">↗</span></a> som <b>PDF-bilaga</b> per deltagare och bockar steg 7 "Praktisk info skickat". Verifiera kursdatumen nedan innan du skickar.</div>'
       + '<div class="vz-pi-tokens"><span>Kursdatum: <b>' + esc(tokens.KURSDATUM || '–') + '</b></span>'
       + '<span>Start: <b>' + esc((tokens.STARTDAG || '–') + (tokens.STARTTID ? ' kl. ' + tokens.STARTTID : '')) + '</b></span>'
-      + '<span>Slut: <b>' + esc(tokens.SLUTDAG || '–') + '</b></span></div>'
+      + '<span>Slut: <b>' + esc(tokens.SLUTDAGFULL || tokens.SLUTDAG || '–') + '</b></span></div>'
       + table
       + '<div class="vz-stub-row" style="margin-top:12px"><button class="vz-btn" id="vz-pi-batch"' + (nPending ? '' : ' disabled') + '>Mejla praktisk info till ' + nPending + ' som inte fått</button>'
       + '<span class="vz-stub-note">skapar/återanvänder kurs-PDF:en, mejlar per deltagare (fail-closed i testläge), bockar steg 7</span></div>';
@@ -1369,10 +1462,7 @@ function renderPracticalInfoPanel(rows, courseName) {
           if (r && r.ok && r.url) { docLink.setAttribute('href', r.url); docLink.setAttribute('target', '_blank'); docLink.setAttribute('rel', 'noopener'); window.open(r.url, '_blank'); }
           else {
             var err = (r && r.error) || 'okänt fel';
-            var msg = err === 'course_folder_not_found' ? 'Hittar ingen kursmapp för "' + courseName + '" — dokumentet kan inte skapas än.'
-              : err === 'tokens_missing' ? 'Kursdatumen kunde inte tolkas ur kursnamnet — dokumentet kan inte fyllas.'
-              : 'Kunde inte öppna/skapa dokumentet: ' + err;
-            try { t.alert({ message: '⚠️ ' + msg, duration: 9, display: 'error' }); } catch (e2) {}
+            try { t.alert({ message: '⚠️ ' + practicalDocError_(r, courseName), duration: 9, display: 'error' }); } catch (e2) {}
           }
         }).catch(function (er) { docLink.innerHTML = orig; delete docLink.dataset.busy; try { t.alert({ message: '⚠️ ' + ((er && er.message) || er), duration: 8, display: 'error' }); } catch (e2) {} });
       });
@@ -1386,6 +1476,29 @@ function renderPracticalInfoPanel(rows, courseName) {
   paint();
   placeBelowPanel(sec, 'praktisk');
 }
+/* ENDA KÄLLAN för hur ett fel från createPracticalInfoDoc formuleras för Malin — dok-länken OCH
+ * skicka-flödet går båda hit. Låg först bara i länkens klickhanterare, så den som klickade «Skicka»
+ * fick en rå engelsk kod. Varje text säger vad som hände och vad hon kan göra åt det.
+ * ⚠️ Påstå ALDRIG att dokumentet papperskorgats utan att servern sagt det: misslyckas raderingen
+ * ligger det kvar, och då är det just det dokumentet som återanvänds nästa gång. */
+function practicalDocError_(r, courseName) {
+  var err = (r && r.error) || 'okänt fel';
+  if (err === 'course_folder_not_found') { return 'Hittar ingen kursmapp för "' + courseName + '" — dokumentet kan inte skapas än.'; }
+  if (err === 'tokens_missing') { return 'Kursdatumen kunde inte tolkas ur kursnamnet — dokumentet kan inte fyllas.'; }
+  if (err === 'course_step_unknown') { return 'Kurslistans namn säger inte vilket steg det är, så rätt mall kan inte väljas. Lägg till t.ex. «(Steg 2)» i namnet.'; }
+  if (err === 'template_missing_for_step') { return 'Det finns ingen praktisk info-mall för steg ' + ((r && r.step) || '?') + ' ännu. Säg till så läggs den in.'; }
+  if (err === 'tokens_left_in_doc' || err === 'token_fill_failed' || err === 'token_verify_failed' || err === 'template_copy_failed') {
+    var vad = err === 'tokens_left_in_doc'
+      ? 'Dokumentet blev inte helt ifyllt (' + (((r && r.leftovers) || []).join(', ') || 'platshållare kvar') + ').'
+      : err === 'template_copy_failed' ? 'Mallen kunde inte kopieras färdigt.'
+      : 'Dokumentet kunde inte fyllas i färdigt.';
+    return vad + (r && r.trashed === true
+      ? ' Det har lagts i papperskorgen, så inget halvfärdigt skickas. Försök igen.'
+      : ' 🔴 Det gick INTE att lägga i papperskorgen — radera "Praktisk information – ' + courseName + '" i kursmappen innan du försöker igen, annars är det den filen som skickas.');
+  }
+  return 'Kunde inte öppna/skapa dokumentet: ' + err;
+}
+
 /* Orkestrering: bekräfta (visa tokens + läges-varning) → createPracticalInfoDoc → sendPracticalInfo → bocka steg 7
  * (BARA vid live + lyckat utskick; testläge redirectar och bockar INTE). onSent(rader[]) uppdaterar UI in-place. */
 function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
@@ -1394,7 +1507,15 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
   getCourseSettings().then(function (settings) {
     var mode = resolveSendMode(settings);
     var tokens = practicalTokens(courseName);
-    var tokenLines = 'Kursdatum: ' + (tokens.KURSDATUM || '–') + '\nStart: ' + (tokens.STARTDAG || '–') + ' kl. ' + tokens.STARTTID + '\nSlut: ' + (tokens.SLUTDAG || '–');
+    // MALLRADEN ÄR EN KONTROLL, INTE DEKORATION (Robert 2026-09-21): varje steg har en EGEN praktisk
+    // info-mall, och de skiljer sig i sak — Steg 1 har fasta dagtid och utcheckning morgonen efter,
+    // Steg 2/3a/3b har tre måltider och slutar kl. 14 utan övernattning. Skickas fel mall får deltagaren
+    // fel uppgifter om mat och hemresa. Dialogen ska därför säga VILKEN mall som kopieras, innan klicket.
+    var stepKey = courseStepKey(courseName);
+    var mallRad = stepKey
+      ? '\nMall: Steg ' + stepKey.toUpperCase() + ' (används bara om dokumentet inte redan finns)'
+      : '\n⚠️ Kursnamnet saknar steg — ingen mall kan väljas och utskicket stoppas.';
+    var tokenLines = 'Kursdatum: ' + (tokens.KURSDATUM || '–') + mallRad + '\nStart: ' + (tokens.STARTDAG || '–') + ' kl. ' + tokens.STARTTID + '\nSlut: ' + (tokens.SLUTDAGFULL || tokens.SLUTDAG || '–');
     var admin = String(settings.adminEmail || '').trim();
     var copyLine = mode.live
       ? (admin
@@ -1411,7 +1532,7 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
         if (!mode.live && !mode.redirect) { try { t.alert({ message: 'Testläge utan redirect-adress — sätt en i Inställningar. Inget skickades.', duration: 8, display: 'error' }); } catch (e) {} return; }
         var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Skapar dok…';
         postToGas('createPracticalInfoDoc', { dryRun: false, courseName: courseName, tokens: tokens }).then(function (doc) {
-          if (!doc || !doc.ok || !doc.docId) { throw new Error('Kunde inte skapa PDF-underlaget (' + ((doc && doc.error) || 'okänt') + ').'); }
+          if (!doc || !doc.ok || !doc.docId) { throw new Error(practicalDocError_(doc, courseName)); }
           btn.textContent = '⏳ Skickar…';
           return postToGas('sendPracticalInfo', {
             dryRun: false, live: mode.live === true, redirectEmail: mode.redirect, courseName: courseName, docId: doc.docId,
@@ -1655,14 +1776,36 @@ function renderHfPanel(rows, courseName) {
         }
         allergiOut.value = '⏳ Läser ' + items.length + ' underlag (deltagare + personal) och sammanställer…';
         return postToGas('courseAllergies', { items: items }).then(function (data) {
-          if (!data || data.ok !== true) {
+          // 🔴 ALLERGIERNA LÄSES UT UTAN AI. `extractAllergyFromDocText_` (Code.gs) är ren
+          // textmatchning; Claude FORMATERAR bara resultatet enligt Malins mall. När AI-steget
+          // fallerar (t.ex. slut på API-saldo 2026-09-22) är utläsningen alltså redan KLAR, och
+          // servern skickar med den som `byCode` även i felsvaret — men UI:t kastade allt på
+          // `ok !== true`. Malin fick ingenting fast listan låg i svaret. Gör aldrig om det:
+          // finns rådata, visa rådata, med en notis om att formateringen uteblev.
+          var aiNote = '';
+          var haveRaw = !!(data && data.byCode && Object.keys(data.byCode).length);
+          if ((!data || data.ok !== true) && haveRaw) {
+            // Rådatan finns — bara AI-formateringen uteblev. Rendera vidare med en notis.
+            aiNote = 'OBS: den automatiska språkstädningen kunde inte köras, så raderna nedan står '
+              + 'ordagrant som deltagarna skrev dem i hälsoformuläret. Allt innehåll finns med — läs '
+              + 'igenom och putsa språket innan du skickar till kocken.';
+          } else if (!data || data.ok !== true) {
             if (data && data.error === 'anthropic_key_missing') {
               allergiOut.value = '⚠️ Kan inte sammanställa: AI-nyckeln (ANTHROPIC_API_KEY) saknas i serverns inställningar.';
             } else {
               var detail = (data && data.detail) ? ' (' + data.detail + ')' : '';
-              // 404/400 från Anthropic = modellen utfasad/okänd → tydlig vink, inte tyst fel.
-              var hint = (data && /anthropic_http_(404|400)/.test(data.detail || ''))
-                ? ' — AI-modellen verkar vara utfasad eller okänd; modell-ID:t behöver uppdateras i servern (Code.gs).' : '';
+              // 🔴 HÄR STOD 404 OCH 400 IHOP, OCH DET LJÖG (2026-09-22). Ett 400 tolkades som
+              // "modellen är utfasad" medan API:t i klartext sa att saldot var slut — Robert
+              // jagade ett modell-ID som aldrig var fel. Bara 404 betyder okänd modell hos
+              // Anthropic (not_found_error). 400 = allt annat, och då gäller API:ts egen text.
+              var d = (data && data.detail) || '';
+              var hint = '';
+              if (/anthropic_http_404/.test(d)) {
+                hint = ' — AI-modellen verkar vara utfasad eller okänd; modell-ID:t behöver uppdateras i servern (Code.gs).';
+              } else if (/credit balance/i.test(d)) {
+                hint = ' — Anthropic-kontots saldo är slut. Fyll på på console.anthropic.com → Plans & Billing.'
+                  + ' OBS: ett ChatGPT- eller Claude-abonnemang är en annan plånbok och hjälper inte här.';
+              }
               allergiOut.value = '⚠️ Sammanställningen misslyckades: ' + ((data && data.error) || 'okänt fel') + detail + hint;
             }
             return;
@@ -1683,6 +1826,10 @@ function renderHfPanel(rows, courseName) {
             Object.keys(codeToName).forEach(function (code) { s = s.replace(new RegExp('\\b' + code + '\\b', 'g'), displayFirst(code)); });
             return s;
           }
+          // Ingen AI-text (AI-steget fallerade) → bygg samma två-sektionsformat lokalt, så att
+          // ALL rendering nedan (avanonymisering, Malins mall, oklar-listan) förblir ÉN väg.
+          // Duplicera aldrig mall-logiken i en egen felgren — då driver de isär.
+          if (!raw) { raw = localAllergySummary(byCode); }
           var pp = raw.split(/===\s*PERSONAL\s*===/i);
           var deltBody = deanonFirst((pp[0] || '').replace(/===\s*DELTAGARE\s*===/i, '').trim()) || 'Inga kända matallergier.';
           var persBody = deanonFirst((pp[1] || '').trim()) || 'Inga kända matallergier.';
@@ -1712,8 +1859,14 @@ function renderHfPanel(rows, courseName) {
           });
           rows.filter(function (r) { return !r.link; }).forEach(function (r) { oklar.push(r.name + ' – saknar hälsoformulär'); });
           if (allergiInfo) {
-            allergiInfo.style.display = oklar.length ? '' : 'none';
-            allergiInfo.textContent = oklar.length ? ('Att kontrollera manuellt (ej med i mejlet): ' + oklar.join('; ')) : '';
+            // 🔴 aiNote HÖR HEMMA HÄR, ALDRIG I TEXTRUTAN. Textrutans innehåll är exakt det som
+            // går i väg när Malin trycker "Skicka till kock" (se runSendMail nedan) — en notis
+            // om vår egen drift ska kocken aldrig se. Samma skäl som oklar-listan ligger här.
+            var infoDelar = [];
+            if (aiNote) { infoDelar.push('⚠️ ' + aiNote); }
+            if (oklar.length) { infoDelar.push('Att kontrollera manuellt (ej med i mejlet): ' + oklar.join('; ')); }
+            allergiInfo.style.display = infoDelar.length ? '' : 'none';
+            allergiInfo.textContent = infoDelar.join('  •  ');
           }
         });
       }).catch(function (err) {
@@ -2095,8 +2248,13 @@ function loadStoryMatrix(courseName, participants, cards) {
   COURSE_SUMMARY_URL = '';
   getCoursePersist_(summaryUrlKey_(courseName)).then(function (u) { COURSE_SUMMARY_URL = String(u || ''); }).catch(function () {});
   // Livsberättelse-länk per deltagare ur kort-kommentar + kontaktuppgifter ur kort-desc (#10 uppf-enskild).
-  var storyLinks = {}, contactByKey = {};
-  (cards || []).forEach(function (c) { storyLinks[c.id] = commentLink(c, STORY_LINK_RES); contactByKey[c.id] = parseContactFromDesc(c.desc); });
+  var storyLinks = {}, carriedLinks = {}, contactByKey = {};
+  var carriedCfg = carriedDocForCourse(courseName);   // steg 2: livsberättelsen från steg 1 (Robert 2026-10-14)
+  (cards || []).forEach(function (c) {
+    storyLinks[c.id] = storyLinkForCard(c, courseName);
+    if (carriedCfg) { carriedLinks[c.id] = carriedLinkForCard(c, courseName); }
+    contactByKey[c.id] = parseContactFromDesc(c.desc);
+  });
   var GL = STAFF_BOARDS[0];
   // Gruppledar-namnen (matris-kolumnerna) ur Gruppledare-boarden, exkl. "Vitaliseraperson på plats".
   var leadersP = t.getRestApi().getToken().then(function (token) {
@@ -2124,7 +2282,9 @@ function loadStoryMatrix(courseName, participants, cards) {
     var leaders = r[0] || [], selStory = r[1] || {}, selFollow = r[2] || {};
     renderStoryMatrix(key, participants || [], leaders, selStory, {
       title: livsLabelForCourse(courseName) + ' → gruppledare', storyLinks: storyLinks, kind: 'livsberattelse', cardKey: 'vz_livs_leaders',   // steg-medveten titel
-      note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.',
+      carried: carriedCfg, carriedLinks: carriedLinks,
+      note: 'Bocka vilken gruppledare som läser vilken deltagares ' + livsLabelForCourse(courseName).toLowerCase() + '. Sparas automatiskt.'
+        + (carriedCfg ? ' Gruppledarna får även ' + carriedCfg.labelBest + ' från ' + carriedCfg.fromStep + '.' : ''),
     });
     // Uppföljningssamtal finns BARA i Steg 1 (Robert 2026-06-21) → rendera ej matrisen för 2/3A/3B.
     if (courseHasUppfoljning(courseName)) {
@@ -2372,6 +2532,42 @@ function mailBox(label, value, pkey, sendCfg, docCfg) {
 var DEFAULT_TPL = (typeof window !== 'undefined' && window.NYA_ZAPIER_TPL) || {};
 // Ersätt {TOKEN} ur map. OKÄND token lämnas ORÖRD (t.ex. {SAMMANFATTNINGSLÄNK} fylls senare, {GRUPPLEDARE}/
 // {DELTAGARE} fylls per gruppledare vid utskick). Ren funktion. @param {string} tpl @param {Object} map
+/* ── Lokal matallergi-sammanställning, utan AI ─────────────────────────────────
+ * Själva UTLÄSNINGEN ur hälsoformulären sker i Code.gs och kräver ingen AI — Claude städar bara
+ * språket och delar upp i sektioner. Faller AI-steget (slut på API-saldo, nertid, felkonfiguration)
+ * ska kocken ändå få sin lista. Producerar DÄRFÖR exakt samma två-sektionsformat som modellen,
+ * så att anropande kod inte behöver veta vilken väg texten kom ifrån.
+ *
+ * 🔴 MEDVETET MER INKLUDERANDE ÄN AI:n. Systemprompten ber modellen utöver markörerna också
+ * utelämna "text som inte nämner någon matallergi" — en bedömning som inte går att göra
+ * deterministiskt, och som INTE ska härmas med gissande mönster. Här filtreras bara de kända
+ * icke-svaren bort. Följden är att kocken kan få en rad för mycket. Det är rätt avvägning:
+ * en överflödig rad kostar en läsning, en tappad allergi kan skada någon.
+ * @param {Object<string,string>} byCode  t.ex. {P1:'nötter', P2:'(inga)', A1:'laktos'}
+ * @return {string} '=== DELTAGARE ===\n P1- nötter \n=== PERSONAL ===\n A1- laktos'
+ */
+function localAllergySummary(byCode) {
+  // De markörer Code.gs sätter när det INTE finns något allergisvar. Håll synkad med
+  // `extractAllergyFromDocText_` + `buildAllergyByCode_` i gas/Code.gs.
+  var NON_ANSWER = /^\((inga|okänd|ingen doc-länk|kunde ej läsas|läsfel|inget angivet i kortet)/i;
+  var delt = [];
+  var pers = [];
+  Object.keys(byCode || {}).forEach(function (code) {
+    var txt = String(byCode[code] == null ? '' : byCode[code]).trim();
+    if (!txt || NON_ANSWER.test(txt)) { return; }
+    (/^A/i.test(code) ? pers : delt).push(code + '- ' + txt);
+  });
+  // Sortera numeriskt inom prefix (P2 före P10) så ordningen är stabil mellan körningar.
+  function byNum(a, b) {
+    var na = parseInt(String(a).replace(/^[A-Za-z]+/, ''), 10);
+    var nb = parseInt(String(b).replace(/^[A-Za-z]+/, ''), 10);
+    return (isNaN(na) || isNaN(nb)) ? String(a).localeCompare(String(b)) : na - nb;
+  }
+  delt.sort(byNum);
+  pers.sort(byNum);
+  return '=== DELTAGARE ===\n' + delt.join('\n') + '\n=== PERSONAL ===\n' + pers.join('\n');
+}
+
 function applyTokens(tpl, map) {
   return String(tpl == null ? '' : tpl).replace(/\{([A-ZÅÄÖ_]+)\}/g, function (m, k) {
     return (map && map[k] != null) ? map[k] : m;
@@ -2514,10 +2710,10 @@ function leaderCcEmails(contacts) {
     .filter(Boolean);
 }
 // Per-gruppledare deltagare + livsberättelse-länk (ur urvalskartan + storyLinks). Ren funktion.
-function leaderParticipantLinks(sel, participants, leaderName, storyLinks) {
-  sel = sel || {}; storyLinks = storyLinks || {};
+function leaderParticipantLinks(sel, participants, leaderName, storyLinks, carriedLinks) {
+  sel = sel || {}; storyLinks = storyLinks || {}; carriedLinks = carriedLinks || {};
   return (participants || []).filter(function (p) { return sel[p.key + '||' + leaderName]; })
-    .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '' }; });
+    .map(function (p) { return { name: p.name, link: storyLinks[p.key] || '', link2: carriedLinks[p.key] || '' }; });
 }
 // Per-gruppledare deltagare + kontakt (#10): ur urvalskartan + contactByKey. Ren funktion.
 function leaderParticipantContacts(sel, participants, leaderName, contactByKey) {
@@ -2560,12 +2756,20 @@ function mdToPlain(text) {
 }
 // Enskild-mall → inre HTML per gruppledare: {GRUPPLEDARE}=förnamn, {DELTAGARE}=namn (länkade om länk finns).
 // Mallen escapas (platshållarna saknar specialtecken → överlever), platshållare ersätts med säker HTML.
-function enskildBodyHtml(template, leaderName, items) {
+function enskildBodyHtml(template, leaderName, items, carried) {
   var namesHtml = (items || []).map(function (it) {
     var n = esc(it.name);
     // Länka BARA http(s)-URL:er (defense-in-depth mot javascript:/data:-scheman, utöver att
     // storyLinks redan är domän-begränsade vid källan via STORY_LINK_RES).
-    return (it.link && /^https?:\/\//i.test(it.link)) ? '<a href="' + esc(it.link) + '">' + n + '</a>' : n;
+    var row = (it.link && /^https?:\/\//i.test(it.link)) ? '<a href="' + esc(it.link) + '">' + n + '</a>' : n;
+    // Medfört dokument (steg 2: livsberättelsen) som egen länk efter namnet; saknas den står det i mejlet
+    // så gruppledaren inte letar — och Malin ser det i förhandsvisningen.
+    if (carried) {
+      row += (it.link2 && /^https?:\/\//i.test(it.link2))
+        ? ' · <a href="' + esc(it.link2) + '">' + esc(carried.labelBest) + '</a>'
+        : ' · ' + esc(carried.labelBest) + ' saknas';
+    }
+    return row;
   }).join('<br>');
   return esc(String(template == null ? '' : template))
     .replace(/\{GRUPPLEDARE\}/g, esc(firstNameOf(leaderName)))
@@ -2573,8 +2777,12 @@ function enskildBodyHtml(template, leaderName, items) {
     .replace(/\n/g, '<br>');
 }
 // Enskild-mall → plaintext per gruppledare: namn + ev. länk på egen rad.
-function enskildBodyText(template, leaderName, items) {
-  var namesTxt = (items || []).map(function (it) { return it.link ? (it.name + ' — ' + it.link) : it.name; }).join('\n');
+function enskildBodyText(template, leaderName, items, carried) {
+  var namesTxt = (items || []).map(function (it) {
+    var row = it.link ? (it.name + ' — ' + it.link) : it.name;
+    if (carried) { row += it.link2 ? (' · ' + carried.labelBest + ': ' + it.link2) : (' · ' + carried.labelBest + ' saknas'); }
+    return row;
+  }).join('\n');
   return String(template == null ? '' : template)
     .replace(/\{GRUPPLEDARE\}/g, firstNameOf(leaderName))
     .replace(/\{DELTAGARE\}/g, namesTxt);
@@ -2701,9 +2909,13 @@ function runSendMail(opts) {
       warn.textContent = '⚠️ ' + timing;
       note.appendChild(warn);
     }
+    var shareReader = built.shareReader || [];
     var q = document.createElement('span');
     q.textContent = (mode.live ? '⚠️ SKARPT — ' + recN + ' riktig(a) mottagare. ' : 'Testläge → allt till ' + mode.redirect + '. ')
-      + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '') + 'Skicka?';
+      + (missing.length ? '(saknad adress: ' + missing.join(', ') + ') ' : '')
+      // Dialogen säger vad knappen GÖR, inte bara vad den heter: delningen är en ändring i Drive.
+      + (shareReader.length ? (mode.live ? 'Sätter "alla med länken – läsare" på ' + shareReader.length + ' dokument från tidigare steg. ' : '(' + shareReader.length + ' dokument delas INTE i testläge.) ') : '')
+      + 'Skicka?';
     var yes = document.createElement('button'); yes.className = 'vz-btn vz-btn--send'; yes.textContent = 'Bekräfta';
     yes.style.cssText = 'margin-left:6px;padding:4px 11px;font-size:12px';
     var no = document.createElement('button'); no.className = 'vz-btn'; no.textContent = 'Avbryt';
@@ -2712,13 +2924,14 @@ function runSendMail(opts) {
     no.addEventListener('click', function () { note.textContent = ''; btn.disabled = false; });
     yes.addEventListener('click', function () {
       note.textContent = '⏳ Skickar…';
-      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo }).then(function (res) {
+      postToGas('sendGroupLeaderMail', { dryRun: false, live: mode.live, redirectEmail: mode.redirect, kind: opts.kind, emails: emails, senderName: settings.senderName, replyTo: settings.replyTo, shareReader: shareReader }).then(function (res) {
         if (res && res.ok) {
           var okN = (res.sent || []).filter(function (s) { return s.ok; }).length;
           var failed = (res.sent || []).filter(function (s) { return !s.ok; });
           note.textContent = '✓ ' + okN + ' skickat'
             + (failed.length ? ', ⚠️ ' + failed.length + ' misslyckades (' + ((failed[0] && failed[0].error) || 'okänt') + ')' : '')
             + (missing.length ? ' · saknad adress: ' + missing.join(', ') : '')
+            + shareOutcomeText(res.shared)
             + (res.live ? ' (skarpt)' : ' (test → ' + res.redirect + ')');
         } else { note.textContent = '⚠️ ' + ((res && res.error) || 'okänt fel') + (res && res.detail ? ' — ' + res.detail : ''); }
         btn.disabled = false;
@@ -2727,9 +2940,30 @@ function runSendMail(opts) {
   }).catch(function (e) { note.textContent = '⚠️ ' + e.message; btn.disabled = false; });
 }
 
+// Unika länkar till det medförda dokumentet ur de mejl som FAKTISKT byggts (en lista med items per mejl).
+// Ren funktion. Dellistan härleds ur mejlen, inte ur matrisen, så inget öppnas som ingen får länken till.
+function carriedShareList(itemsPerMail) {
+  var out = [], seen = {};
+  (itemsPerMail || []).forEach(function (items) {
+    (items || []).forEach(function (it) {
+      var u = it && it.link2;
+      if (u && !seen[u]) { seen[u] = true; out.push(u); }
+    });
+  });
+  return out;
+}
+// Utfallet av läsare-delningen i utfallsraden. Säger aldrig "delat" om inget delats. Ren funktion.
+function shareOutcomeText(sh) {
+  if (!sh || !sh.requested) { return ''; }
+  if (sh.skipped) { return ' · ' + sh.requested + ' dokument EJ delade (testläge)'; }
+  var s = ' · delning: ' + sh.shared + ' nya, ' + sh.already + ' redan öppna';
+  if (sh.failed && sh.failed.length) { s += ', ⚠️ ' + sh.failed.length + ' MISSLYCKADES (' + sh.failed.map(function (f) { return f.url; }).join(', ') + ') — gruppledaren kan inte öppna dem'; }
+  return s;
+}
 function renderStoryMatrix(key, participants, leaders, sel, opts) {
   opts = opts || {}; sel = sel || {};
   var storyLinks = opts.storyLinks || {};
+  var carried = opts.carried || null, carriedLinks = opts.carriedLinks || {};
   var host = vzRegion('below');
   if (!host) { return; }
   var sec = document.createElement('section');
@@ -2760,14 +2994,18 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
     return { emails: r.tos.length ? [{ to: r.tos.join(','), cc: [], subject: livsLabelForCourse(COURSE_NAME) + ' inför kursen', bodyHtml: plainToHtml(taVal), bodyText: mdToPlain(taVal) }] : [], missing: r.missing };
   } };
   var cfgEnskild = { kind: 'livsberattelse', btnLabel: 'Mejla varje gruppledare sina egna ' + livsP, hideCopy: true, build: function (contacts, taVal) {
-    var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [];
+    var cc = leaderCcEmails(contacts), asg = buildLeaderAssignments(sel, participants, leaders), emails = [], missing = [], sentItems = [];
     asg.forEach(function (a) {
       var em = glContactEmail(a.leaderName, contacts);
       if (!em) { missing.push(a.leaderName); return; }
-      var items = leaderParticipantLinks(sel, participants, a.leaderName, storyLinks);
-      emails.push({ to: em, cc: cc, subject: livsLabelForCourse(COURSE_NAME) + ' att läsa', bodyHtml: enskildBodyHtml(taVal, a.leaderName, items), bodyText: enskildBodyText(taVal, a.leaderName, items) });
+      var items = leaderParticipantLinks(sel, participants, a.leaderName, storyLinks, carriedLinks);
+      sentItems.push(items);
+      emails.push({ to: em, cc: cc, subject: livsLabelForCourse(COURSE_NAME) + ' att läsa', bodyHtml: enskildBodyHtml(taVal, a.leaderName, items, carried), bodyText: enskildBodyText(taVal, a.leaderName, items, carried) });
     });
-    return { emails: emails, missing: missing };
+    // Medförda dokument i mejlen → servern sätter "alla med länken – läsare" på dem direkt före utskicket
+    // (Robert 2026-10-14: från gruppledarmejlet till kl 19 på kursstartdagen, läsare). EXAKT de länkar som
+    // mejlas: en ledare utan e-post får inget mejl, och hens deltagares dokument ska då inte öppnas.
+    return { emails: emails, missing: missing, shareReader: carried ? carriedShareList(sentItems) : [] };
   } };
   // ALLA gruppledare, inte bara de med tilldelade samtal (Robert 2026-08-29) — mejlet bär
   // uppföljningsresultatet, som hela gänget vill kunna läsa. Se allLeaderEmailsFor.
@@ -2814,6 +3052,12 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
       }).join('');
       var lk = storyLinks[p.key];
       var nm = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="vz-tbl-link">' + esc(p.name) + ' <span class="vz-ext">↗</span></a>' : '<span class="vz-tbl-name">' + esc(p.name) + '</span>';
+      if (carried) {
+        var lk2 = carriedLinks[p.key];
+        nm += lk2
+          ? ' <a href="' + esc(lk2) + '" target="_blank" rel="noopener" class="vz-tbl-link vz-carried" title="Öppna ' + esc(carried.labelBest) + '">' + esc(carried.labelBest) + ' <span class="vz-ext">↗</span></a>'
+          : ' <span class="vz-carried vz-carried--missing" title="' + esc(carriedMissingText(carried, [p.name])) + '">⚠ ' + esc(carried.labelBest) + ' saknas</span>';
+      }
       // Robert 2026-06-21: färgkoda namnet efter dok-status (klart/ej) + tooltip med %/bild. Bara livsberättelse-matrisen (har dok).
       var docAttr = (opts.kind === 'livsberattelse') ? ' data-doc-pk="' + esc(p.key) + '" data-doc-kind="livs"' : '';
       // Uppföljningsmatrisen färgkodas ur sammanfattningsdokumentet — SAMMA klasser och färger som
@@ -2867,10 +3111,17 @@ function renderStoryMatrix(key, participants, leaders, sel, opts) {
         }
         // #13: varna (icke-blockerande) för deltagare som inte tilldelats någon gruppledare (glömd bock).
         if (mailWarn) {
+          var warns = [];
           var oassigned = unassignedParticipants(sel, participants, leaders);
-          mailWarn.textContent = oassigned.length
-            ? '⚠️ ' + oassigned.length + ' deltagare saknar gruppledare och är INTE med: ' + oassigned.join(', ') + '. Bocka dem om de ska ingå.'
-            : '';
+          if (oassigned.length) { warns.push('⚠️ ' + oassigned.length + ' deltagare saknar gruppledare och är INTE med: ' + oassigned.join(', ') + '. Bocka dem om de ska ingå.'); }
+          // Medfört dokument som saknas (steg 2: livsberättelsen) — varning med exakt instruktion, inget stopp.
+          if (carried) {
+            var missingCarried = participants.filter(function (p) { return !carriedLinks[p.key]; }).map(function (p) { return p.name; });
+            if (missingCarried.length) { warns.push('⚠️ ' + carriedMissingText(carried, missingCarried)); }
+            var manualCarried = participants.filter(function (p) { return carriedLinks[p.key] && !carriedAutoShareable(carriedLinks[p.key]); }).map(function (p) { return p.name; });
+            if (manualCarried.length) { warns.push('⚠️ ' + carriedManualShareText(carried, manualCarried)); }
+          }
+          mailWarn.innerHTML = warns.map(esc).join('<br>');
         }
         mailBtn.disabled = true;
         mailOut.innerHTML = '<div class="vz-panel-note">⏳ Skapar mejltext…</div>';
