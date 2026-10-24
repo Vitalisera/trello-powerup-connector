@@ -887,9 +887,36 @@ function assistOutcomeText_(o) {
   if (ut === 'pågår' || ut === 'pagar') { return 'Skickas redan, vänta en stund'; }
   var why = o.orsak || o.fel || o.error || '';
   if (why === 'testmottagare_ogiltig') { return '⚠️ Testmottagaren är felinställd, inget skickades'; }
+  if (/^dok_/.test(why)) { return '⚠️ Mejltexten i dokumentet kan inte användas: ' + assistDocReason_(why) + '. Inget skickades.'; }
   var KANDA = { datum_otolkbart: 'Kursdatumet går inte att läsa ur listnamnet', lankkontroll: 'Svarslänken svarade inte, inget skickades',
     bot_nyckel_saknas: 'Bot-nyckel saknas', mejl_misslyckades: 'Mejlet gick inte iväg' };
   return '⚠️ Fel' + (why ? ': ' + (KANDA[why] || why) : '');
+}
+// Orsakskoder från servern när mejltexten (Google-dokumentet) inte går att använda, på svenska.
+function assistDocReason_(orsak) {
+  var o = String(orsak || '');
+  if (o === 'dok_saknas') { return 'dokumentet saknas eller går inte att öppna'; }
+  if (o === 'dok_amne_saknas') { return 'första raden i dokumentet måste börja med "Ämne:" och ha en ämnesrad'; }
+  if (o === 'dok_knappar_saknas') { return 'platshållaren {KNAPPAR} saknas i dokumentet'; }
+  if (o === 'dok_tom') { return 'dokumentet har ingen brödtext'; }
+  var m = /^dok_okand_platshallare:(.*)$/.exec(o);
+  if (m) { return 'okänd platshållare {' + m[1] + '} i dokumentet'; }
+  return o || 'okänd orsak';
+}
+// Rader om mejltexternas dokument ur assistStatus.dokument: [{ok, text, url}]. Tom lista om servern inte skickar fältet.
+function assistDocLines_(status) {
+  var d = status && status.dokument, out = [];
+  if (!d || typeof d !== 'object') { return out; }
+  [['m2', 'Mejltext 2 mån'], ['lamnar', 'Mejltext när någon lämnar platsen']].forEach(function (pair) {
+    var x = d[pair[0]];
+    if (!x) { return; }
+    var url = /^https:\/\/docs\.google\.com\//.test(String(x.url || '')) ? x.url : '';
+    out.push({
+      ok: x.ok === true, url: url,
+      text: x.ok === true ? pair[1] + ': dokumentet fungerar.' : '⚠️ ' + pair[1] + ' kan inte användas: ' + assistDocReason_(x.orsak) + '. Inget skickas förrän det är rättat.'
+    });
+  });
+  return out;
 }
 // Startdatum som servern får (YYYY-MM-DD), via den befintliga courseStartDate.
 function assistStartIso_(courseName) {
@@ -926,6 +953,9 @@ function initAssistPanel_(box, sec, listId, courseName) {
         + '<button class="vz-btn vz-assist-btn vz-assist-btn--grey" id="vz-assist-batch1" disabled>dokument saknas</button>'
         + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m1"' + (auto.m1 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
       html += '<div class="vz-assist-hint">1 månad: skickas först när dokumenten finns.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
+      assistDocLines_(st.status).forEach(function (ln) {
+        html += '<div class="vz-assist-hint">' + esc(ln.text) + (ln.url ? ' <a href="' + esc(ln.url) + '" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a>' : '') + '</div>';
+      });
       if (st.batchMsg) { html += '<div class="vz-assist-hint">' + esc(st.batchMsg) + '</div>'; }
     }
     box.innerHTML = html;
