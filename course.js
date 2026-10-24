@@ -852,7 +852,10 @@ function assistPersonLine_(info, status) {
 // EN definition av "1-månadsmejlet skickat": en testpost räknas inte i skarpt läge (samma regel som för 2 månader).
 function assistSent1_(status, p) { return !!(p && p.s1At && !(p.s1Test && status && status.live)); }
 // Har assistenten (synligt för läget) svarat att hon lämnar platsen? Då skickas inget 1-månadsmejl, varken med knapp eller automatiskt.
-function assistLamnar_(p) { return !!(p && p.svar === 'lamnar'); }
+// Servern skickar lamnat (senaste svaret, även ett som nollställdes vid omskick); äldre svar utan fältet läses ur svar.
+function assistLamnar_(p) { return !!(p && (p.lamnat === true || (p.lamnat === undefined && p.svar === 'lamnar'))); }
+// 2- och 1-månadsmejlet gäller bara Steg 1 och Steg 2 (Malin 24/10). För Steg 3a, 3b och okänt steg visas inga assistentrader.
+function assistStepOk_(courseName) { var k = courseStepKey(courseName); return k === '1' || k === '2'; }
 function assistLine1_(info, status) {
   if (info && info.s1At && status && !assistSent1_(status, info)) { return '1 mån: ej skickat (bara test ' + (assistFmtDate_(info.s1At) || '?') + ')'; }
   if (info && info.s1At) { return '1 mån: skickat ' + (assistFmtDate_(info.s1At) || '?') + (info.s1Test ? ' (test)' : ''); }
@@ -907,6 +910,7 @@ function assistOutcomeText_(o) {
   if (ut === 'pågår' || ut === 'pagar') { return 'Skickas redan, vänta en stund'; }
   var why = o.orsak || o.fel || o.error || '';
   if (why === 'testmottagare_ogiltig') { return '⚠️ Testmottagaren är felinställd, inget skickades'; }
+  if (/^steg_ej_omfattat/.test(o.orsak || '')) { return '⚠️ Mejlet gäller bara Steg 1 och 2. Inget skickades.'; }
   if (ut === 'lamnar') { return 'Har lämnat platsen, 1-månadsmejlet skickas inte'; }
   if (/^dok_/.test(why)) { return '⚠️ Mejltexten i dokumentet kan inte användas: ' + assistDocReason_(why) + '. Inget skickades.'; }
   if (/^bilaga_/.test(why)) { return '⚠️ Bilagorna kan inte användas: ' + assistAttachReason_(why) + '. Inget skickades.'; }
@@ -923,6 +927,12 @@ function assistDocReason_(orsak) {
   if (o === 'dok_tom') { return 'dokumentet har ingen brödtext'; }
   var m = /^dok_okand_platshallare:(.*)$/.exec(o);
   if (m) { return 'okänd platshållare {' + m[1] + '} i dokumentet'; }
+  if ((m = /^svar_avsnitt_saknas:(.*)$/.exec(o))) { return 'avsnittet ' + m[1] + ' saknas'; }
+  if ((m = /^svar_avsnitt_okant:(.*)$/.exec(o))) { return 'okänt avsnitt (rubrikraden "' + m[1] + '" finns inte)'; }
+  if ((m = /^svar_avsnitt_tomt:(.*)$/.exec(o))) { return 'avsnittet ' + m[1] + ' har ingen text'; }
+  if ((m = /^svar_avsnitt_dubblett:(.*)$/.exec(o))) { return 'avsnittet ' + m[1] + ' står två gånger'; }
+  if (o === 'svar_text_utan_rubrik') { return 'det finns text före första rubriken'; }
+  if ((m = /^svar_okand_platshallare:(.*)$/.exec(o))) { return 'okänd platshållare {' + m[1].replace(/ \(.*$/, '') + '}' + (/\((.*)\)\s*$/.test(m[1]) ? ' i avsnittet ' + /\((.*)\)\s*$/.exec(m[1])[1] : ''); }
   return o || 'okänd orsak';
 }
 // Namn på bilage-dokumenten (egenskapsnamnet från servern) på svenska.
@@ -959,13 +969,16 @@ function assistAttachLine_(status) {
 function assistDocLines_(status) {
   var d = status && status.dokument, out = [];
   if (!d || typeof d !== 'object') { return out; }
-  [['m2', 'Mejltext 2 mån'], ['m1', 'Mejltext 1 mån'], ['lamnar', 'Mejltext när någon lämnar platsen']].forEach(function (pair) {
+  [['m2', 'Mejltext 2 mån'], ['m1', 'Mejltext 1 mån'], ['lamnar', 'Mejltext när någon lämnar platsen'], ['svar', 'Svarssidorna']].forEach(function (pair) {
     var x = d[pair[0]];
     if (!x) { return; }
     var url = /^https:\/\/docs\.google\.com\//.test(String(x.url || '')) ? x.url : '';
     out.push({
       ok: x.ok === true, url: url,
-      text: x.ok === true ? pair[1] + ': dokumentet fungerar.' : '⚠️ ' + pair[1] + ' kan inte användas: ' + assistDocReason_(x.orsak) + '. Inget skickas förrän det är rättat.'
+      text: x.ok === true ? pair[1] + ': dokumentet fungerar.'
+        : (pair[0] === 'svar'
+          ? '⚠️ ' + pair[1] + ' har ett fel i dokumentet: ' + assistDocReason_(x.orsak) + '. Assistenterna får standardtexten för det avsnittet tills det är rättat.'
+          : '⚠️ ' + pair[1] + ' kan inte användas: ' + assistDocReason_(x.orsak) + '. Inget skickas förrän det är rättat.')
     });
   });
   return out;
@@ -1224,14 +1237,14 @@ function renderStaffPanel(groups, courseName) {
     else {
       var rows = g.people.map(function (p) {
         var roleTag = (p.role && p.role !== g.cfg.defaultRole) ? '<span class="vz-staff-role">' + esc(p.role) + '</span>' : '';
-        var assistSlot = (g.cfg.key === 'assistenter' && g.listId && p.id) ? '<div class="vz-assist-row" data-card="' + esc(p.id) + '"></div>' : '';
+        var assistSlot = (g.cfg.key === 'assistenter' && g.listId && p.id && assistStepOk_(courseName)) ? '<div class="vz-assist-row" data-card="' + esc(p.id) + '"></div>' : '';
         return '<li class="vz-staff-row' + (assistSlot ? ' vz-staff-row--assist' : '') + '"><span class="vz-staff-name">' + esc(p.name) + '</span>' + roleTag + assistSlot + '</li>';
       }).join('');
       body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
     if (g.cfg.key === 'assistenter' && g.listId) { ASSIST_LIST_ID = g.listId; }  // för matallergi-hämtning
     if (g.cfg.key === 'kockar' && g.listId) { KOCK_LIST_ID = g.listId; }          // för "Skicka till kock"
-    if (g.cfg.key === 'assistenter' && g.listId) { body = '<div class="vz-assist" id="vz-assist-box"></div>' + body; }
+    if (g.cfg.key === 'assistenter' && g.listId && assistStepOk_(courseName)) { body = '<div class="vz-assist" id="vz-assist-box"></div>' + body; }
     var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
       ? '<div class="vz-stub-row">'
         + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
