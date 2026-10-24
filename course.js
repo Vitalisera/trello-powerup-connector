@@ -829,7 +829,7 @@ function staffPerson(card, cfg) {
   return name ? { name: name, role: role, id: card.id || '' } : null;
 }
 /* ---------- Assistentutskick: "2 månader innan kurs" / "1 månad innan kurs" (steg A, 2026-10-24) ----------
- * Kontrakt mot servern: docs/SPEC-assistentknappar-steg-A-2026-10-24.md (assistStatus, assistSetAuto, assistSend2).
+ * Kontrakt mot servern: docs/SPEC-assistentknappar-steg-A-2026-10-24.md (assistStatus, assistSend2, assistSend1; automatiken är avstängd, assistSetAuto anropas inte).
  * Rena hjälpfunktioner först (provas i proof.js), sedan panelkoden. Servern äger sanningen om vad som skickats
  * (s2At, svar); panelen läser alltid om assistStatus efter varje åtgärd i stället för att gissa. */
 function assistFmtDate_(v) {
@@ -929,6 +929,7 @@ function assistDocReason_(orsak) {
 function assistAttachName_(prop) {
   var p = String(prop || '');
   if (p === 'ASSIST_AB') { return 'arbetsbeskrivningen'; }
+  if (p === 'ASSIST_POLICY') { return 'integritetspolicyn'; }
   var m = /^ASSIST_PI_STEG(\w+)$/.exec(p);
   return m ? ('praktisk information för assistenter, Steg ' + m[1].toLowerCase()) : 'bilagan';
 }
@@ -951,7 +952,7 @@ function assistAttachLine_(status) {
   if (!b || typeof b !== 'object') { return null; }
   var url = /^https:\/\/docs\.google\.com\//.test(String(b.url || '')) ? b.url : '';
   return b.ok === true
-    ? { ok: true, url: '', text: 'Bilagor till 1-månadsmejlet (Steg ' + String(b.steg || '').toLowerCase() + '): praktisk information för assistenter och arbetsbeskrivningen fungerar.' }
+    ? { ok: true, url: '', text: 'Bilagor till 1-månadsmejlet (Steg ' + String(b.steg || '').toLowerCase() + '): praktisk information för assistenter, arbetsbeskrivningen och integritetspolicyn fungerar.' }
     : { ok: false, url: url, text: '⚠️ Bilagorna till 1-månadsmejlet kan inte användas: ' + assistAttachReason_(b.orsak) + '. Inget skickas förrän det är rättat.' };
 }
 // Rader om mejltexternas dokument ur assistStatus.dokument: [{ok, text, url}]. Tom lista om servern inte skickar fältet.
@@ -997,7 +998,6 @@ function initAssistPanel_(box, sec, listId, courseName) {
   }
   function paint() {
     var dis = assistDisabled_(st.status);
-    var auto = (st.status && st.status.auto) || {};
     var pend = assistPendingCards_(st.cards, st.status);
     var html = '';
     assistBanners_(st.status).forEach(function (b) { html += '<div class="vz-assist-banner">' + esc(b) + '</div>'; });
@@ -1007,13 +1007,14 @@ function initAssistPanel_(box, sec, listId, courseName) {
       var b2Dis = dis || st.batchBusy || !pend.length || !start;
       html += '<div class="vz-assist-line"><span class="vz-assist-label">2 månader innan kurs</span>'
         + '<button class="vz-btn vz-assist-btn" id="vz-assist-batch2"' + (b2Dis ? ' disabled' : '') + '>' + (st.batchBusy ? '⏳ Skickar…' : 'Skicka till ' + pend.length + ' som inte fått') + '</button>'
-        + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m2"' + (auto.m2 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
+        + '</div>';
       var pend1 = assistPending1Cards_(st.cards, st.status), blk = m1Block();
       var b1Dis = dis || st.batchBusy1 || !pend1.length || !start || !!blk;
       html += '<div class="vz-assist-line"><span class="vz-assist-label">1 månad innan kurs</span>'
         + '<button class="vz-btn vz-assist-btn' + (blk ? ' vz-assist-btn--grey' : '') + '" id="vz-assist-batch1"' + (b1Dis ? ' disabled' : '') + '>' + (st.batchBusy1 ? '⏳ Skickar…' : (blk ? 'dokument saknas' : 'Skicka till ' + pend1.length + ' som inte fått')) + '</button>'
-        + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m1"' + (auto.m1 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
-      html += '<div class="vz-assist-hint">1 månad: praktisk information för assistenter och arbetsbeskrivningen bifogas som PDF. Den som har lämnat platsen får inte mejlet.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
+        + '</div>';
+      html += '<div class="vz-assist-hint">Inga mejl skickas automatiskt, bara med knapparna.</div>';
+      html += '<div class="vz-assist-hint">1 månad: praktisk information för assistenter, arbetsbeskrivningen och integritetspolicyn bifogas som PDF. Den som har lämnat platsen får inte mejlet.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
       var al = assistAttachLine_(st.status);
       if (al) { html += '<div class="vz-assist-hint">' + esc(al.text) + (al.url ? ' <a href="' + esc(al.url) + '" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a>' : '') + '</div>'; }
       assistDocLines_(st.status).forEach(function (ln) {
@@ -1144,22 +1145,11 @@ function initAssistPanel_(box, sec, listId, courseName) {
       paint();
     });
   }
-  function setAuto(mejl, pa, cb) {
-    cb.disabled = true;
-    postToGas('assistSetAuto', { listId: listId, kurs: courseName, mejl: mejl, pa: !!pa }).then(function (r) {
-      if (!r || r.ok === false) { throw new Error((r && r.error) || 'servern nekade'); }
-    }).catch(function (e) { st.err = 'Kunde inte spara automatik-valet: ' + ((e && e.message) || e); })
-      .then(statusCall).then(paint);
-  }
   function wire() {
     var b2 = box.querySelector('#vz-assist-batch2');
     if (b2) { b2.addEventListener('click', sendBatch); }
     var b1 = box.querySelector('#vz-assist-batch1');
     if (b1) { b1.addEventListener('click', sendBatch1); }
-    ['m2', 'm1'].forEach(function (k) {
-      var cb = box.querySelector('#vz-assist-auto-' + k);
-      if (cb) { cb.addEventListener('change', function () { setAuto(k, cb.checked, cb); }); }
-    });
   }
   paint();
   t.getRestApi().getToken().then(function (token) {
