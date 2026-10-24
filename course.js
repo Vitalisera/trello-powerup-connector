@@ -849,8 +849,28 @@ function assistPersonLine_(info, status) {
   var svar = info.svar === 'behaller' ? 'behåller ✅' : info.svar === 'lamnar' ? 'lämnar ❌' : 'inget svar';
   return '2 mån: skickat ' + (assistFmtDate_(info.s2At) || '?') + (info.s2Test ? ' (test)' : '') + ' · svar: ' + svar;
 }
-function assistLine1_(info) {
-  return (info && info.s1At) ? '1 mån: skickat ' + (assistFmtDate_(info.s1At) || '?') : '1 mån: ej skickat';
+// EN definition av "1-månadsmejlet skickat": en testpost räknas inte i skarpt läge (samma regel som för 2 månader).
+function assistSent1_(status, p) { return !!(p && p.s1At && !(p.s1Test && status && status.live)); }
+// Har assistenten (synligt för läget) svarat att hon lämnar platsen? Då skickas inget 1-månadsmejl, varken med knapp eller automatiskt.
+function assistLamnar_(p) { return !!(p && p.svar === 'lamnar'); }
+function assistLine1_(info, status) {
+  if (info && info.s1At && status && !assistSent1_(status, info)) { return '1 mån: ej skickat (bara test ' + (assistFmtDate_(info.s1At) || '?') + ')'; }
+  if (info && info.s1At) { return '1 mån: skickat ' + (assistFmtDate_(info.s1At) || '?') + (info.s1Test ? ' (test)' : ''); }
+  if (assistLamnar_(info)) { return '1 mån: skickas inte (har lämnat platsen)'; }
+  return '1 mån: ej skickat';
+}
+// N för 1-månadsmejlet = med e-post, utan skickat 1-månadsmejl och som inte lämnat platsen.
+function assistPending1Cards_(cards, status) {
+  var pers = (status && status.personer) || {};
+  return (cards || []).filter(function (c) { return c.epost && !assistSent1_(status, pers[c.id]) && !assistLamnar_(pers[c.id]); });
+}
+function assistNeedsConfirm1_(status, id) {
+  var p = status && status.personer && status.personer[id];
+  return assistSent1_(status, p);
+}
+function assistConfirmText1_(status, id) {
+  var p = status && status.personer && status.personer[id];
+  return 'Redan skickat ' + ((p && assistFmtDate_(p.s1At)) || '?') + '. Skicka igen?';
 }
 // N = assistenter med e-post som saknar s2At.
 function assistPendingCards_(cards, status) {
@@ -887,7 +907,9 @@ function assistOutcomeText_(o) {
   if (ut === 'pågår' || ut === 'pagar') { return 'Skickas redan, vänta en stund'; }
   var why = o.orsak || o.fel || o.error || '';
   if (why === 'testmottagare_ogiltig') { return '⚠️ Testmottagaren är felinställd, inget skickades'; }
+  if (ut === 'lamnar') { return 'Har lämnat platsen, 1-månadsmejlet skickas inte'; }
   if (/^dok_/.test(why)) { return '⚠️ Mejltexten i dokumentet kan inte användas: ' + assistDocReason_(why) + '. Inget skickades.'; }
+  if (/^bilaga_/.test(why)) { return '⚠️ Bilagorna kan inte användas: ' + assistAttachReason_(why) + '. Inget skickades.'; }
   var KANDA = { datum_otolkbart: 'Kursdatumet går inte att läsa ur listnamnet', lankkontroll: 'Svarslänken svarade inte, inget skickades',
     bot_nyckel_saknas: 'Bot-nyckel saknas', mejl_misslyckades: 'Mejlet gick inte iväg' };
   return '⚠️ Fel' + (why ? ': ' + (KANDA[why] || why) : '');
@@ -903,11 +925,40 @@ function assistDocReason_(orsak) {
   if (m) { return 'okänd platshållare {' + m[1] + '} i dokumentet'; }
   return o || 'okänd orsak';
 }
+// Namn på bilage-dokumenten (egenskapsnamnet från servern) på svenska.
+function assistAttachName_(prop) {
+  var p = String(prop || '');
+  if (p === 'ASSIST_AB') { return 'arbetsbeskrivningen'; }
+  var m = /^ASSIST_PI_STEG(\w+)$/.exec(p);
+  return m ? ('praktisk information för assistenter, Steg ' + m[1].toLowerCase()) : 'bilagan';
+}
+// Orsakskoder från servern när bilagorna till 1-månadsmejlet inte går att använda, på svenska.
+function assistAttachReason_(orsak) {
+  var o = String(orsak || ''), m;
+  if ((m = /^bilaga_steg_saknas:(.*)$/.exec(o))) {
+    return m[1] === '?' ? 'dokument saknas för steget (kursens steg går inte att läsa ur listnamnet)' : 'dokument saknas för steget (det finns ingen praktisk information för assistenter för Steg ' + m[1] + ' ännu)';
+  }
+  if ((m = /^bilaga_saknas:(.*)$/.exec(o))) { return 'dokument saknas för steget (' + assistAttachName_(m[1]) + ' är inte inlagd)'; }
+  if ((m = /^bilaga_ej_oppningsbar:(.*)$/.exec(o))) { return 'dokument saknas för steget (' + assistAttachName_(m[1]) + ' går inte att öppna)'; }
+  if ((m = /^bilaga_okand_platshallare:(.*)$/.exec(o))) { return 'okänd platshållare {{' + m[1] + '}} i en bilaga'; }
+  if ((m = /^bilaga_tokens_kvar:(.*)$/.exec(o))) { return 'platshållaren {{' + m[1] + '}} gick inte att fylla i'; }
+  if ((m = /^bilaga_export_misslyckades:?(.*)$/.exec(o))) { return 'PDF:en av ' + assistAttachName_(m[1]) + ' gick inte att skapa'; }
+  return o || 'okänd orsak';
+}
+// Raden om bilagorna för kursens steg ur assistStatus.bilagor: {ok, text, url} eller null om servern inte skickar fältet.
+function assistAttachLine_(status) {
+  var b = status && status.bilagor;
+  if (!b || typeof b !== 'object') { return null; }
+  var url = /^https:\/\/docs\.google\.com\//.test(String(b.url || '')) ? b.url : '';
+  return b.ok === true
+    ? { ok: true, url: '', text: 'Bilagor till 1-månadsmejlet (Steg ' + String(b.steg || '').toLowerCase() + '): praktisk information för assistenter och arbetsbeskrivningen fungerar.' }
+    : { ok: false, url: url, text: '⚠️ Bilagorna till 1-månadsmejlet kan inte användas: ' + assistAttachReason_(b.orsak) + '. Inget skickas förrän det är rättat.' };
+}
 // Rader om mejltexternas dokument ur assistStatus.dokument: [{ok, text, url}]. Tom lista om servern inte skickar fältet.
 function assistDocLines_(status) {
   var d = status && status.dokument, out = [];
   if (!d || typeof d !== 'object') { return out; }
-  [['m2', 'Mejltext 2 mån'], ['lamnar', 'Mejltext när någon lämnar platsen']].forEach(function (pair) {
+  [['m2', 'Mejltext 2 mån'], ['m1', 'Mejltext 1 mån'], ['lamnar', 'Mejltext när någon lämnar platsen']].forEach(function (pair) {
     var x = d[pair[0]];
     if (!x) { return; }
     var url = /^https:\/\/docs\.google\.com\//.test(String(x.url || '')) ? x.url : '';
@@ -928,7 +979,15 @@ function assistStartIso_(courseName) {
 
 function initAssistPanel_(box, sec, listId, courseName) {
   var start = assistStartIso_(courseName);
-  var st = { cards: [], status: null, busy: {}, outcome: {}, confirmId: null, batchBusy: false, batchMsg: '', err: '', loaded: false };
+  var st = { cards: [], status: null, busy: {}, outcome: {}, confirmId: null, batchBusy: false, batchMsg: '', err: '', loaded: false,
+    busy1: {}, outcome1: {}, confirmId1: null, batchBusy1: false, batchMsg1: '' };
+  // 1-månadsmejlet kan bara skickas när dess mejltext OCH bilagorna för kursens steg fungerar (servern prövar igen vid varje utskick).
+  function m1Block() {
+    var s = st.status || {}, d = s.dokument && s.dokument.m1, b = assistAttachLine_(s);
+    if (d && d.ok === false) { return 'mejltexten'; }
+    if (b && b.ok === false) { return 'bilagorna'; }
+    return '';
+  }
   function kortPayload() { return st.cards.map(function (c) { return { id: c.id, namn: c.namn, epost: c.epost }; }); }
   function statusCall() {
     return postToGas('assistStatus', { listId: listId, kurs: courseName, start: start, kort: kortPayload() }).then(function (r) {
@@ -949,14 +1008,19 @@ function initAssistPanel_(box, sec, listId, courseName) {
       html += '<div class="vz-assist-line"><span class="vz-assist-label">2 månader innan kurs</span>'
         + '<button class="vz-btn vz-assist-btn" id="vz-assist-batch2"' + (b2Dis ? ' disabled' : '') + '>' + (st.batchBusy ? '⏳ Skickar…' : 'Skicka till ' + pend.length + ' som inte fått') + '</button>'
         + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m2"' + (auto.m2 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
+      var pend1 = assistPending1Cards_(st.cards, st.status), blk = m1Block();
+      var b1Dis = dis || st.batchBusy1 || !pend1.length || !start || !!blk;
       html += '<div class="vz-assist-line"><span class="vz-assist-label">1 månad innan kurs</span>'
-        + '<button class="vz-btn vz-assist-btn vz-assist-btn--grey" id="vz-assist-batch1" disabled>dokument saknas</button>'
+        + '<button class="vz-btn vz-assist-btn' + (blk ? ' vz-assist-btn--grey' : '') + '" id="vz-assist-batch1"' + (b1Dis ? ' disabled' : '') + '>' + (st.batchBusy1 ? '⏳ Skickar…' : (blk ? 'dokument saknas' : 'Skicka till ' + pend1.length + ' som inte fått')) + '</button>'
         + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m1"' + (auto.m1 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
-      html += '<div class="vz-assist-hint">1 månad: skickas först när dokumenten finns.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
+      html += '<div class="vz-assist-hint">1 månad: praktisk information för assistenter och arbetsbeskrivningen bifogas som PDF. Den som har lämnat platsen får inte mejlet.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
+      var al = assistAttachLine_(st.status);
+      if (al) { html += '<div class="vz-assist-hint">' + esc(al.text) + (al.url ? ' <a href="' + esc(al.url) + '" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a>' : '') + '</div>'; }
       assistDocLines_(st.status).forEach(function (ln) {
         html += '<div class="vz-assist-hint">' + esc(ln.text) + (ln.url ? ' <a href="' + esc(ln.url) + '" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a>' : '') + '</div>';
       });
       if (st.batchMsg) { html += '<div class="vz-assist-hint">' + esc(st.batchMsg) + '</div>'; }
+      if (st.batchMsg1) { html += '<div class="vz-assist-hint">' + esc(st.batchMsg1) + '</div>'; }
     }
     box.innerHTML = html;
     paintRows();
@@ -971,14 +1035,33 @@ function initAssistPanel_(box, sec, listId, courseName) {
       var info = st.status && st.status.personer && st.status.personer[id];
       var h = '<span class="vz-assist-st">' + esc(assistPersonLine_(info, st.status)) + '</span>'
         + '<button class="vz-btn vz-assist-send" data-card="' + esc(id) + '"' + ((dis || st.busy[id] || st.batchBusy || !start) ? ' disabled' : '') + '>' + (st.busy[id] ? '⏳' : 'Skicka') + '</button>'
-        + '<span class="vz-assist-st">' + esc(assistLine1_(info)) + '</span>';
+        + '<span class="vz-assist-st">' + esc(assistLine1_(info, st.status)) + '</span>'
+        + '<button class="vz-btn vz-assist-send1" data-card="' + esc(id) + '"' + ((dis || st.busy1[id] || st.batchBusy1 || !start || m1Block() || assistLamnar_(info)) ? ' disabled' : '') + '>' + (st.busy1[id] ? '⏳' : 'Skicka 1 mån') + '</button>';
       if (st.outcome[id]) { h += '<span class="vz-assist-out">' + esc(st.outcome[id]) + '</span>'; }
+      if (st.outcome1[id]) { h += '<span class="vz-assist-out">' + esc(st.outcome1[id]) + '</span>'; }
       if (st.confirmId === id) {
         h += '<span class="vz-assist-confirm">' + esc(assistConfirmText_(st.status, id))
           + ' <button class="vz-btn vz-assist-yes" data-card="' + esc(id) + '">Skicka igen</button>'
           + ' <button class="vz-btn vz-assist-no" data-card="' + esc(id) + '">Avbryt</button></span>';
       }
+      if (st.confirmId1 === id) {
+        h += '<span class="vz-assist-confirm">' + esc(assistConfirmText1_(st.status, id))
+          + ' <button class="vz-btn vz-assist-yes1" data-card="' + esc(id) + '">Skicka igen</button>'
+          + ' <button class="vz-btn vz-assist-no1" data-card="' + esc(id) + '">Avbryt</button></span>';
+      }
       el.innerHTML = h;
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-send1'), function (b) {
+        b.addEventListener('click', function () {
+          if (assistNeedsConfirm1_(st.status, id)) { st.confirmId1 = id; paintRows(); return; }
+          sendOne1(id, false);
+        });
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-yes1'), function (b) {
+        b.addEventListener('click', function () { st.confirmId1 = null; sendOne1(id, true); });
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-no1'), function (b) {
+        b.addEventListener('click', function () { st.confirmId1 = null; paintRows(); });
+      });
       Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-send'), function (b) {
         b.addEventListener('click', function () {
           if (assistNeedsConfirm_(st.status, id)) { st.confirmId = id; paintRows(); return; }
@@ -1012,6 +1095,38 @@ function initAssistPanel_(box, sec, listId, courseName) {
       .catch(function (e) { cardsToSend.forEach(function (c) { st.outcome[c.id] = assistOutcomeText_({ utfall: 'fel', orsak: (e && e.message) || String(e) }); }); })
       .then(statusCall).then(onDone);
   }
+  function doSend1(cardsToSend, omskick, onDone) {
+    return postToGas('assistSend1', { listId: listId, kurs: courseName, start: start,
+      kort: cardsToSend.map(function (c) { return { id: c.id, namn: c.namn, epost: c.epost }; }), omskick: !!omskick })
+      .then(function (r) {
+        var list = (r && (r.resultat || r.kort || r.utfall)) || [];
+        if (!Array.isArray(list)) { list = []; }
+        cardsToSend.forEach(function (c) {
+          var o = list.filter(function (x) { return x.id === c.id; })[0];
+          if (!o && r && r.ok === false) { o = { utfall: 'fel', orsak: r.error || 'servern nekade' }; }
+          st.outcome1[c.id] = o ? assistOutcomeText_(o) : assistOutcomeText_({ utfall: 'fel', orsak: 'inget svar för kortet' });
+        });
+      })
+      .catch(function (e) { cardsToSend.forEach(function (c) { st.outcome1[c.id] = assistOutcomeText_({ utfall: 'fel', orsak: (e && e.message) || String(e) }); }); })
+      .then(statusCall).then(onDone);
+  }
+  function sendOne1(id, omskick) {
+    var card = st.cards.filter(function (c) { return c.id === id; })[0];
+    if (!card || st.busy1[id]) { return; }
+    st.busy1[id] = true; st.outcome1[id] = ''; paintRows();
+    doSend1([card], omskick, function () { st.busy1[id] = false; paint(); });
+  }
+  function sendBatch1() {
+    var pend = assistPending1Cards_(st.cards, st.status);
+    if (!pend.length || st.batchBusy1) { return; }
+    st.batchBusy1 = true; st.batchMsg1 = ''; pend.forEach(function (c) { st.outcome1[c.id] = '⏳ Skickar…'; }); paint();
+    doSend1(pend, false, function () {
+      st.batchBusy1 = false;
+      var n = pend.filter(function (c) { return /^✅/.test(st.outcome1[c.id] || ''); }).length;
+      st.batchMsg1 = '1 månad: ' + n + ' av ' + pend.length + ' skickade. Utfallet står under varje assistent.';
+      paint();
+    });
+  }
   function sendOne(id, omskick) {
     var card = st.cards.filter(function (c) { return c.id === id; })[0];
     if (!card || st.busy[id]) { return; }
@@ -1039,6 +1154,8 @@ function initAssistPanel_(box, sec, listId, courseName) {
   function wire() {
     var b2 = box.querySelector('#vz-assist-batch2');
     if (b2) { b2.addEventListener('click', sendBatch); }
+    var b1 = box.querySelector('#vz-assist-batch1');
+    if (b1) { b1.addEventListener('click', sendBatch1); }
     ['m2', 'm1'].forEach(function (k) {
       var cb = box.querySelector('#vz-assist-auto-' + k);
       if (cb) { cb.addEventListener('change', function () { setAuto(k, cb.checked, cb); }); }
