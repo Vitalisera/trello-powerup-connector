@@ -826,8 +826,206 @@ function staffPerson(card, cfg) {
   var nm = String(card.name || '');
   if (cfg.excludeName.some(function (x) { return norm(nm).indexOf(x) !== -1; })) { return null; }
   var name = cleanStaffName(nm);
-  return name ? { name: name, role: role } : null;
+  return name ? { name: name, role: role, id: card.id || '' } : null;
 }
+/* ---------- Assistentutskick: "2 månader innan kurs" / "1 månad innan kurs" (steg A, 2026-10-24) ----------
+ * Kontrakt mot servern: docs/SPEC-assistentknappar-steg-A-2026-10-24.md (assistStatus, assistSetAuto, assistSend2).
+ * Rena hjälpfunktioner först (provas i proof.js), sedan panelkoden. Servern äger sanningen om vad som skickats
+ * (s2At, svar); panelen läser alltid om assistStatus efter varje åtgärd i stället för att gissa. */
+function assistFmtDate_(v) {
+  if (v === undefined || v === null || v === '') { return ''; }
+  var m = String(v).match(/^\s*(\d{1,2})\/(\d{1,2})\b/);   // redan "24/10 09:12"
+  if (m) { return parseInt(m[1], 10) + '/' + parseInt(m[2], 10); }
+  var d = (typeof v === 'number') ? new Date(v) : new Date(String(v));
+  if (isNaN(d.getTime())) { return ''; }
+  return d.getDate() + '/' + (d.getMonth() + 1);
+}
+// Statusrad för en assistent (2 månader).
+// EN definition av "skickat": en testpost räknas inte som skickad i skarpt läge (samma regel som servern).
+function assistSent_(status, p) { return !!(p && p.s2At && !(p.s2Test && status && status.live)); }
+function assistPersonLine_(info, status) {
+  if (info && info.s2At && !assistSent_(status, info)) { return '2 mån: ej skickat (bara test ' + (assistFmtDate_(info.s2At) || '?') + ')'; }
+  if (!info || !info.s2At) { return '2 mån: ej skickat'; }
+  var svar = info.svar === 'behaller' ? 'behåller ✅' : info.svar === 'lamnar' ? 'lämnar ❌' : 'inget svar';
+  return '2 mån: skickat ' + (assistFmtDate_(info.s2At) || '?') + (info.s2Test ? ' (test)' : '') + ' · svar: ' + svar;
+}
+function assistLine1_(info) {
+  return (info && info.s1At) ? '1 mån: skickat ' + (assistFmtDate_(info.s1At) || '?') : '1 mån: ej skickat';
+}
+// N = assistenter med e-post som saknar s2At.
+function assistPendingCards_(cards, status) {
+  var pers = (status && status.personer) || {};
+  return (cards || []).filter(function (c) { return c.epost && !assistSent_(status, pers[c.id]); });
+}
+function assistDisabled_(status) { return !status || status.botNyckel === false || status.ok === false; }
+// Omskick kräver ett medvetet val när 2-månadersmejlet redan gått.
+function assistNeedsConfirm_(status, id) {
+  var p = status && status.personer && status.personer[id];
+  return assistSent_(status, p);
+}
+function assistConfirmText_(status, id) {
+  var p = status && status.personer && status.personer[id];
+  return 'Redan skickat ' + ((p && assistFmtDate_(p.s2At)) || '?') + '. Skicka igen?';
+}
+// Rader överst i gruppen: testläge och saknad bot-nyckel.
+function assistBanners_(status) {
+  var out = [];
+  if (!status) { return out; }
+  if (status.botNyckel === false) { out.push('Bot-nyckel saknas, inget kan skickas'); }
+  if (status.live === false) {
+    var mot = status.testMottagare || status.testmottagare || status.testTill || 'testmottagaren';
+    out.push('Testläge: mejlen går till ' + mot);
+  }
+  return out;
+}
+function assistOutcomeText_(o) {
+  if (!o) { return ''; }
+  var ut = o.utfall;
+  if (ut === 'skickat') { return '✅ Skickat' + (o.testlage ? ' (testläge, gick till ' + (o.till || 'testmottagaren') + ')' : ''); }
+  if (ut === 'redan_skickat') { return 'Redan skickat, hoppades över'; }
+  if (ut === 'ingen_epost') { return '⚠️ Ingen e-post i kortet, inget skickat'; }
+  if (ut === 'pågår' || ut === 'pagar') { return 'Skickas redan, vänta en stund'; }
+  var why = o.orsak || o.fel || o.error || '';
+  if (why === 'testmottagare_ogiltig') { return '⚠️ Testmottagaren är felinställd, inget skickades'; }
+  var KANDA = { datum_otolkbart: 'Kursdatumet går inte att läsa ur listnamnet', lankkontroll: 'Svarslänken svarade inte, inget skickades',
+    bot_nyckel_saknas: 'Bot-nyckel saknas', mejl_misslyckades: 'Mejlet gick inte iväg' };
+  return '⚠️ Fel' + (why ? ': ' + (KANDA[why] || why) : '');
+}
+// Startdatum som servern får (YYYY-MM-DD), via den befintliga courseStartDate.
+function assistStartIso_(courseName) {
+  var d = courseStartDate(courseName);
+  if (!d) { return ''; }
+  var z = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+}
+
+function initAssistPanel_(box, sec, listId, courseName) {
+  var start = assistStartIso_(courseName);
+  var st = { cards: [], status: null, busy: {}, outcome: {}, confirmId: null, batchBusy: false, batchMsg: '', err: '', loaded: false };
+  function kortPayload() { return st.cards.map(function (c) { return { id: c.id, namn: c.namn, epost: c.epost }; }); }
+  function statusCall() {
+    return postToGas('assistStatus', { listId: listId, kurs: courseName, start: start, kort: kortPayload() }).then(function (r) {
+      st.status = r || null;
+      st.err = (r && r.ok === false) ? ('Kunde inte läsa utskickens status' + (r.error ? ': ' + r.error : '')) : '';
+    }).catch(function (e) { st.status = null; st.err = 'Kunde inte läsa utskickens status: ' + ((e && e.message) || e); });
+  }
+  function paint() {
+    var dis = assistDisabled_(st.status);
+    var auto = (st.status && st.status.auto) || {};
+    var pend = assistPendingCards_(st.cards, st.status);
+    var html = '';
+    assistBanners_(st.status).forEach(function (b) { html += '<div class="vz-assist-banner">' + esc(b) + '</div>'; });
+    if (st.err) { html += '<div class="vz-assist-banner">' + esc(st.err) + '</div>'; }
+    if (!st.loaded) { html += '<div class="vz-panel-note">⏳ Läser utskickens status…</div>'; }
+    else {
+      var b2Dis = dis || st.batchBusy || !pend.length || !start;
+      html += '<div class="vz-assist-line"><span class="vz-assist-label">2 månader innan kurs</span>'
+        + '<button class="vz-btn vz-assist-btn" id="vz-assist-batch2"' + (b2Dis ? ' disabled' : '') + '>' + (st.batchBusy ? '⏳ Skickar…' : 'Skicka till ' + pend.length + ' som inte fått') + '</button>'
+        + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m2"' + (auto.m2 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
+      html += '<div class="vz-assist-line"><span class="vz-assist-label">1 månad innan kurs</span>'
+        + '<button class="vz-btn vz-assist-btn vz-assist-btn--grey" id="vz-assist-batch1" disabled>dokument saknas</button>'
+        + '<label class="vz-assist-auto"><input type="checkbox" id="vz-assist-auto-m1"' + (auto.m1 ? ' checked' : '') + (dis ? ' disabled' : '') + '> Skicka automatiskt</label></div>';
+      html += '<div class="vz-assist-hint">1 månad: skickas först när dokumenten finns.' + (!start ? ' Startdatum kunde inte tolkas ur kursnamnet, så inget kan skickas härifrån.' : '') + '</div>';
+      if (st.batchMsg) { html += '<div class="vz-assist-hint">' + esc(st.batchMsg) + '</div>'; }
+    }
+    box.innerHTML = html;
+    paintRows();
+    wire();
+  }
+  function paintRows() {
+    var dis = assistDisabled_(st.status);
+    Array.prototype.forEach.call(sec.querySelectorAll('.vz-assist-row'), function (el) {
+      var id = el.getAttribute('data-card');
+      var card = st.cards.filter(function (c) { return c.id === id; })[0];
+      if (!card || !st.loaded) { el.innerHTML = ''; return; }
+      var info = st.status && st.status.personer && st.status.personer[id];
+      var h = '<span class="vz-assist-st">' + esc(assistPersonLine_(info, st.status)) + '</span>'
+        + '<button class="vz-btn vz-assist-send" data-card="' + esc(id) + '"' + ((dis || st.busy[id] || st.batchBusy || !start) ? ' disabled' : '') + '>' + (st.busy[id] ? '⏳' : 'Skicka') + '</button>'
+        + '<span class="vz-assist-st">' + esc(assistLine1_(info)) + '</span>';
+      if (st.outcome[id]) { h += '<span class="vz-assist-out">' + esc(st.outcome[id]) + '</span>'; }
+      if (st.confirmId === id) {
+        h += '<span class="vz-assist-confirm">' + esc(assistConfirmText_(st.status, id))
+          + ' <button class="vz-btn vz-assist-yes" data-card="' + esc(id) + '">Skicka igen</button>'
+          + ' <button class="vz-btn vz-assist-no" data-card="' + esc(id) + '">Avbryt</button></span>';
+      }
+      el.innerHTML = h;
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-send'), function (b) {
+        b.addEventListener('click', function () {
+          if (assistNeedsConfirm_(st.status, id)) { st.confirmId = id; paintRows(); return; }
+          sendOne(id, false);
+        });
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-yes'), function (b) {
+        b.addEventListener('click', function () { st.confirmId = null; sendOne(id, true); });
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.vz-assist-no'), function (b) {
+        b.addEventListener('click', function () { st.confirmId = null; paintRows(); });
+      });
+    });
+  }
+  function applyOutcomes(r, cardsSent) {
+    var list = (r && (r.resultat || r.kort || r.utfall)) || [];
+    if (!Array.isArray(list)) { list = []; }
+    if (!list.length && r && r.ok === false) {
+      cardsSent.forEach(function (c) { st.outcome[c.id] = assistOutcomeText_({ utfall: 'fel', orsak: r.error || 'servern nekade' }); });
+      return;
+    }
+    cardsSent.forEach(function (c) {
+      var o = list.filter(function (x) { return x.id === c.id; })[0];
+      st.outcome[c.id] = o ? assistOutcomeText_(o) : assistOutcomeText_({ utfall: 'fel', orsak: 'inget svar för kortet' });
+    });
+  }
+  function doSend(cardsToSend, omskick, onDone) {
+    return postToGas('assistSend2', { listId: listId, kurs: courseName, start: start,
+      kort: cardsToSend.map(function (c) { return { id: c.id, namn: c.namn, epost: c.epost }; }), omskick: !!omskick })
+      .then(function (r) { applyOutcomes(r, cardsToSend); })
+      .catch(function (e) { cardsToSend.forEach(function (c) { st.outcome[c.id] = assistOutcomeText_({ utfall: 'fel', orsak: (e && e.message) || String(e) }); }); })
+      .then(statusCall).then(onDone);
+  }
+  function sendOne(id, omskick) {
+    var card = st.cards.filter(function (c) { return c.id === id; })[0];
+    if (!card || st.busy[id]) { return; }
+    st.busy[id] = true; st.outcome[id] = ''; paintRows();
+    doSend([card], omskick, function () { st.busy[id] = false; paint(); });
+  }
+  function sendBatch() {
+    var pend = assistPendingCards_(st.cards, st.status);
+    if (!pend.length || st.batchBusy) { return; }
+    st.batchBusy = true; st.batchMsg = ''; pend.forEach(function (c) { st.outcome[c.id] = '⏳ Skickar…'; }); paint();
+    doSend(pend, false, function () {
+      st.batchBusy = false;
+      var n = pend.filter(function (c) { return /^✅/.test(st.outcome[c.id] || ''); }).length;
+      st.batchMsg = n + ' av ' + pend.length + ' skickade. Utfallet står under varje assistent.';
+      paint();
+    });
+  }
+  function setAuto(mejl, pa, cb) {
+    cb.disabled = true;
+    postToGas('assistSetAuto', { listId: listId, kurs: courseName, mejl: mejl, pa: !!pa }).then(function (r) {
+      if (!r || r.ok === false) { throw new Error((r && r.error) || 'servern nekade'); }
+    }).catch(function (e) { st.err = 'Kunde inte spara automatik-valet: ' + ((e && e.message) || e); })
+      .then(statusCall).then(paint);
+  }
+  function wire() {
+    var b2 = box.querySelector('#vz-assist-batch2');
+    if (b2) { b2.addEventListener('click', sendBatch); }
+    ['m2', 'm1'].forEach(function (k) {
+      var cb = box.querySelector('#vz-assist-auto-' + k);
+      if (cb) { cb.addEventListener('change', function () { setAuto(k, cb.checked, cb); }); }
+    });
+  }
+  paint();
+  t.getRestApi().getToken().then(function (token) {
+    if (!token) { throw new Error('Ingen Trello-token.'); }
+    return restGet(token, 'lists/' + listId + '/cards?fields=name,desc');
+  }).then(function (cards) {
+    st.cards = (cards || []).filter(function (c) { return !isStaffJunkName(c.name); })
+      .map(function (c) { return { id: c.id, namn: cleanStaffName(c.name), epost: extractStaffEmail(c.desc) }; });
+    return statusCall();
+  }).catch(function (e) { st.err = 'Kunde inte läsa assistentkorten: ' + ((e && e.message) || e); })
+    .then(function () { st.loaded = true; paint(); });
+}
+
 function loadStaff(courseName) {
   t.getRestApi().getToken().then(function (token) {
     if (!token) { return null; }
@@ -889,12 +1087,14 @@ function renderStaffPanel(groups, courseName) {
     else {
       var rows = g.people.map(function (p) {
         var roleTag = (p.role && p.role !== g.cfg.defaultRole) ? '<span class="vz-staff-role">' + esc(p.role) + '</span>' : '';
-        return '<li class="vz-staff-row"><span class="vz-staff-name">' + esc(p.name) + '</span>' + roleTag + '</li>';
+        var assistSlot = (g.cfg.key === 'assistenter' && g.listId && p.id) ? '<div class="vz-assist-row" data-card="' + esc(p.id) + '"></div>' : '';
+        return '<li class="vz-staff-row' + (assistSlot ? ' vz-staff-row--assist' : '') + '"><span class="vz-staff-name">' + esc(p.name) + '</span>' + roleTag + assistSlot + '</li>';
       }).join('');
       body = '<ul class="vz-staff-list">' + rows + '</ul>';
     }
     if (g.cfg.key === 'assistenter' && g.listId) { ASSIST_LIST_ID = g.listId; }  // för matallergi-hämtning
     if (g.cfg.key === 'kockar' && g.listId) { KOCK_LIST_ID = g.listId; }          // för "Skicka till kock"
+    if (g.cfg.key === 'assistenter' && g.listId) { body = '<div class="vz-assist" id="vz-assist-box"></div>' + body; }
     var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
       ? '<div class="vz-stub-row">'
         + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
@@ -923,6 +1123,8 @@ function renderStaffPanel(groups, courseName) {
     }).filter(Boolean);
     staffEl.innerHTML = parts.map(esc).join(' · ');
   }
+  var assistBoxEl = sec.querySelector('#vz-assist-box');
+  if (assistBoxEl && ASSIST_LIST_ID) { initAssistPanel_(assistBoxEl, sec, ASSIST_LIST_ID, courseName); }
   loadGroupGenderTotal_(groups);   // total könsfördelning deltagare+gruppledare+assistenter (exkl. kock)
 
   // "Alla emailadresser": hämta assistent-listans kort med desc skarpt via REST,
