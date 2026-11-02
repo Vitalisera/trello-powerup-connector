@@ -60,11 +60,66 @@ function openSettings(t) {
   });
 }
 
+// ── Påminnelsen efter intresseanmälan (mejldelen). Knapparna syns bara när kortet har etiketten "Påminna?".
+// Allt avgörs av servern (GAS): läget (test/skarpt), max två påminnelser, dubbelklick. Sms är avstängt (tom krok).
+var PAMINN_ETIKETT = 'Påminna?';
+function paminnGas(action, payload) {
+  return fetch(CFG.GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: action, payload: payload || {} }),
+  }).then(function (res) { return res.text(); }).then(function (text) {
+    try { return JSON.parse(text); } catch (e) { return { ok: false, skal: 'ogiltigt_svar' }; }
+  });
+}
+var PAMINN_SKAL = {
+  ingen_etikett: 'Kortet har ingen påminnelse att skicka (någon hann före).',
+  max_nadd: 'Två påminnelser är redan skickade. Fler skickas inte.',
+  ingen_paminnelse_vald: 'Det här kortet är markerat som "Ingen påminnelse".',
+  sms_avstangt: 'Sms är avstängt tills vidare. Inget skickat.',
+  kursval_saknas: 'Kortet saknar kursvecka för Steg 1. Inget skickat.',
+  kursval_inte_steg1: 'Kursveckan på kortet gäller inte Steg 1. Inget skickat.',
+  kursval_otolkbart: 'Kursveckan på kortet går inte att tolka. Inget skickat.',
+  kursen_har_borjat: 'Kursen har redan börjat. Inget skickat.',
+  fornamn_saknas: 'Förnamn saknas på kortet. Inget skickat.',
+  fornamn_osakert: 'Förnamnet på kortet går inte att avgöra säkert (till exempel efternamn först eller en titel). Inget skickat.',
+  epost_flera: 'Kortet har flera e-postadresser. Inget skickat.',
+  kursval_flera: 'Kortet har mer än en kursvecka. Inget skickat.',
+  adress_redan_paminnd: 'Samma e-postadress har fått en påminnelse från ett annat kort de senaste 14 dagarna. Inget skickat.',
+  testlage_bara_provlistan: 'Påminnelsen är i testläge och fungerar bara i listan PROV påminnelse. Inget skickat.',
+  fel_lista: 'Kortet ligger inte i listan Inkommet från Intresseanmälan. Inget skickat.',
+  lista_ej_last: 'Det gick inte att se vilken lista kortet ligger i. Inget skickat.',
+  epost_saknas: 'E-postadress saknas på kortet. Inget skickat.',
+  lankkontroll: 'Länkarna i mejlet kunde inte kontrolleras. Inget skickat.',
+  mejl_misslyckades: 'Mejlet kunde inte skickas. Inget skickat.'
+};
+function paminnSvar(t, r, okText) {
+  var text = r && r.ok ? okText + (r.testlage ? ' (testläge: mejlet gick till ' + r.till + ')' : '')
+    : (PAMINN_SKAL[r && r.skal] || ('Inget skickat (' + ((r && r.skal) || 'okänt fel') + ').'));
+  return t.alert({ message: text, duration: 8, display: r && r.ok ? 'success' : 'warning' });
+}
+function paminnKnapp(text, fn) {
+  return { icon: MARK, text: text, condition: 'edit', callback: function (t) {
+    return t.card('id').then(function (c) { return fn(c.id); }).then(function (r) { return paminnSvar(t, r.r, r.ok); })
+      .catch(function () { return t.alert({ message: 'Det gick inte att nå servern. Inget skickat.', duration: 8, display: 'error' }); });
+  } };
+}
+function paminnKortknappar(t) {
+  return t.card('labels').then(function (c) {
+    var har = (c.labels || []).some(function (l) { return l && l.name === PAMINN_ETIKETT; });
+    if (!har) { return []; }
+    return [
+      paminnKnapp('Påminn med mejl', function (id) { return paminnGas('paminnSkicka', { cardId: id, kanal: 'mejl' }).then(function (r) { return { r: r, ok: 'Påminnelsen är skickad.' }; }); }),
+      paminnKnapp('Påminn med sms', function (id) { return paminnGas('paminnSkicka', { cardId: id, kanal: 'sms' }).then(function (r) { return { r: r, ok: '' }; }); }),
+      paminnKnapp('Ingen påminnelse', function (id) { return paminnGas('paminnIngen', { cardId: id }).then(function (r) { return { r: r, ok: 'Markerat: ingen påminnelse.' }; }); })
+    ];
+  }).catch(function () { return []; });
+}
+
 TrelloPowerUp.initialize({
   'card-buttons': function (t, opts) {
-    return [
-      { icon: MARK, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromCard, condition: 'edit' },
-    ];
+    var kurs = { icon: MARK, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromCard, condition: 'edit' };
+    return paminnKortknappar(t).then(function (extra) { return [kurs].concat(extra); });
   },
 
   // Inline-badge på kortet (under labels): Kursöversikt nås direkt här också.
