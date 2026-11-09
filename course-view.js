@@ -101,6 +101,58 @@
   }
   function applyDocStatus(map) { DOC_STATUS = map || {}; if (repaintBodyRef) { repaintBodyRef(false); } }
 
+  /* Betalstatus (Task 11): två extra kolumner efter stegen, bara när GAS-svaret kom (annars ritas ingenting, vyn som förut).
+   * BETAL = { byKey: { kortId: { anmalan: Cell|null, slut: Cell|null } }, sieHamtad, bankHamtad } eller null.
+   * Cell = { status, datum, forfallodag } (YYYY-MM-DD). Aldrig fakturanr/belopp/namn. 'saknas' och övriga neutrala
+   * statusar får ALDRIG klassen för förfallen (bt-late). */
+  var BETAL = null;
+  var repaintHeadRef = null;
+  var rootElRef = null;
+  function betalDM(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? (parseInt(m[3], 10) + '/' + parseInt(m[2], 10)) : '';
+  }
+  function betalCellInfo(cell) {
+    if (!cell || typeof cell !== 'object') { return null; }
+    var dm, st = String(cell.status || '');
+    if (st === 'betald') { dm = betalDM(cell.datum); return { text: dm ? 'betald (' + dm + ')' : 'betald', cls: 'bt-done' }; }
+    if (st === 'obetald') { dm = betalDM(cell.forfallodag); return { text: dm ? 'obetald (förfaller ' + dm + ')' : 'obetald', cls: 'bt-open' }; }
+    if (st === 'forfallen') { return { text: 'förfallen', cls: 'bt-late' }; }
+    if (st === 'delbetald') { return { text: 'delbetald', cls: 'bt-neutral' }; }
+    if (st === 'oklart') { return { text: 'oklart', cls: 'bt-neutral' }; }
+    if (st === 'kunde_inte_lasas') { return { text: 'kunde inte läsas', cls: 'bt-neutral' }; }
+    return { text: 'saknas', cls: 'bt-neutral' };   // saknas och allt okänt: aldrig obetald/förfallen
+  }
+  function betalHamtadText(b) {
+    if (!b) { return ''; }
+    var ts = [b.sieHamtad, b.bankHamtad].map(function (x) { var t = Date.parse(x || ''); return isNaN(t) ? null : t; })
+      .filter(function (t) { return t != null; });
+    if (!ts.length) { return ''; }
+    var d = new Date(Math.min.apply(null, ts));   // den äldsta av källorna: det ärligaste "hämtade"
+    try {
+      var parts = {};
+      new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .formatToParts(d).forEach(function (x) { parts[x.type] = x.value; });
+      return 'Betalningar hämtade ' + parts.day + '/' + parts.month + ' ' + parts.hour + ':' + parts.minute;
+    } catch (e) { return ''; }
+  }
+  function betalTdHtml(pkey, rolle) {
+    var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
+    var info = betalCellInfo(k && k[rolle]);
+    return '<td class="vz-cv-cell vz-cv-betalcell" data-betal-roll="' + rolle + '"' + (info ? ' title="' + esc(info.text) + '"' : '') + '>'
+      + (info ? '<span class="vz-cv-bt ' + info.cls + '">' + esc(info.text) + '</span>' : '') + '</td>';
+  }
+  function applyBetalStatus(data) {
+    BETAL = (data && data.byKey) ? data : null;
+    if (repaintHeadRef) { repaintHeadRef(); }
+    if (repaintBodyRef) { repaintBodyRef(false); }
+    betalMetaPaint();
+  }
+  function betalMetaPaint() {
+    var el = rootElRef && rootElRef.querySelector ? rootElRef.querySelector('[data-cv-betalmeta]') : null;
+    if (el) { el.textContent = BETAL ? betalHamtadText(BETAL) : ''; }
+  }
+
   /* ---------- topbar (kurs + datum + dagar till start) ---------- */
   function countdownHtml(daysToStart) {
     if (daysToStart == null) {
@@ -224,6 +276,10 @@
         + '<span class="bar"></span></div>'
         + '</th>';
     });
+    if (BETAL) {
+      phaseRow += '<th class="vz-cv-bethead phase-edge" rowspan="2"><span class="stitle">Anmälningsavgift</span></th>'
+        + '<th class="vz-cv-bethead" rowspan="2"><span class="stitle">Slutfaktura</span></th>';
+    }
     phaseRow += '</tr>';
 
     // rad 2: steg-rubriker
@@ -330,6 +386,7 @@
       + '    </div>'
       + '  </td>'
       +    cells
+      +    (BETAL ? betalTdHtml(p.key, 'anmalan') + betalTdHtml(p.key, 'slut') : '')
       + '</tr>';
   }
 
@@ -356,6 +413,7 @@
       + '    <span class="vz-cv-lg lg-manual"><span class="swab">' + ic.hand + '</span>Manuellt steg</span>'
       + '    <span class="vz-cv-lg lg-na"><span class="swab">–</span>Ej relevant</span>'
       + '  </div>'
+      + '  <span class="vz-cv-betalmeta" data-cv-betalmeta></span>'
       + '</footer>';
   }
 
@@ -658,11 +716,13 @@
     }
 
     // initial paint
+    rootElRef = rootEl; repaintHeadRef = paintHead;
     repaintBodyRef = paintBody;   // #11: låt applyDocStatus rita om kroppen när dok-status anländer
     setCellStatusRef = setCellStatus;   // course.js → uppdatera cell efter bock/label
     paintSummary();
     paintHead();
     paintBody(true);
+    betalMetaPaint();
   }
 
   /* ---------- ihågkom infällda faser i sessionen (valfritt, fail-soft) ---------- */
@@ -779,7 +839,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus,
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 

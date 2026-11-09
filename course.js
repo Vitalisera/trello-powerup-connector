@@ -1714,6 +1714,31 @@ function loadDocStatus(courseName, cards) {
   })).then(function () { if (isStale()) { return; } maybeAutoBock(cards, byKey); });   // #11 Fas 2: bocka färdiga steg 8/9 (ej på stale kurs)
 }
 
+/* Betalstatus (Task 11, READ-ONLY): två celler i kursöversikten ur GAS courseBetalstatus. Fel i hämtningen
+ * (nät, ok:false, trasigt svar) ger inga celler alls: översikten ser ut och fungerar som förut. Kurs-guard som loadDocStatus. */
+function loadBetalStatus(courseName, cards) {
+  function apply(d) { if (window.CourseView && CourseView.applyBetalStatus) { CourseView.applyBetalStatus(d); } }
+  apply(null);   // nollställ föregående kurs
+  var keys = (cards || []).map(function (c) { return c && c.id; }).filter(Boolean);
+  if (!keys.length) { return; }
+  function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
+  var CHUNK = 30, chunks = [];
+  for (var i = 0; i < keys.length; i += CHUNK) { chunks.push(keys.slice(i, i + CHUNK)); }
+  var acc = { byKey: {}, sieHamtad: '', bankHamtad: '' }, gotAny = false;
+  Promise.all(chunks.map(function (grp) {
+    return postToGas('courseBetalstatus', { items: grp.map(function (k) { return { key: k }; }) })
+      .then(function (data) {
+        if (isStale()) { return; }
+        if (!data || data.ok !== true || !Array.isArray(data.items)) { return; }
+        data.items.forEach(function (r) { if (r && r.key) { acc.byKey[r.key] = { anmalan: r.anmalan || null, slut: r.slut || null }; } });
+        acc.sieHamtad = data.sieHamtad || acc.sieHamtad; acc.bankHamtad = data.bankHamtad || acc.bankHamtad;
+        gotAny = true;
+        apply(acc);   // progressivt
+      })
+      .catch(function () { /* en chunk kan fela, övriga fyller ändå */ });
+  })).catch(function () {});
+}
+
 /* #11 Fas 2: AUTO-BOCKA steg 8/9 när dokumentet är färdigt (ready = ≥85%, livs även bild).
  * Skriver checkItem complete via Malins token — SAMMA write som manuell bock (steg utan prod-automation).
  * SÄKERHET: idempotent (hoppar redan bockade), fail-closed test-läge (skriver BARA om testMode===false),
@@ -3875,6 +3900,7 @@ function loadCourse(listId, listName) {
       setTimeout(reorderBelowPanels_, 1500);           // säkerhetsnät: sortera om när alla (även sen-laddade) panelerna landat
     });
     loadDocStatus(res[0], res[1] || []);             // #11 Fas 1 (dokumentstatus — ingen per-kurs-persist)
+    loadBetalStatus(res[0], res[1] || []);           // betalstatus-celler (READ-ONLY, fel = inga celler)
     sweepStaleCourses_();                            // arkiv-på-slut: SVEP alla avslutade kurser (slut+5d) → metadata till frusna kort, frigör board/shared (täcker aktuell kurs också)
 
   }).catch(function (err) {

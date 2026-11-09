@@ -827,3 +827,13 @@
 .vz-course .vz-assist-out{flex:1 1 100%;color:var(--dark);font-size:12px}
 .vz-course .vz-assist-confirm{flex:1 1 100%;background:#fff4d6;border:1px solid #e8c766;color:#6b4a00;border-radius:6px;padding:5px 8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .vz-course .vz-assist-confirm .vz-btn{font-size:11.5px;padding:2px 9px}
+
+/* Betalstatus (Task 11): två celler efter stegen. bt-late är ENDA klassen för förfallen; neutrala statusar får den aldrig. */
+.vz-cv-bethead{vertical-align:bottom;text-align:left;padding:4px 8px;font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap}
+.vz-cv-betalcell{text-align:center;white-space:nowrap}
+.vz-cv-bt{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10.5px;font-weight:800;white-space:nowrap}
+.vz-cv-bt.bt-done{background:rgba(31,122,83,.14);color:var(--success)}
+.vz-cv-bt.bt-open{background:#eef6f6;color:#5b7f89}
+.vz-cv-bt.bt-late{background:rgba(178,58,46,.12);color:#b23a2e}
+.vz-cv-bt.bt-neutral{background:#f1f1ee;color:var(--muted)}
+.vz-cv-betalmeta{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}
