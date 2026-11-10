@@ -378,14 +378,31 @@ window.NYA_ZAPIER_BOKF = (function () {
 /* Fakturadetaljen under en betalcell (Kursöversikten) eller en fakturarad (Obetalda fakturor): EN delad renderare så att de två vyerna
  * inte glider isär (Robert 2026-11-10). Ren HTML-funktion + en laddare. Inga namn eller e-postadresser kommer från GAS:
  * e-postadressen läses ur kortbeskrivningen av vyn (användarens Trello-token). Allt som skrivs ut escapas här.
- *   rader(gasRader, typ, oppna, slackOk) -> modellrader (GAS-raderna för rollen, släckläge hämtat ur vyns öppna fakturor)
+ *   rader(gasRader, roll, oppna, slackOk) -> modellrader (GAS-raderna för rollen, släckläge hämtat ur vyns öppna fakturor)
  *   html(m)  m = { titel, rader, meta, epost, bilagor, detaljFel, forklaring }
  *   visa(host, o) visar ⏳, hämtar detalj + e-post + bilagor parallellt (fail-soft var för sig) och ritar EN gång
  *   epost(desc)   e-postadressen ur en kortbeskrivning ('' när den saknas) */
+/* Fakturarollernas namn, EN källa (Robert 2026-11-10: "Kursavgift överallt, eftersom det står så på fakturan"). Kolumnrubrik, hovertexter,
+ * Obetalda och fakturadetaljen går alla via NAMN. okand ska aldrig stå utan skäl: skalOkand(rad, antalFakturorPaKortet) ger det.
+ * Skälet kommer ur filen (oklartSkal) när Actions-lib har skrivit ett. Typen härleds ALDRIG ur beloppet här. */
+window.NYA_ZAPIER_BETALROLL = (function () {
+  var NAMN = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift', okand: 'Faktura' };
+  function namn(k) { return NAMN[k] || NAMN.okand; }
+  function skalOkand(rad, antal) {
+    var s = rad && typeof rad.oklartSkal === 'string' ? rad.oklartSkal.trim() : '';
+    if (s) { return s; }
+    if (antal > 2) { return 'Kortet har ' + antal + ' fakturor, så det går inte att avgöra vilken som är anmälningsavgift och vilken som är kursavgift.'; }
+    return 'Det går inte att avgöra om fakturan är anmälningsavgift eller kursavgift.';
+  }
+  /* Raden är oklar när rollen (för gamla svar utan roll: typen) är okand. */
+  function arOkand(rad) { return !!rad && (rad.roll || rad.typ || 'okand') === 'okand'; }
+  return { NAMN: NAMN, namn: namn, skalOkand: skalOkand, arOkand: arOkand };
+})();
+
 window.NYA_ZAPIER_BETALDET = (function () {
   var STATUS = { betald: 'Betald', betald_avviker: 'Betald, men något avviker', obetald: 'Obetald', forfallen: 'Förfallen', ej_bekraftad: 'Ej bekräftad',
     delbetald: 'Delbetald', oklart: 'Oklart', kunde_inte_lasas: 'Kunde inte läsas', saknas: 'Saknas (uppgiften är okänd eller inaktuell)', ingen_faktura: 'Ingen faktura' };
-  var TITEL = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift', okand: 'Faktura' };
+  var TITEL = window.NYA_ZAPIER_BETALROLL.NAMN;
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function belopp(n) { return (typeof n !== 'number' || !isFinite(n)) ? '–' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr'; }
   function dag(iso) { var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(iso || '')); return m ? m[1] : ''; }
@@ -405,14 +422,15 @@ window.NYA_ZAPIER_BETALDET = (function () {
     var f = s.match(/[\w.\-+]+@[\w.\-]+\.\w+/);
     return f ? f[0].trim() : '';
   }
-  function rader(gas, typ, oppna, slackOk) {
+  /* rollen = fakturarollen raderna hör till (anmalan, slut eller okand), jämförd med radens roll (gamla svar utan roll: typ). */
+  function rader(gas, roll, oppna, slackOk) {
     oppna = oppna || [];
     var ut = [], sedda = {};
     function slackdel(nr) {
       var op = nr ? oppna.filter(function (o) { return o.fakturanr === nr; })[0] : null;
       return { op: op, slack: (op && op.slack) || null, knapp: (slackOk && op && nr) ? ((op.slack && op.slack.slackt) ? 'angra' : 'slack') : '' };
     }
-    (Array.isArray(gas) ? gas : []).filter(function (r) { return r && r.typ === typ; }).forEach(function (r) {
+    (Array.isArray(gas) ? gas : []).filter(function (r) { return r && (r.roll || r.typ) === roll; }).forEach(function (r) {
       var d = slackdel(r.fakturanr || ''); sedda[r.fakturanr || ''] = true;
       ut.push({ fakturanr: r.fakturanr || '', belopp: r.belopp, status: r.status, forfallodag: r.forfallodag, betaldDatum: r.betaldDatum, notering: r.notering, slack: d.slack, knapp: d.knapp });
     });
@@ -440,7 +458,8 @@ window.NYA_ZAPIER_BETALDET = (function () {
   function html(m) {
     m = m || {};
     var meta = m.meta || {};
-    var out = '<div class="vz-bd"><div class="vz-bd-head"><b>' + esc(m.titel || 'Faktura') + '</b></div>';
+    var out = '<div class="vz-bd"><div class="vz-bd-head"><b' + (m.skal ? ' title="' + esc(m.skal) + '"' : '') + '>' + esc(m.titel || 'Faktura') + '</b></div>';
+    if (m.skal) { out += '<p class="vz-bd-forkl">' + esc(m.skal) + '</p>'; }
     if (m.detaljFel) { out += '<p class="vz-bd-warn">Detaljerna kunde inte hämtas. Det som visas är det som redan var laddat.</p>'; }
     if (m.forklaring && !(m.rader || []).length) { out += '<p class="vz-bd-forkl">' + esc(m.forklaring) + '</p>'; }
     (m.rader || []).forEach(function (r) {

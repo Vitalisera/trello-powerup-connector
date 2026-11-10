@@ -225,7 +225,8 @@
   border-right:1px solid var(--hairline);
 }
 .vz-region-aside{
-  flex:0 0 320px;width:320px;align-self:flex-start;   /* ej stretch → påverkas ej av matrisens höjdtak */
+  flex:0 0 320px;width:320px;align-self:start;   /* ej stretch → påverkas ej av matrisens höjdtak */
+  max-height:80vh;overflow:auto;   /* en lång sidokolumn får aldrig sträcka raden och ge tabellen ett tomrum: egen scroll (Robert 2026-11-10) */
   background:rgba(255,255,255,.55);
   padding:16px 16px 22px;
 }
@@ -804,7 +805,7 @@
 @media (max-width:1420px){
   .vz-cv-row-region{flex-direction:column}
   .vz-region-matrix{border-right:none;border-bottom:1px solid var(--hairline);width:100%}
-  .vz-region-aside{flex:1 1 auto;width:100%;align-self:auto}
+  .vz-region-aside{flex:1 1 auto;width:100%;align-self:auto;max-height:none;overflow:visible}   /* staplad under tabellen: ingen egen scroll */
 }
 @media (max-width:680px){
   .vz-course{padding:8px}

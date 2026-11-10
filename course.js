@@ -1247,7 +1247,8 @@ function renderStaffPanel(groups, courseName) {
     if (g.cfg.key === 'assistenter' && g.listId && assistStepOk_(courseName)) { body = '<div class="vz-assist" id="vz-assist-box"></div>' + body; }
     var extra = (g.cfg.key === 'assistenter' && g.people.length && g.listId)
       ? '<div class="vz-stub-row">'
-        + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '">Alla emailadresser</button>'
+        + '<button class="vz-btn" id="vz-asst-emails" data-listid="' + esc(g.listId) + '" aria-expanded="false" aria-controls="vz-asst-emails-out" title="Visa e-postadresserna">Alla emailadresser</button>'
+        + '<button class="vz-btn vz-btn--send" id="vz-asst-emails-copy" style="display:none" title="Kopiera e-postadresserna (även när rutan är dold)">Kopiera</button>'
         + '<span class="vz-stub-note">läser korten skarpt (read-only)</span></div>'
         + '<textarea id="vz-asst-emails-out" class="vz-textarea" style="display:none" placeholder="E-postadresser…"></textarea>'
         + '<div id="vz-asst-emails-info" class="vz-panel-note" style="display:none;margin-top:6px;color:#8a5a00"></div>'
@@ -1284,14 +1285,32 @@ function renderStaffPanel(groups, courseName) {
   var emInfo = sec.querySelector('#vz-asst-emails-info');
   if (emOut) { persistTextareaSize_(emOut); }   // bild16: bevara höjd
   if (emBtn && emOut) {
-    // Visa tidigare sparad lista direkt (överlever stäng/öppna).
+    // Textrutan är DOLD från början (den var ~350 px hög och sträckte sidokolumnen) och visas/döljs av knappen, som visar sitt läge.
+    var emCopy = sec.querySelector('#vz-asst-emails-copy');
+    var emVarden = '';   // adresserna, oberoende av om rutan syns
+    function emVisa(synlig) {
+      emOut.style.display = synlig ? '' : 'none';
+      emBtn.setAttribute('aria-expanded', synlig ? 'true' : 'false');
+      emBtn.title = synlig ? 'Dölj e-postadresserna' : 'Visa e-postadresserna';
+    }
+    emVisa(false);
+    if (emCopy) {
+      emCopy.addEventListener('click', function () {
+        copyTextToClipboard(emVarden || emOut.value).then(function (okc) {
+          var o = emCopy.textContent; emCopy.textContent = okc ? '✓ Kopierat' : '⚠️ Kunde ej kopiera';
+          setTimeout(function () { emCopy.textContent = o; }, 2000);
+        });
+      });
+    }
+    // Tidigare sparad lista läggs i rutan (dold) och Kopiera blir tillgänglig (överlever stäng/öppna).
     getCoursePersist_(emailsKey).then(function (saved) {   // arkiv-fallback för avslutad kurs (board/shared → kort-arkiv)
-      if (saved && !emOut.value) { emOut.style.display = ''; emOut.value = String(saved); }
+      if (saved && !emOut.value) { emOut.value = String(saved); emVarden = String(saved); if (emCopy) { emCopy.style.display = ''; } }
     }).catch(function () {});
     emBtn.addEventListener('click', function () {
+      if (emOut.style.display !== 'none' && emOut.value && emOut.value.indexOf('⏳') !== 0) { emVisa(false); return; }   // visas redan: dölj
       var listId = emBtn.getAttribute('data-listid');
       emBtn.disabled = true;
-      emOut.style.display = ''; emOut.value = '⏳ Hämtar e-postadresser…';
+      emVisa(true); emOut.value = '⏳ Hämtar e-postadresser…';
       t.getRestApi().getToken().then(function (token) {
         if (!token) { throw new Error('Ingen Trello-token.'); }
         return restGet(token, 'lists/' + listId + '/cards?fields=name,desc');
@@ -1302,7 +1321,7 @@ function renderStaffPanel(groups, courseName) {
         var missing = persons.filter(function (c) { return !extractStaffEmail(c.desc); })
                              .map(function (c) { return cleanStaffName(c.name); }).filter(Boolean);
         emOut.value = uniq.length ? uniq.join(', ') : 'Inga e-postadresser hittades i assistentkortens beskrivningar.';
-        if (uniq.length) { persistText(emailsKey, emOut.value); }   // spara så det överlever stäng/öppna
+        if (uniq.length) { persistText(emailsKey, emOut.value); emVarden = emOut.value; if (emCopy) { emCopy.style.display = ''; } }   // spara så det överlever stäng/öppna
         // Failar INTE tyst: namnge assistenter vars kort saknar e-post (Robert 2026-06-27).
         if (emInfo) {
           emInfo.style.display = missing.length ? '' : 'none';
@@ -1769,7 +1788,7 @@ function loadBetalOppna(courseName, cards) {
   Promise.all([postToGas('betalOversikt', {}), t.getRestApi().getToken()]).then(function (r) {
     var svar = r[0], token = r[1];
     if (!token || !svar || svar.ok !== true || !Array.isArray(svar.rader)) { throw new Error('betalOversikt'); }
-    var rader = svar.rader.filter(function (x) { return x && ids[x.kortId] && (x.typ === 'anmalan' || x.typ === 'slut'); });   // typ okand ignoreras
+    var rader = svar.rader.filter(function (x) { return x && ids[x.kortId] && ((x.roll || x.typ) === 'anmalan' || (x.roll || x.typ) === 'slut'); });   // ROLLEN styr cellen; roll okand ignoreras (även en ensam anmälningsfaktura med typ anmalan)
     if (!rader.length || isStale()) { return; }
     var kortIds = Object.keys(rader.reduce(function (m, x) { m[x.kortId] = true; return m; }, {}));
     return Promise.all([S.laddaKommentarer(function (path) { return restGet(token, path); }, kortIds), getMeNamn_(token)]).then(function (res) {
@@ -1777,7 +1796,7 @@ function loadBetalOppna(courseName, cards) {
       var map = {};
       rader.forEach(function (x) {
         var m = map[x.kortId] || (map[x.kortId] = { anmalan: [], slut: [] });
-        m[x.typ].push({ fakturanr: x.fakturanr || '', belopp: x.belopp, forfallodag: x.forfallodag || '', status: x.status,
+        m[x.roll || x.typ].push({ fakturanr: x.fakturanr || '', belopp: x.belopp, forfallodag: x.forfallodag || '', status: x.status,
           slack: x.fakturanr ? S.tolka(res[0][x.kortId], x.fakturanr) : { slackt: false } });
       });
       CourseView.applyBetalOppna(map, {

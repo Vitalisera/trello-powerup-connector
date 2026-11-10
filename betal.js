@@ -16,7 +16,7 @@ var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAu
 var BETAL_BOARDS = ['5e3829153e99a8775073f2aa', 'tXFUio8P'];   // Admin, Tidigare kurser
 var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad' };
 var BETAL_STATUS_RANK = { forfallen: 0, obetald: 1, delbetald: 2, ej_bekraftad: 3 };
-var BETAL_TYP_TEXT = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift', okand: 'Faktura' };
+var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen och skälet till okand bor i config.js
 var FROM_COURSE = (new URLSearchParams(location.search)).get('from') === 'course';
 
 function ROOT() { return document.getElementById('root'); }
@@ -202,10 +202,12 @@ function renderOversikt(svar, info) {
   var nu = new Date();
   CUR = { svar: svar, info: info };
   RADER_BY_KEY = {};
+  var antalPerKort = {};
+  (svar.rader || []).forEach(function (r) { if (r && r.kortId) { antalPerKort[r.kortId] = (antalPerKort[r.kortId] || 0) + 1; } });
   var rader = (svar.rader || []).map(function (r) {
     var k = info[r.kortId] || {};
     return { kortId: r.kortId, namn: k.namn || '', kurs: k.kurs || '', url: safeUrl(k.url),
-      typ: r.typ, fakturanr: r.fakturanr || '', belopp: r.belopp, forfallodag: r.forfallodag || '', status: r.status,
+      typ: r.typ, roll: r.roll || r.typ, oklartSkal: r.oklartSkal || '', antalPaKortet: antalPerKort[r.kortId] || 0, fakturanr: r.fakturanr || '', belopp: r.belopp, forfallodag: r.forfallodag || '', status: r.status,
       dagar: dagarSedan(r.forfallodag, nu) };
   });
   // Robert 2026-11-10: bara kort i en daterad kurslista (kursstarten går att räkna ut). Övriga kurser har inte
@@ -243,7 +245,7 @@ function renderOversikt(svar, info) {
         return '<tr data-rad="' + esc(radKey(r.kortId, r.fakturanr)) + '" class="vz-bt-klickrad" title="Klicka för att se fakturans detaljer.">'
           + '<td data-label="Deltagare">' + deltagare + '</td>'
           + '<td data-label="Kurs">' + esc(r.kurs || '–') + '</td>'
-          + '<td data-label="Faktura">' + esc((r.fakturanr ? r.fakturanr + ' ' : '') + (BETAL_TYP_TEXT[r.typ] || 'Faktura')) + '</td>'
+          + '<td data-label="Faktura"' + (BR.arOkand(r) ? ' title="' + esc(BR.skalOkand(r, r.antalPaKortet)) + '"' : '') + '>' + esc((r.fakturanr ? r.fakturanr + ' ' : '') + BR.namn(r.typ)) + '</td>'
           + '<td data-label="Belopp" class="num">' + esc(fmtBelopp(r.belopp)) + '</td>'
           + '<td data-label="Förfallodag">' + esc(r.forfallodag || '–') + '</td>'
           + '<td data-label="Status"><span class="vz-bt-pill ' + esc(r.status) + '">' + esc(BETAL_STATUS_TEXT[r.status] || r.status) + '</span></td>'
@@ -288,7 +290,7 @@ function renderOversikt(svar, info) {
         var lank = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(namn) + '</a>' : esc(namn);
         return '<tr class="vz-bt-slackrad vz-bt-klickrad" data-rad="' + esc(radKey(r.kortId, r.fakturanr)) + '" title="Klicka för att se fakturans detaljer eller ångra släckningen.">'
           + '<td class="vz-bt-slackinfo"><b>' + lank + '</b>' + (r.kurs ? ' (' + esc(r.kurs) + ')' : '')
-          + ', faktura ' + esc(r.fakturanr + ' ' + (BETAL_TYP_TEXT[r.typ] || 'Faktura'))
+          + ', faktura ' + esc(r.fakturanr + ' ' + BR.namn(r.typ))
           + '<br><span class="vz-bt-slackskal">Släckt: ' + esc(r.slack.skal || 'skäl okänt') + '. Av ' + esc(r.slack.av || 'okänd') + ', ' + esc(fmtTid(r.slack.datum)) + '.</span></td>'
           + '<td class="vz-bt-slackakt"><button type="button" class="vz-bt-angrabtn" data-angra="' + esc(radKey(r.kortId, r.fakturanr)) + '" title="' + tip('angra') + '">Ångra</button></td>'
           + '</tr>';
@@ -367,7 +369,7 @@ function toggleDetalj(tr) {
       var oppna = [{ fakturanr: rad.fakturanr, belopp: rad.belopp, status: rad.status, forfallodag: rad.forfallodag, slack: sl }];
       var meta = x.detalj ? x.detalj.meta : { sieHamtad: CUR && CUR.svar.sieHamtad, bankHamtad: CUR && CUR.svar.bankHamtad, uppdaterad: CUR && CUR.svar.uppdaterad };
       var gas = x.detalj ? (x.detalj.rader || []).filter(function (g) { return g.kortId === rad.kortId; }) : null;
-      return { titel: (BD.TITEL[rad.typ] || 'Faktura') + ', ' + (rad.namn || 'okänt kort'), rader: BD.rader(gas, rad.typ, oppna, SLACK_OK), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel };
+      return { titel: BR.namn(rad.typ) + ', ' + (rad.namn || 'okänt kort'), skal: BR.arOkand(rad) ? BR.skalOkand(rad, gas ? gas.length : rad.antalPaKortet) : '', rader: BD.rader(gas, rad.roll, oppna, SLACK_OK), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel };
     }
   });
   host.addEventListener('click', function (e) {

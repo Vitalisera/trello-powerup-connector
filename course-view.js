@@ -199,7 +199,7 @@
    * Texter och kommentarsformat kommer från window.NYA_ZAPIER_SLACK (config.js). */
   var OPPNA = null;
   var BETAL_RAD_STATUS = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad' };
-  var BETAL_ROLL_TEXT = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift' };
+  var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen bor i config.js
   function betalRader(pkey, rolle) { var m = OPPNA && OPPNA.map && OPPNA.map[pkey]; return (m && m[rolle]) || []; }
   function betalSlackt(r) { return !!(r && r.slack && r.slack.slackt); }
   /* Cellens info efter släckning. betald och betald_avviker påverkas aldrig (se NYA_ZAPIER_SLACK.cellStatus). */
@@ -230,7 +230,7 @@
   function betalKr(n) { return (typeof n !== 'number' || !isFinite(n)) ? '' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr'; }
   function betalFakturor(pkey, rolle) {
     var ut = [], sedda = {};
-    ((DET_DATA[pkey] || []).filter(function (r) { return r.typ === rolle; })).forEach(function (r) { sedda[r.fakturanr || ''] = 1; ut.push({ nr: r.fakturanr, belopp: r.belopp }); });
+    ((DET_DATA[pkey] || []).filter(function (r) { return (r.roll || r.typ) === rolle; })).forEach(function (r) { sedda[r.fakturanr || ''] = 1; ut.push({ nr: r.fakturanr, belopp: r.belopp }); });
     betalRader(pkey, rolle).forEach(function (r) { if (!sedda[r.fakturanr || '']) { ut.push({ nr: r.fakturanr, belopp: r.belopp }); } });
     return ut;
   }
@@ -242,10 +242,10 @@
     return ['betald', 'betald_avviker', 'obetald', 'forfallen', 'ej_bekraftad', 'delbetald', 'oklart', 'kunde_inte_lasas', 'ingen_faktura'].indexOf(st) !== -1 ? st : 'saknas';
   }
   function betalCellTitle(pkey, rolle, info, cell) {
-    var roll = rolle === 'slut' ? 'Slutfaktura' : 'Anmälningsavgift';
+    var roll = BR.namn(rolle === 'slut' ? 'slut' : 'anmalan');
     var kod = betalKod(info, cell), lines = [], sl = betalRader(pkey, rolle).filter(betalSlackt);
     var fx = betalFakturor(pkey, rolle), harSlack = !!OPPNA;
-    var fdet = (DET_DATA[pkey] || []).filter(function (r) { return r.typ === rolle && r.forfallodag; })[0];
+    var fdet = (DET_DATA[pkey] || []).filter(function (r) { return (r.roll || r.typ) === rolle && r.forfallodag; })[0];
     var ford = (cell && cell.forfallodag) || (fdet && fdet.forfallodag) || '';
     var klick = 'Klicka för detaljer';
     if (kod === 'betald') { lines.push(roll + ': betald' + (cell && cell.datum ? ' ' + betalDatumLang(cell.datum) : '')); }
@@ -470,8 +470,8 @@
         + '</th>';
     });
     if (BETAL) {
-      phaseRow += '<th class="vz-cv-bethead phase-edge" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">Anmälningsavgift</span></th>'
-        + '<th class="vz-cv-bethead" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">Slutfaktura</span></th>';
+      phaseRow += '<th class="vz-cv-bethead phase-edge" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">' + BR.namn('anmalan') + '</span></th>'
+        + '<th class="vz-cv-bethead" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">' + BR.namn('slut') + '</span></th>';
     }
     phaseRow += '</tr>';
 
@@ -899,7 +899,7 @@
           var info = betalEffInfo(k && k[rolle], oppna);
           var gas = x.detalj ? (x.detalj.rader || []).filter(function (r) { return r && r.kortId === p.key; }) : null;
           var meta = x.detalj ? x.detalj.meta : { sieHamtad: BETAL && BETAL.sieHamtad, bankHamtad: BETAL && BETAL.bankHamtad, uppdaterad: BETAL && BETAL.uppdaterad };
-          return { titel: BD.TITEL[rolle] || 'Faktura', rader: BD.rader(gas, rolle, oppna, !!OPPNA), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel,
+          return { titel: BR.namn(rolle), rader: BD.rader(gas, rolle, oppna, !!OPPNA), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel,
             forklaring: info ? info.title : 'Ingen uppgift om fakturan.' };
         }
       });
