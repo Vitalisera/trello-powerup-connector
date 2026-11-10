@@ -729,8 +729,8 @@
         var pkey = row.getAttribute('data-pkey');
         var p = pByKey(pkey);
 
-        // klick på cell → expandera raden inline med stegets detalj (stoppa bubbling till onOpenCard)
-        Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-cell'), function (cell) {
+        // klick på cell → expandera raden inline med stegets detalj (stoppa bubbling till onOpenCard)  (betalcellerna saknar steg och är inte klickbara: annars "Okänt steg.")
+        Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-cell[data-step-key]'), function (cell) {
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
             toggleDetail(row, p, cell.getAttribute('data-step-key'), cell);
