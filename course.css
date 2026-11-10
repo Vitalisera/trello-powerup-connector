@@ -300,10 +300,10 @@
   position:sticky;top:0;z-index:5;
 }
 .vz-cv-phasehead{
-  font-size:11px;letter-spacing:.15em;text-transform:uppercase;font-weight:700;color:var(--accent);
-  text-align:left;padding:13px 14px 7px;border-bottom:1px solid var(--hairline);white-space:nowrap;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--accent);
+  text-align:left;padding:13px 10px 7px;border-bottom:1px solid var(--hairline);white-space:nowrap;
 }
-.vz-cv-phasehead .ph-line{display:flex;align-items:center;gap:9px}
+.vz-cv-phasehead .ph-line{display:flex;align-items:center;gap:7px}
 .vz-cv-phasehead .ph-line .bar{flex:1;height:1.5px;border-radius:2px;
   background:linear-gradient(90deg,rgba(53,112,135,.4),rgba(53,112,135,.05))}
 .vz-cv-phasehead.phase-2{border-left:1px dashed var(--hairline-strong)}
@@ -795,7 +795,10 @@
   .vz-cv-stats{flex-wrap:wrap}   /* trång skärm: låt rutorna wrappa istället för att spilla över */
   .vz-cv-sumside{align-items:flex-start;text-align:left}
   .vz-cv-controls{justify-content:flex-start}
-  /* stapla: matris överst, Personal-aside under (full bredd) */
+}
+/* stapla: matris överst, Personal-aside under (full bredd). Brytpunkten är matrisens minsta bredd, inte 1080:
+   14 steg + namn + betalkolumner är ~990 px + 120 px svans-padding, plus asidens 320 px; smalare än så trängde tabellen in under panelen (1280 px: 80 px). */
+@media (max-width:1420px){
   .vz-cv-row-region{flex-direction:column}
   .vz-region-matrix{border-right:none;border-bottom:1px solid var(--hairline);width:100%}
   .vz-region-aside{flex:1 1 auto;width:100%;align-self:auto}
@@ -829,11 +832,22 @@
 .vz-course .vz-assist-confirm .vz-btn{font-size:11.5px;padding:2px 9px}
 
 /* Betalstatus (Task 11): två celler efter stegen. bt-late är ENDA klassen för förfallen; neutrala statusar får den aldrig. */
-.vz-cv-bethead{vertical-align:bottom;text-align:left;padding:4px 8px;font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap}
-.vz-cv-betalcell{text-align:center;white-space:nowrap}
-.vz-cv-bt{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10.5px;font-weight:800;white-space:nowrap}
+.vz-cv-bethead{vertical-align:bottom;text-align:center;padding:4px 2px 8px;width:60px;min-width:60px;max-width:60px;font-size:10px;font-weight:800;color:var(--muted)}
+/* Rubriken står lodrät (som infälld fas): en rak rubrik gjorde kolumnen 150 px bred så tabellen trängde in under Personal-panelen. */
+.vz-cv-bethead .stitle{display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap}
+.vz-cv-betalcell{text-align:center;width:60px;min-width:60px;max-width:60px;padding:4px 2px}
+/* Pillret får brytas över flera rader inom sin smala kolumn (full text finns i title). */
+.vz-cv-bt{display:inline-block;box-sizing:border-box;max-width:100%;padding:2px 4px;border-radius:9px;font-size:10px;line-height:1.25;font-weight:800;white-space:normal}
+/* Med betalkolumner är namnkolumnen smalare så att matrisen ryms bredvid Personal-panelen. */
+.vz-cv-table.has-betal .vz-cv-namecell,.vz-cv-table.has-betal .vz-cv-corner,.vz-cv-table.has-betal .vz-cv-stephead.vz-cv-namehead{min-width:186px;width:186px}
 .vz-cv-bt.bt-done{background:rgba(31,122,83,.14);color:var(--success)}
 .vz-cv-bt.bt-open{background:#eef6f6;color:#5b7f89}
 .vz-cv-bt.bt-late{background:rgba(178,58,46,.12);color:#b23a2e}
+.vz-cv-bt.bt-pending{background:#fbf1d6;color:#8a6410}
+/* Luft mellan sista stegets diagonala rubrik (svansen når ~50 px in i betalkolumnen) och den lodräta betalrubriken. */
+.vz-cv-table.has-betal th.vz-cv-bethead.phase-edge,.vz-cv-table.has-betal td.vz-cv-betalcell[data-betal-roll="anmalan"]{box-sizing:border-box;width:76px;min-width:76px;max-width:76px;padding-left:16px}
+.vz-cv-table.has-betal th.vz-cv-bethead.phase-edge{text-align:right;padding-right:10px}
+.vz-cv-table.has-betal th.vz-cv-bethead:last-child,.vz-cv-table.has-betal td.vz-cv-betalcell[data-betal-roll="slut"]{box-sizing:border-box;width:66px;min-width:66px;max-width:66px;padding-right:6px}
 .vz-cv-bt.bt-neutral{background:#f1f1ee;color:var(--muted)}
+.vz-cv-bt.bt-none{font-weight:600;font-size:9px;line-height:1.2;padding:2px 3px;border-radius:7px}
 .vz-cv-betalmeta{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}

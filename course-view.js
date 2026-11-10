@@ -112,35 +112,43 @@
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
     return m ? (parseInt(m[3], 10) + '/' + parseInt(m[2], 10)) : '';
   }
+  /* Högst TVÅ rader i en 60 px-cell: text = kort status, text2 = ev. datum. Hela meningen står i title (tooltip). */
   function betalCellInfo(cell) {
     if (!cell || typeof cell !== 'object') { return null; }
     var dm, st = String(cell.status || '');
-    if (st === 'betald') { dm = betalDM(cell.datum); return { text: dm ? 'betald (' + dm + ')' : 'betald', cls: 'bt-done' }; }
-    if (st === 'obetald') { dm = betalDM(cell.forfallodag); return { text: dm ? 'obetald (förfaller ' + dm + ')' : 'obetald', cls: 'bt-open' }; }
-    if (st === 'forfallen') { return { text: 'förfallen', cls: 'bt-late' }; }
-    if (st === 'delbetald') { return { text: 'delbetald', cls: 'bt-neutral' }; }
-    if (st === 'oklart') { return { text: 'oklart', cls: 'bt-neutral' }; }
-    if (st === 'kunde_inte_lasas') { return { text: 'kunde inte läsas', cls: 'bt-neutral' }; }
-    return { text: 'saknas', cls: 'bt-neutral' };   // saknas och allt okänt: aldrig obetald/förfallen
+    if (st === 'betald') { dm = betalDM(cell.datum); return { text: 'betald', text2: dm, title: dm ? 'Betald ' + dm : 'Betald', cls: 'bt-done' }; }
+    if (st === 'obetald') { dm = betalDM(cell.forfallodag); return { text: 'obetald', text2: dm, title: dm ? 'Obetald, förfaller ' + dm : 'Obetald', cls: 'bt-open' }; }
+    if (st === 'forfallen') { return { text: 'förfallen', title: 'Förfallen: förfallodagen har passerat och fakturan är inte betald enligt bokföringen', cls: 'bt-late' }; }
+    if (st === 'ej_bekraftad') { return { text: 'ej bekräftad', title: 'Förfallodagen har passerat men bokföringen är inte ikapp', hint: 'Förfallodagen har passerat men bokföringen är inte ikapp', cls: 'bt-pending' }; }
+    if (st === 'delbetald') { return { text: 'delbetald', title: 'Delbetald: en del av beloppet är betalt', cls: 'bt-neutral' }; }
+    if (st === 'oklart') { return { text: 'oklart', title: 'Oklart: fakturan går inte att tolka entydigt', cls: 'bt-neutral' }; }
+    if (st === 'kunde_inte_lasas') { return { text: 'oläslig', title: 'Fakturan kunde inte läsas', cls: 'bt-neutral' }; }
+    if (st === 'ingen_faktura') { return { text: 'ingen faktura', title: 'Ingen faktura på kortet', cls: 'bt-neutral bt-none' }; }   // färsk data, inga rader: INTE samma sak som saknas (okänt)
+    return { text: 'saknas', title: 'Saknas: uppgiften är okänd eller inaktuell', cls: 'bt-neutral' };   // saknas och allt okänt: aldrig obetald/förfallen
+  }
+  /* Ärlig förklaring till rubriken: förfallen/obetald bygger på bokföringen, och en inbetalning som ännu inte är uppdelad kan göra en betald faktura förfallen. */
+  function betalBokfText(b) {
+    var dm = betalDM(b && b.sieSenast);
+    return dm ? 'Förfallen enligt bokföringen t.o.m. ' + dm : 'Bokföringens datum okänt';
   }
   function betalHamtadText(b) {
     if (!b) { return ''; }
     var ts = [b.sieHamtad, b.bankHamtad].map(function (x) { var t = Date.parse(x || ''); return isNaN(t) ? null : t; })
       .filter(function (t) { return t != null; });
-    if (!ts.length) { return ''; }
+    if (!ts.length) { return betalBokfText(b); }
     var d = new Date(Math.min.apply(null, ts));   // den äldsta av källorna: det ärligaste "hämtade"
     try {
       var parts = {};
       new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
         .formatToParts(d).forEach(function (x) { parts[x.type] = x.value; });
-      return 'Betalningar hämtade ' + parts.day + '/' + parts.month + ' ' + parts.hour + ':' + parts.minute;
+      return 'Betalningar hämtade ' + parts.day + '/' + parts.month + ' ' + parts.hour + ':' + parts.minute + ' · ' + betalBokfText(b);
     } catch (e) { return ''; }
   }
   function betalTdHtml(pkey, rolle) {
     var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
     var info = betalCellInfo(k && k[rolle]);
-    return '<td class="vz-cv-cell vz-cv-betalcell" data-betal-roll="' + rolle + '"' + (info ? ' title="' + esc(info.text) + '"' : '') + '>'
-      + (info ? '<span class="vz-cv-bt ' + info.cls + '">' + esc(info.text) + '</span>' : '') + '</td>';
+    return '<td class="vz-cv-cell vz-cv-betalcell" data-betal-roll="' + rolle + '"' + (info ? ' title="' + esc(info.title) + '"' : '') + '>'
+      + (info ? '<span class="vz-cv-bt ' + info.cls + '">' + esc(info.text) + (info.text2 ? '<br>' + esc(info.text2) : '') + '</span>' : '') + '</td>';
   }
   function applyBetalStatus(data) {
     BETAL = (data && data.byKey) ? data : null;
@@ -271,14 +279,14 @@
         + ' aria-expanded="' + (isCollapsed ? 'false' : 'true') + '"'
         + ' title="' + (isCollapsed ? 'Visa' : 'Dölj') + ' fasens steg">'
         + '<div class="ph-line">' + icChevron
-        + '<span class="ph-name">' + esc(ph.title) + '</span>'
+        + '<span class="ph-name">' + esc(String(ph.title).replace(/ &/g, '\u00a0&')) + '</span>'
         + '<span class="ph-count">' + ph.count + '</span>'
         + '<span class="bar"></span></div>'
         + '</th>';
     });
     if (BETAL) {
-      phaseRow += '<th class="vz-cv-bethead phase-edge" rowspan="2"><span class="stitle">Anmälningsavgift</span></th>'
-        + '<th class="vz-cv-bethead" rowspan="2"><span class="stitle">Slutfaktura</span></th>';
+      phaseRow += '<th class="vz-cv-bethead phase-edge" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">Anmälningsavgift</span></th>'
+        + '<th class="vz-cv-bethead" rowspan="2" title="' + esc(betalBokfText(BETAL)) + '"><span class="stitle">Slutfaktura</span></th>';
     }
     phaseRow += '</tr>';
 
@@ -545,6 +553,7 @@
     var head = rootEl.querySelector('[data-cv-head]');
 
     function paintHead() {
+      var tbl = rootEl.querySelector('[data-cv-table]'); if (tbl && tbl.classList) { if (BETAL) { tbl.classList.add('has-betal'); } else { tbl.classList.remove('has-betal'); } }
       head.innerHTML = theadHtml(steps, phases, state.collapsed).replace(/^<thead>|<\/thead>$/g, '');
       wireHead();
       syncStickyOffsets();
@@ -839,7 +848,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText,
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalBokfText: betalBokfText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 

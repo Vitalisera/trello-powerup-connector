@@ -1724,14 +1724,14 @@ function loadBetalStatus(courseName, cards) {
   function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
   var CHUNK = 30, chunks = [];
   for (var i = 0; i < keys.length; i += CHUNK) { chunks.push(keys.slice(i, i + CHUNK)); }
-  var acc = { byKey: {}, sieHamtad: '', bankHamtad: '' }, gotAny = false;
+  var acc = { byKey: {}, sieHamtad: '', bankHamtad: '', sieSenast: '' }, gotAny = false;
   Promise.all(chunks.map(function (grp) {
     return postToGas('courseBetalstatus', { items: grp.map(function (k) { return { key: k }; }) })
       .then(function (data) {
         if (isStale()) { return; }
         if (!data || data.ok !== true || !Array.isArray(data.items)) { return; }
         data.items.forEach(function (r) { if (r && r.key) { acc.byKey[r.key] = { anmalan: r.anmalan || null, slut: r.slut || null }; } });
-        acc.sieHamtad = data.sieHamtad || acc.sieHamtad; acc.bankHamtad = data.bankHamtad || acc.bankHamtad;
+        acc.sieHamtad = data.sieHamtad || acc.sieHamtad; acc.bankHamtad = data.bankHamtad || acc.bankHamtad; acc.sieSenast = data.sieSenast || acc.sieSenast;
         gotAny = true;
         apply(acc);   // progressivt
       })
