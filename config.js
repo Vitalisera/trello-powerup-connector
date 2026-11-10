@@ -373,3 +373,182 @@ window.NYA_ZAPIER_BOKF = (function () {
   }
   return { rad: rad, GRANS_MS: GRANS_MS };
 })();
+
+/* Släck-knappen (Robert 2026-11-10): en obetald faktura kan släckas med ett skäl. Allt sparas som en KOMMENTAR på
+ * deltagarkortet i Trello (kortet är sanningskälla, ingen databas). EN delad källa för kommentarsformatet, skälen,
+ * tolkningen, ordningen för "mest varnande" status och själva formuläret. Varken Obetalda fakturor (betal.js) eller
+ * Kursöversikten (course.js, course-view.js) får ha egna literaler för prefixet: grinden i proof.js vaktar det.
+ *   slackText(nr, namn, skalKod, fritext) -> kommentarstext, eller null när fritext saknas vid "annat"
+ *   angraText(nr, namn)                   -> kommentarstext för återställning
+ *   tolka(actions, nr)                    -> { slackt, av, skal, datum }; SENASTE kommentaren för numret vinner
+ *   cellStatus(status, rader)             -> { status, slackt, rader } för en cell i kursöversikten
+ *   bindForm(host, o)                     -> ritar och styr formuläret (släck eller ångra) i host */
+window.NYA_ZAPIER_SLACK = (function () {
+  var PREFIX = 'Betalstatus: faktura ';
+  var SKAL = [
+    { kod: 'betald', text: 'betald', etikett: 'Betald' },
+    { kod: 'ersatt', text: 'ersatt av nyare faktura', etikett: 'Ersatt av nyare faktura' },
+    { kod: 'inte_av', text: 'kursen blev inte av', etikett: 'Kursen blev inte av' },
+    { kod: 'annat', text: 'annat', etikett: 'Annat' }
+  ];
+  // Samma ordning som GAS BETAL_VARNING_: den mest varnande kvarvarande statusen vinner.
+  var VARNING = ['forfallen', 'obetald', 'ej_bekraftad', 'delbetald'];
+  var MAX_FRI = 200;
+
+  function enRad(s) { return String(s == null ? '' : s).replace(/\s*[\r\n]+\s*/g, ' ').trim(); }
+  function fritext(s) { return enRad(s).slice(0, MAX_FRI).trim(); }
+  function skalPost(kod) { for (var i = 0; i < SKAL.length; i++) { if (SKAL[i].kod === kod) { return SKAL[i]; } } return null; }
+  /* Skälet som det står i kommentaren: "betald", ..., "annat: <fritext>". null = ogiltigt skäl eller fritext saknas. */
+  function skalText(kod, fri) {
+    var s = skalPost(kod);
+    if (!s) { return null; }
+    if (kod === 'annat') { var f = fritext(fri); return f ? ('annat: ' + f) : null; }
+    return s.text;
+  }
+  function slackText(nr, namn, kod, fri) {
+    var skal = skalText(kod, fri);
+    if (skal == null) { return null; }
+    return PREFIX + enRad(nr) + ' släckt av ' + enRad(namn) + ', ' + skal;
+  }
+  function angraText(nr, namn) { return PREFIX + enRad(nr) + ' återställd av ' + enRad(namn); }
+
+  function reEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  /* actions: Trello commentCard-actions ({ type, date, data: { text } }) i valfri ordning. */
+  function tolka(actions, nr) {
+    var n = enRad(nr);
+    var out = { slackt: false, av: '', skal: '', datum: '' };
+    if (!n) { return out; }
+    // Numret som helt ord: efter numret kommer alltid ett mellanslag, så 1650 matchar aldrig 16500.
+    var re = new RegExp('^' + reEsc(PREFIX) + reEsc(n) + ' (släckt|återställd) av ');
+    var reSlack = new RegExp('^' + reEsc(PREFIX) + reEsc(n) + ' släckt av (.*?), (betald|ersatt av nyare faktura|kursen blev inte av|annat: .*)$');
+    var reAngra = new RegExp('^' + reEsc(PREFIX) + reEsc(n) + ' återställd av (.*)$');
+    var bast = null, bastMs = -Infinity;
+    (actions || []).forEach(function (a) {
+      var tx = a && a.data && typeof a.data.text === 'string' ? a.data.text.trim() : '';
+      if (!tx || !re.test(tx)) { return; }
+      var ms = Date.parse(a.date || '');
+      if (isNaN(ms)) { ms = -Infinity; }
+      if (bast === null || ms > bastMs) { bast = { tx: tx, date: a.date || '' }; bastMs = ms; }   // lika datum: den som kom först i listan
+    });
+    if (!bast) { return out; }
+    out.datum = bast.date;
+    var m = reSlack.exec(bast.tx);
+    if (bast.tx.indexOf(PREFIX + n + ' släckt av ') === 0) {
+      out.slackt = true;
+      if (m) { out.av = m[1]; out.skal = m[2]; }
+      return out;
+    }
+    m = reAngra.exec(bast.tx);
+    if (m) { out.av = m[1]; }
+    return out;
+  }
+
+  /* Cellens status för en roll. rader = öppna och släckta fakturor för rollen ({ status, slack: { slackt } }).
+   * Bara obetalda statusar påverkas: betald och betald_avviker (och allt annat) går ALLTID före släckt. */
+  function cellStatus(status, rader) {
+    var st = String(status || '');
+    var lista = rader || [];
+    if (VARNING.indexOf(st) === -1 || !lista.length) { return { status: st, slackt: false }; }
+    var kvar = lista.filter(function (r) { return !(r && r.slack && r.slack.slackt); });
+    if (!kvar.length) { return { status: st, slackt: true }; }
+    var bast = null;
+    kvar.forEach(function (r) {
+      var i = VARNING.indexOf(r.status);
+      if (i !== -1 && (bast === null || i < bast)) { bast = i; }
+    });
+    return { status: bast === null ? st : VARNING[bast], slackt: false };
+  }
+
+  /* Kommentarerna för ett antal kort, ~6 åt gången. Avvisar om NÅGON hämtning felar (då vet vi inte vad som är släckt). */
+  function laddaKommentarer(restGetFn, kortIds) {
+    var ids = [], seen = {};
+    (kortIds || []).forEach(function (id) { if (id && !seen[id]) { seen[id] = true; ids.push(id); } });
+    var out = {}, steg = Promise.resolve();
+    for (var i = 0; i < ids.length; i += 6) {
+      (function (grupp) {
+        steg = steg.then(function () {
+          return Promise.all(grupp.map(function (id) {
+            return restGetFn('cards/' + encodeURIComponent(id) + '/actions?filter=commentCard&limit=1000').then(function (a) { out[id] = a || []; });
+          }));
+        });
+      })(ids.slice(i, i + 6));
+    }
+    return steg.then(function () { return out; });
+  }
+
+  /* ---------- formuläret (delas av Obetalda fakturor och Kursöversikten) ---------- */
+  function escH(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  var uid = 0;
+  function formHtml(o) {
+    var angra = o.mode === 'angra';
+    var nm = 'slack-skal-' + (++uid);
+    return '<div class="vz-slack-form">'
+      + '<div class="vz-slack-title">' + (angra ? 'Ångra släckningen av faktura ' : 'Släck faktura ') + escH(o.nr) + '</div>'
+      + (angra ? '' :
+          '<div class="vz-slack-skal">' + SKAL.map(function (s) {
+            return '<label><input type="radio" name="' + nm + '" value="' + s.kod + '"> ' + escH(s.etikett) + '</label>';
+          }).join('') + '</div>'
+          + '<input type="text" class="vz-slack-fri" data-slack-fri maxlength="' + MAX_FRI + '" placeholder="Förklaring (krävs vid Annat)" aria-label="Förklaring, krävs vid Annat">')
+      + '<p class="vz-slack-prev" data-slack-prev></p>'
+      + '<p class="vz-slack-err" data-slack-err style="display:none"></p>'
+      + '<div class="vz-slack-btns">'
+      + '<button type="button" class="vz-slack-ok" data-slack-ok>' + (angra ? 'Ångra släckningen' : 'Släck') + '</button>'
+      + '<button type="button" class="vz-slack-avbryt" data-slack-avbryt>Avbryt</button>'
+      + '</div></div>';
+  }
+
+  /* o = { mode: 'slack'|'angra', nr, kortNamn, namn, onSubmit(kod, fri, text) -> Promise, onDone(kod, fri, text), onCancel() }
+   * Knappen spärras medan skrivningen pågår (dubbelklick ger aldrig två kommentarer). Fel: tydligt meddelande, inget ändras. */
+  function bindForm(host, o) {
+    var angra = o.mode === 'angra';
+    var st = { kod: '', fri: '', busy: false };
+    host.innerHTML = formHtml(o);
+    function q(attr) { return host.querySelector('[' + attr + ']'); }
+    function text() { return angra ? angraText(o.nr, o.namn) : slackText(o.nr, o.namn, st.kod, st.fri); }
+    function visaFel(msg) { var e = q('data-slack-err'); if (e) { e.textContent = msg || ''; e.style.display = msg ? '' : 'none'; } }
+    function paintPrev() {
+      var p = q('data-slack-prev'); if (!p) { return; }
+      var tx = text();
+      p.textContent = tx
+        ? ('Skriver en kommentar på kortet ' + enRad(o.kortNamn) + ': ' + tx + '. ' + (angra ? 'Fakturan räknas då som obetald igen.' : 'Ångra skriver en ny kommentar.'))
+        : (st.kod === 'annat' ? 'Skriv en förklaring för att se kommentaren.' : 'Välj ett skäl för att se kommentaren.');
+    }
+    function hit(e, attr) {
+      var n = e && e.target;
+      while (n && n !== host) { if (n.getAttribute && n.getAttribute(attr) !== null && n.getAttribute(attr) !== undefined) { return n; } n = n.parentNode; }
+      return null;
+    }
+    function onInput(e) {
+      var tg = e && e.target; if (!tg) { return; }
+      if (tg.type === 'radio') { st.kod = String(tg.value || ''); }
+      else if (tg.type === 'text') { st.fri = String(tg.value || ''); }
+      else { return; }
+      visaFel(''); paintPrev();
+    }
+    host.addEventListener('change', onInput);
+    host.addEventListener('input', onInput);
+    host.addEventListener('click', function (e) {
+      if (hit(e, 'data-slack-avbryt')) { if (!st.busy && typeof o.onCancel === 'function') { o.onCancel(); } return; }
+      if (!hit(e, 'data-slack-ok') || st.busy) { return; }
+      var tx = text();
+      if (!tx) { visaFel(st.kod === 'annat' ? 'Skriv en förklaring vid Annat.' : 'Välj ett skäl.'); return; }
+      st.busy = true; visaFel('');
+      var ok = q('data-slack-ok');
+      if (ok) { ok.disabled = true; ok.textContent = '⏳ Skriver …'; }
+      var p; try { p = Promise.resolve(o.onSubmit(st.kod, st.fri, tx)); } catch (err) { p = Promise.reject(err); }
+      p.then(function () { if (typeof o.onDone === 'function') { o.onDone(st.kod, st.fri, tx); } }, function (err) {
+        st.busy = false;
+        if (ok) { ok.disabled = false; ok.textContent = angra ? 'Ångra släckningen' : 'Släck'; }
+        visaFel('Kunde inte skriva kommentaren på kortet (' + enRad(err && err.message || 'okänt fel') + '). Inget har ändrats. Försök igen.');
+      });
+    });
+    paintPrev();
+  }
+
+  return { PREFIX: PREFIX, SKAL: SKAL, VARNING: VARNING, MAX_FRI: MAX_FRI, skalText: skalText, slackText: slackText, angraText: angraText,
+    tolka: tolka, cellStatus: cellStatus, laddaKommentarer: laddaKommentarer, formHtml: formHtml, bindForm: bindForm };
+})();

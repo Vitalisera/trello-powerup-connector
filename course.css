@@ -854,3 +854,30 @@
 .vz-cv-bt.bt-neutral{background:#f1f1ee;color:var(--muted)}
 .vz-cv-bt.bt-none{font-weight:600;font-size:9px;line-height:1.2;padding:2px 3px;border-radius:7px}
 .vz-cv-betalmeta{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}
+
+/* Släck-knappen i betalcellerna (Robert 2026-11-10). Bara celler med öppna eller släckta fakturor är klickbara. */
+.vz-cv-betalcell{cursor:default}
+.vz-cv-betalcell.vz-cv-betalklick{cursor:pointer}
+.vz-cv-bt.bt-slackt{background:#f1f1ee;color:#8b9a9f;font-style:italic}
+.vz-cv-slackrow > td{padding:0;background:#eef6f6;border-bottom:1px solid var(--hairline-strong)}
+.vz-cv-slack-item{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:6px 14px;padding:8px 0;border-top:1px solid #dbe8ea;font-size:13px}
+.vz-cv-slack-item:first-child{border-top:0}
+.vz-cv-slack-item .vz-slack-formhost{flex:0 0 100%}
+.vz-cv-slack-btn{font:inherit;font-size:12px;font-weight:700;padding:4px 12px;border-radius:9px;cursor:pointer;background:#fff;color:var(--dark);border:1px solid var(--accent);white-space:nowrap}
+.vz-cv-slack-btn:hover{background:#eef6f6}
+.vz-cv-slack-skal{color:var(--muted)}
+
+/* Släck-formuläret (delas med Kursöversikten, samma klasser i course.css) */
+.vz-slack-form { background: #f7fbfb; border: 1px solid #cfe0e3; border-radius: 12px; padding: 12px 14px; margin: 4px 0; text-align: left; white-space: normal; }
+.vz-slack-title { font-weight: 700; color: var(--dark); margin: 0 0 8px; font-size: 14px; }
+.vz-slack-skal { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 8px; font-size: 14px; }
+.vz-slack-skal label { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.vz-slack-fri { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid #b9cdd2; border-radius: 8px; background: #fff; color: #0d3142; }
+.vz-slack-prev { font-size: 13px; color: #35525d; margin: 8px 0; }
+.vz-slack-err { background: #fbe1de; color: #8a2a20; border: 1px solid #e8b3ac; border-radius: 8px; padding: 7px 10px; font-size: 13px; margin: 8px 0; }
+.vz-slack-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.vz-slack-ok, .vz-slack-avbryt { font: inherit; font-size: 14px; font-weight: 700; padding: 7px 14px; border-radius: 9px; cursor: pointer; border: 1px solid #357087; }
+.vz-slack-ok { background: var(--dark); color: #fff; }
+.vz-slack-ok:disabled { opacity: .65; cursor: default; }
+.vz-slack-avbryt { background: #fff; color: var(--dark); }
+

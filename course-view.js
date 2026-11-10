@@ -166,11 +166,68 @@
     var t = betalHamtadBas(b);
     return betalGammal(b) ? (t ? t + ' ' : '') + BETAL_GAMMAL_TEXT : t;
   }
+  /* Släck-knappen (Robert 2026-11-10). OPPNA = { map: { kortId: { anmalan: [rad], slut: [rad] } }, namn, kortNamn(kortId), skriv(kortId, text) -> Promise }
+   * eller null (då inga Släck-knappar och cellerna ritas som förut). rad = { fakturanr, belopp, forfallodag, status, slack: { slackt, av, skal, datum } }.
+   * Texter och kommentarsformat kommer från window.NYA_ZAPIER_SLACK (config.js). */
+  var OPPNA = null;
+  var BETAL_RAD_STATUS = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad' };
+  var BETAL_ROLL_TEXT = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift' };
+  function betalRader(pkey, rolle) { var m = OPPNA && OPPNA.map && OPPNA.map[pkey]; return (m && m[rolle]) || []; }
+  function betalSlackt(r) { return !!(r && r.slack && r.slack.slackt); }
+  /* Cellens info efter släckning. betald och betald_avviker påverkas aldrig (se NYA_ZAPIER_SLACK.cellStatus). */
+  function betalEffInfo(cell, rader) {
+    var S = (typeof window !== 'undefined') && window.NYA_ZAPIER_SLACK;
+    if (!S || !rader.length || !cell || typeof cell !== 'object') { return betalCellInfo(cell); }
+    var c = S.cellStatus(cell.status, rader);
+    if (c.slackt) {
+      var sl = rader.filter(betalSlackt);
+      var delar = sl.map(function (r) {
+        return (sl.length > 1 && r.fakturanr ? 'faktura ' + r.fakturanr + ': ' : '') + (r.slack.skal || 'skäl okänt') + ', av ' + (r.slack.av || 'okänd');
+      });
+      return { text: 'släckt', title: 'Släckt: ' + delar.join(' · '), cls: 'bt-neutral bt-slackt' };
+    }
+    if (c.status !== cell.status) {
+      var kv = rader.filter(function (r) { return !betalSlackt(r) && r.status === c.status; })[0];
+      return betalCellInfo(Object.assign({}, cell, { status: c.status, forfallodag: (kv && kv.forfallodag) || cell.forfallodag }));
+    }
+    return betalCellInfo(cell);
+  }
   function betalTdHtml(pkey, rolle) {
     var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
-    var info = betalCellInfo(k && k[rolle]);
-    return '<td class="vz-cv-cell vz-cv-betalcell" data-betal-roll="' + rolle + '"' + (info ? ' title="' + esc(info.title) + '"' : '') + '>'
+    var rader = betalRader(pkey, rolle);
+    var info = betalEffInfo(k && k[rolle], rader);
+    // En betalcell är aldrig tom när betalstatus är laddad och kortet finns: GAS ger null för rollen när kortet har faktura för den andra rollen.
+    if (!info && BETAL && k && typeof k === 'object' && (k[rolle] === null || k[rolle] === undefined)) {
+      info = BETAL.inaktuell === true ? betalCellInfo({ status: 'saknas' })
+        : { text: 'ingen faktura', title: 'Kortet har en faktura för den andra delen men ingen för den här. Den kan ha ingått i den andra.', cls: 'bt-neutral bt-none' };
+    }
+    var klick = !!(info && rader.length);   // klickbar bara när det finns minst en öppen eller släckt faktura för rollen
+    return '<td class="vz-cv-cell vz-cv-betalcell' + (klick ? ' vz-cv-betalklick' : '') + '" data-betal-roll="' + rolle + '"' + (klick ? ' data-betal-klick="1"' : '') + (info ? ' title="' + esc(info.title) + '"' : '') + '>'
       + (info ? '<span class="vz-cv-bt ' + info.cls + '">' + esc(info.text) + (info.text2 ? '<br>' + esc(info.text2) : '') + '</span>' : '') + '</td>';
+  }
+  function applyBetalOppna(map, ops) {
+    OPPNA = (map && ops) ? { map: map, namn: ops.namn || '', kortNamn: ops.kortNamn, skriv: ops.skriv } : null;
+    if (repaintBodyRef) { repaintBodyRef(false); }
+  }
+  function slackBelopp(n) {
+    if (typeof n !== 'number' || !isFinite(n)) { return '–'; }
+    return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr';
+  }
+  function slackDetailHtml(pkey, rolle) {
+    var rader = betalRader(pkey, rolle);
+    return '<div class="vz-pd-head"><b>' + esc(BETAL_ROLL_TEXT[rolle] || 'Faktura') + '</b></div>'
+      + rader.map(function (r, i) {
+        var nr = r.fakturanr || '';
+        var delar = [nr ? 'Faktura ' + nr : 'Faktura utan nummer', slackBelopp(r.belopp)];
+        if (betalSlackt(r)) {
+          return '<div class="vz-cv-slack-item" data-slack-rad="' + i + '"><span>' + esc(delar.join(' · ')) + ' · <span class="vz-cv-slack-skal">släckt: '
+            + esc(r.slack.skal || 'skäl okänt') + '. Av ' + esc(r.slack.av || 'okänd') + ', ' + esc(String(r.slack.datum || '').slice(0, 10)) + '</span></span>'
+            + '<button type="button" class="vz-cv-slack-btn" data-angra-nr="' + i + '">Ångra</button></div>';
+        }
+        delar.push('förfaller ' + (r.forfallodag || '–'), BETAL_RAD_STATUS[r.status] || r.status || '');
+        return '<div class="vz-cv-slack-item" data-slack-rad="' + i + '"><span>' + esc(delar.join(' · ')) + '</span>'
+          + (nr ? '<button type="button" class="vz-cv-slack-btn" data-slack-nr="' + i + '">Släck</button>' : '') + '</div>';
+      }).join('');
   }
   function applyBetalStatus(data) {
     BETAL = (data && data.byKey) ? data : null;
@@ -721,6 +778,64 @@
       if (typeof handlers.onSelectCell === 'function') { try { handlers.onSelectCell(p, stepKey, hostDiv); } catch (err) { hostDiv.textContent = 'Kunde inte visa steget.'; } }
     }
 
+    // Släck: egen detaljrad (tr colSpan 99, klass vz-cv-slackrow) under deltagarraden. En öppen åt gången, nytt klick stänger.
+    function toggleSlack(row, p, rolle, cell) {
+      var next = row.nextSibling;
+      var openSame = !!(next && next.nodeType === 1 && next.className && next.className.indexOf('vz-cv-slackrow') !== -1
+        && next.getAttribute('data-pkey') === p.key && next.getAttribute('data-betal-roll') === rolle);
+      Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-detailrow'), function (d) { d.parentNode.removeChild(d); });
+      Array.prototype.forEach.call(body.querySelectorAll('.vz-cv-cell.is-sel'), function (c) { c.classList.remove('is-sel'); });
+      Array.prototype.forEach.call(head.querySelectorAll('.vz-cv-stephead.is-active-step'), function (h) { h.classList.remove('is-active-step'); });
+      if (openSame) { return; }
+      if (cell) { cell.classList.add('is-sel'); }
+      var tr = document.createElement('tr');
+      tr.className = 'vz-cv-detailrow vz-cv-slackrow';
+      tr.setAttribute('data-step', 'betal-' + rolle); tr.setAttribute('data-pkey', p.key); tr.setAttribute('data-betal-roll', rolle);
+      var td = document.createElement('td'); td.colSpan = 99; td.className = 'vz-cv-detailcell';
+      var hostDiv = document.createElement('div'); hostDiv.className = 'vz-cv-detail';
+      hostDiv.innerHTML = slackDetailHtml(p.key, rolle);
+      td.appendChild(hostDiv); tr.appendChild(td);
+      row.parentNode.insertBefore(tr, row.nextSibling);
+      hostDiv.addEventListener('click', function (e) {
+        var n = e.target, mode = '', idx = '';
+        while (n && n !== hostDiv) {
+          if (n.getAttribute && n.getAttribute('data-slack-nr') !== null && n.getAttribute('data-slack-nr') !== undefined) { mode = 'slack'; idx = n.getAttribute('data-slack-nr'); break; }
+          if (n.getAttribute && n.getAttribute('data-angra-nr') !== null && n.getAttribute('data-angra-nr') !== undefined) { mode = 'angra'; idx = n.getAttribute('data-angra-nr'); break; }
+          n = n.parentNode;
+        }
+        if (mode) { openSlackForm(hostDiv, p, rolle, mode, Number(idx)); }
+      });
+    }
+    function openSlackForm(hostDiv, p, rolle, mode, idx) {
+      var rad = betalRader(p.key, rolle)[idx];
+      var S = window.NYA_ZAPIER_SLACK;
+      if (!rad || !S || !OPPNA) { return; }
+      var item = hostDiv.querySelector('.vz-cv-slack-item[data-slack-rad="' + idx + '"]');
+      if (!item) { return; }
+      var old = hostDiv.querySelectorAll('.vz-slack-formhost');
+      var samma = false;
+      Array.prototype.forEach.call(old, function (f) { if (f.getAttribute('data-mode') === mode && f.getAttribute('data-idx') === String(idx)) { samma = true; } });
+      Array.prototype.forEach.call(old, function (f) { f.parentNode.removeChild(f); });
+      if (samma) { return; }
+      var fh = document.createElement('div');
+      fh.className = 'vz-slack-formhost'; fh.setAttribute('data-mode', mode); fh.setAttribute('data-idx', String(idx));
+      item.appendChild(fh);
+      S.bindForm(fh, {
+        mode: mode, nr: rad.fakturanr, namn: OPPNA.namn,
+        kortNamn: (typeof OPPNA.kortNamn === 'function' && OPPNA.kortNamn(p.key)) || p.name || 'okänt kort',
+        onSubmit: function (kod, fri, text) { return OPPNA.skriv(p.key, text); },
+        onDone: function (kod, fri) {
+          rad.slack = mode === 'angra' ? { slackt: false, av: OPPNA.namn, skal: '', datum: new Date().toISOString() }
+            : { slackt: true, av: OPPNA.namn, skal: S.skalText(kod, fri), datum: new Date().toISOString() };
+          paintBody(false);   // målar om cellen; detaljraden öppnas igen på plats
+          var nrow = body.querySelector('.vz-cv-row[data-pkey="' + p.key + '"]');
+          var ncell = nrow && nrow.querySelector('.vz-cv-betalcell[data-betal-roll="' + rolle + '"]');
+          if (nrow && ncell) { toggleSlack(nrow, p, rolle, ncell); }
+        },
+        onCancel: function () { if (fh.parentNode) { fh.parentNode.removeChild(fh); } }
+      });
+    }
+
     // course.js anropar denna efter en lyckad bock/label → uppdatera cellens prick + modellen, utan omladdning.
     // Steg 8/9 styrs av dok-% (DOC_STATUS) → rör dem ej.
     function setCellStatus(pkey, stepKey, statusCode) {
@@ -752,6 +867,14 @@
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
             toggleDetail(row, p, cell.getAttribute('data-step-key'), cell);
+          });
+        });
+
+        // Betalcellerna har EGEN klickhanterare (Släck): går aldrig via toggleDetail eller handlers.onSelectCell, annars "Okänt steg".
+        Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-betalcell[data-betal-klick]'), function (cell) {
+          cell.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toggleSlack(row, p, cell.getAttribute('data-betal-roll'), cell);
           });
         });
 
@@ -894,7 +1017,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, applyBetalOppna: applyBetalOppna, betalEffInfo: betalEffInfo, betalTdHtml: betalTdHtml, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 

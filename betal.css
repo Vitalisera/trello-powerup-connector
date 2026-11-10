@@ -32,6 +32,27 @@ body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
 .vz-bt-sec h2 { font-size: 16px; color: #08445c; margin: 0 0 8px; }
 .vz-bt-sec ul { margin: 0; padding-left: 20px; font-size: 14px; }
 .vz-bt-sec li { margin: 4px 0; }
+.vz-bt-slackbtn, .vz-bt-angrabtn { font: inherit; font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 9px; cursor: pointer; background: #fff; color: #08445c; border: 1px solid #357087; white-space: nowrap; }
+.vz-bt-slackbtn:hover, .vz-bt-angrabtn:hover { background: #eef6f6; }
+.vz-bt-formrow > td { background: #eef6f6; }
+.vz-bt-slackta { background: #fff; border: 1px solid #e1e7ea; border-radius: 14px; padding: 4px 16px 10px; }
+.vz-bt-slackta summary { cursor: pointer; font-weight: 700; color: #08445c; font-size: 15px; padding: 8px 0; }
+.vz-bt-slackrad { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; border-top: 1px solid #eef2f3; font-size: 14px; }
+.vz-bt-slackrad .vz-bt-formrow { flex: 0 0 100%; }
+.vz-bt-slackskal { color: #5b6b73; font-size: 13px; }
+/* Släck-formuläret (delas med Kursöversikten, samma klasser i course.css) */
+.vz-slack-form { background: #f7fbfb; border: 1px solid #cfe0e3; border-radius: 12px; padding: 12px 14px; margin: 4px 0; text-align: left; white-space: normal; }
+.vz-slack-title { font-weight: 700; color: #08445c; margin: 0 0 8px; font-size: 14px; }
+.vz-slack-skal { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 8px; font-size: 14px; }
+.vz-slack-skal label { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.vz-slack-fri { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid #b9cdd2; border-radius: 8px; background: #fff; color: #0d3142; }
+.vz-slack-prev { font-size: 13px; color: #35525d; margin: 8px 0; }
+.vz-slack-err { background: #fbe1de; color: #8a2a20; border: 1px solid #e8b3ac; border-radius: 8px; padding: 7px 10px; font-size: 13px; margin: 8px 0; }
+.vz-slack-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.vz-slack-ok, .vz-slack-avbryt { font: inherit; font-size: 14px; font-weight: 700; padding: 7px 14px; border-radius: 9px; cursor: pointer; border: 1px solid #357087; }
+.vz-slack-ok { background: #08445c; color: #fff; }
+.vz-slack-ok:disabled { opacity: .65; cursor: default; }
+.vz-slack-avbryt { background: #fff; color: #08445c; }
 @media (max-width: 719px) {
   .vz-bt { padding: 14px 12px 70px; }
   .vz-bt-tablewrap { background: transparent; border: 0; box-shadow: none; overflow: visible; }
@@ -41,4 +62,6 @@ body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
   .vz-bt-table td { border: 0; padding: 4px 0; display: flex; justify-content: space-between; gap: 14px; text-align: right; }
   .vz-bt-table td::before { content: attr(data-label); font-weight: 700; color: #5b6b73; font-size: 12.5px; text-align: left; flex: none; }
   .vz-bt-table td.num { text-align: right; }
+  .vz-bt-table tr.vz-bt-formrow { padding: 0; background: transparent; border: 0; box-shadow: none; }
+  .vz-bt-table td[data-label="Åtgärd"] { justify-content: flex-end; }
 }

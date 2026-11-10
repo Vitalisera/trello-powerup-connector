@@ -3,8 +3,11 @@
  * Obetalda fakturor: samtliga deltagare som inte har betalat enligt förväntan, över alla kurser.
  * Öppnas via board-knappen "Vitalisera – Obetalda fakturor" eller knappen "Visa obetalda" i Kursöversikten.
  *
- * READ-ONLY. GAS (betalOversikt) svarar med kort-id, fakturanr, belopp, förfallodag och status, aldrig med namn.
- * Namn och kurs hämtas här via Trello REST (bara GET) med användarens token. Inget skrivs mot Trello eller Drive.
+ * GAS (betalOversikt) är READ-ONLY och svarar med kort-id, fakturanr, belopp, förfallodag och status, aldrig med namn.
+ * Namn, kurs och kommentarer hämtas här via Trello REST (GET) med användarens token.
+ * Släck-knappen (Robert 2026-11-10): den ENDA skrivningen i filen är restComment, en POST som lägger en kommentar på
+ * deltagarkortet (cards/<id>/actions/comments). Kortet är sanningskälla, ingen databas. Format, skäl och tolkning
+ * ligger i config.js (NYA_ZAPIER_SLACK). Ingen PUT/DELETE, och GAS får aldrig namn eller fritext.
  */
 'use strict';
 
@@ -46,6 +49,40 @@ function restGet(token, path) {
   var sep = path.indexOf('?') === -1 ? '?' : '&';
   var url = 'https://api.trello.com/1/' + path + sep + 'key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
   return fetch(url).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+}
+
+/* Den ENDA skrivningen: en kommentar på kortet. Texten kommer färdig från NYA_ZAPIER_SLACK. */
+function restComment(token, kortId, text) {
+  var url = 'https://api.trello.com/1/cards/' + encodeURIComponent(kortId) + '/actions/comments?text=' + encodeURIComponent(text)
+    + '&key=' + encodeURIComponent(CFG.APP_KEY) + '&token=' + encodeURIComponent(token);
+  return fetch(url, { method: 'POST' }).then(function (r) { if (!r.ok) { throw new Error('Trello ' + r.status); } return r.json(); });
+}
+
+/* ---------- Släckta fakturor (läget hålls här, kommentarerna på korten är sanningen) ---------- */
+var TOKEN = '';
+var NAMN = '';            // inloggad användares fullName (hämtas en gång per vy)
+var SLACK_OK = false;     // sant när kommentarerna och namnet kunde läsas: först då visas Släck-knappar
+var SLACK_FEL = false;    // sant när de inte kunde läsas: vyn visar alla fakturor och säger det
+var SLACK = {};           // kortId|fakturanr -> { slackt, av, skal, datum }
+var RADER_BY_KEY = {};
+var CUR = null;           // { svar, info } för omritning på plats
+var SLACKTA_OPEN = false;
+function radKey(kortId, nr) { return kortId + '|' + nr; }
+
+function hamtaSlack(token, svar, info) {
+  SLACK_OK = false; SLACK_FEL = false; SLACK = {}; NAMN = '';
+  var rader = (svar.rader || []).filter(function (r) { var k = info[r.kortId] || {}; return r.fakturanr && arDateradKurs(k.kurs); });
+  var ids = rader.map(function (r) { return r.kortId; });
+  return Promise.all([
+    window.NYA_ZAPIER_SLACK.laddaKommentarer(function (path) { return restGet(token, path); }, ids),
+    restGet(token, 'members/me?fields=fullName')
+  ]).then(function (res) {
+    var namn = res[1] && res[1].fullName;
+    if (!namn) { throw new Error('namn saknas'); }
+    rader.forEach(function (r) { SLACK[radKey(r.kortId, r.fakturanr)] = window.NYA_ZAPIER_SLACK.tolka(res[0][r.kortId], r.fakturanr); });
+    NAMN = String(namn);
+    SLACK_OK = true;
+  }).catch(function () { SLACK_OK = false; SLACK_FEL = true; SLACK = {}; });
 }
 
 /* ---------- Formatering ---------- */
@@ -163,6 +200,8 @@ function sorteraRader(rader) {
 
 function renderOversikt(svar, info) {
   var nu = new Date();
+  CUR = { svar: svar, info: info };
+  RADER_BY_KEY = {};
   var rader = (svar.rader || []).map(function (r) {
     var k = info[r.kortId] || {};
     return { kortId: r.kortId, namn: k.namn || '', kurs: k.kurs || '', url: safeUrl(k.url),
@@ -173,23 +212,36 @@ function renderOversikt(svar, info) {
   // genomförts, och deras fakturor ska inte drivas in. En sådan rad som ändå har en betalning pekar på ett felplacerat kort.
   var utanfor = rader.filter(function (r) { return !arDateradKurs(r.kurs); });
   rader = sorteraRader(rader.filter(function (r) { return arDateradKurs(r.kurs); }));
+  var slacktaRader = [];
+  if (SLACK_OK) {
+    rader.forEach(function (r) {
+      r.slack = r.fakturanr ? SLACK[radKey(r.kortId, r.fakturanr)] : null;
+      if (r.fakturanr) { RADER_BY_KEY[radKey(r.kortId, r.fakturanr)] = r; }
+    });
+    slacktaRader = rader.filter(function (r) { return r.slack && r.slack.slackt; });
+    rader = rader.filter(function (r) { return !(r.slack && r.slack.slackt); });
+  }
   var bokf = window.NYA_ZAPIER_BOKF.rad(svar.sieHamtad, svar.sieSenast);
   var meta = '<div class="vz-bt-meta"><span>Uppdaterad ' + esc(fmtTid(svar.uppdaterad)) + '</span><span>Bokföringen läst ' + esc(fmtTid(svar.sieHamtad)) + '</span><span>' + esc(bokf.text) + '</span></div>'
     + (bokf.varning ? msgHtml('vz-bt-warn', esc(bokf.varning)) : '');
   var warn = svar.inaktuell
     ? msgHtml('vz-bt-warn', 'Uppgifterna är äldre än tre timmar och kan ha ändrats. Kontrollera i SpeedLedger innan du agerar.') : '';
+  var slackWarn = SLACK_FEL
+    ? msgHtml('vz-bt-warn', 'Det gick inte att läsa kommentarerna på korten, så Släck-knapparna är avstängda och släckta fakturor visas som vanligt. Ladda om vyn för att försöka igen.') : '';
+  var KOLS = SLACK_OK ? 8 : 7;
   var body;
   if (!rader.length) {
     body = msgHtml('vz-bt-empty', 'Inga obetalda fakturor.');
   } else {
     body = '<div class="vz-bt-tablewrap"><table class="vz-bt-table"><thead><tr>'
       + '<th>Deltagare</th><th>Kurs</th><th>Faktura</th><th class="num">Belopp</th><th>Förfallodag</th><th>Status</th><th class="num">Dagar sedan förfallodagen</th>'
+      + (SLACK_OK ? '<th>Åtgärd</th>' : '')
       + '</tr></thead><tbody>'
       + rader.map(function (r) {
         var namn = r.namn || 'Okänt kort';
         var deltagare = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(namn) + '</a>' : esc(namn);
         var dagar = r.dagar == null ? '–' : String(r.dagar);
-        return '<tr>'
+        return '<tr data-rad="' + esc(radKey(r.kortId, r.fakturanr)) + '">'
           + '<td data-label="Deltagare">' + deltagare + '</td>'
           + '<td data-label="Kurs">' + esc(r.kurs || '–') + '</td>'
           + '<td data-label="Faktura">' + esc((r.fakturanr ? r.fakturanr + ' ' : '') + (BETAL_TYP_TEXT[r.typ] || 'Faktura')) + '</td>'
@@ -197,6 +249,8 @@ function renderOversikt(svar, info) {
           + '<td data-label="Förfallodag">' + esc(r.forfallodag || '–') + '</td>'
           + '<td data-label="Status"><span class="vz-bt-pill ' + esc(r.status) + '">' + esc(BETAL_STATUS_TEXT[r.status] || r.status) + '</span></td>'
           + '<td data-label="Dagar sedan förfallodagen" class="num">' + esc(dagar) + '</td>'
+          + (SLACK_OK ? '<td data-label="Åtgärd">' + (r.fakturanr
+            ? '<button type="button" class="vz-bt-slackbtn" data-slack="' + esc(radKey(r.kortId, r.fakturanr)) + '">Släck</button>' : '') + '</td>' : '')
           + '</tr>';
       }).join('')
       + '</tbody></table></div>'
@@ -226,14 +280,85 @@ function renderOversikt(svar, info) {
     utanforHtml += '<p class="vz-bt-note">' + utanfor.length + ' faktur' + (utanfor.length === 1 ? 'a' : 'or')
       + ' på kort utanför de daterade kurslistorna visas inte.</p>';
   }
-  show(meta + warn + body + utanforHtml + olas);
+  var slacktaHtml = '';
+  if (SLACK_OK && slacktaRader.length) {
+    slacktaHtml = '<details class="vz-bt-sec vz-bt-slackta" id="vz-bt-slackta"' + (SLACKTA_OPEN ? ' open' : '') + '><summary>Släckta (' + slacktaRader.length + ')</summary>'
+      + slacktaRader.map(function (r) {
+        var namn = r.namn || 'Okänt kort';
+        var lank = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(namn) + '</a>' : esc(namn);
+        return '<div class="vz-bt-slackrad" data-rad="' + esc(radKey(r.kortId, r.fakturanr)) + '">'
+          + '<div class="vz-bt-slackinfo"><b>' + lank + '</b>' + (r.kurs ? ' (' + esc(r.kurs) + ')' : '')
+          + ', faktura ' + esc(r.fakturanr + ' ' + (BETAL_TYP_TEXT[r.typ] || 'Faktura'))
+          + '<br><span class="vz-bt-slackskal">Släckt: ' + esc(r.slack.skal || 'skäl okänt') + '. Av ' + esc(r.slack.av || 'okänd') + ', ' + esc(fmtTid(r.slack.datum)) + '.</span></div>'
+          + '<button type="button" class="vz-bt-angrabtn" data-angra="' + esc(radKey(r.kortId, r.fakturanr)) + '">Ångra</button>'
+          + '</div>';
+      }).join('') + '</details>';
+  }
+  var y = 0; try { y = (document.scrollingElement || document.documentElement).scrollTop || 0; } catch (_) {}
+  show(meta + warn + slackWarn + body + slacktaHtml + utanforHtml + olas);
+  try { (document.scrollingElement || document.documentElement).scrollTop = y; } catch (_) {}
+}
+
+/* ---------- Släck och Ångra: formulärrad under raden (inga webbläsardialoger) ---------- */
+function nearest(n, attr) {
+  while (n && n !== document) { if (n.getAttribute && n.getAttribute(attr) !== null && n.getAttribute(attr) !== undefined) { return n; } n = n.parentNode; }
+  return null;
+}
+function stangFormer() {
+  Array.prototype.forEach.call(ROOT().querySelectorAll('.vz-bt-formrow'), function (f) { f.parentNode.removeChild(f); });
+}
+function oppnaForm(knapp, mode) {
+  var key = knapp.getAttribute(mode === 'angra' ? 'data-angra' : 'data-slack');
+  var rad = RADER_BY_KEY[key];
+  var anchor = nearest(knapp, 'data-rad');
+  if (!rad || !anchor || !window.NYA_ZAPIER_SLACK) { return; }
+  var gamla = ROOT().querySelectorAll('.vz-bt-formrow');
+  var samma = false;
+  Array.prototype.forEach.call(gamla, function (f) { if (f.getAttribute('data-key') === key && f.getAttribute('data-mode') === mode) { samma = true; } });
+  stangFormer();
+  if (samma) { return; }   // klick på samma knapp igen stänger formuläret
+  var host = document.createElement('div');
+  var wrap = document.createElement(anchor.tagName === 'TR' ? 'tr' : 'div');
+  wrap.className = 'vz-bt-formrow';
+  wrap.setAttribute('data-key', key); wrap.setAttribute('data-mode', mode);
+  if (anchor.tagName === 'TR') {
+    var td = document.createElement('td'); td.colSpan = 8; td.appendChild(host); wrap.appendChild(td);
+    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+  } else {
+    wrap.appendChild(host); anchor.appendChild(wrap);
+  }
+  window.NYA_ZAPIER_SLACK.bindForm(host, {
+    mode: mode, nr: rad.fakturanr, kortNamn: rad.namn || 'okänt kort', namn: NAMN,
+    onSubmit: function (kod, fri, text) { return restComment(TOKEN, rad.kortId, text); },
+    onDone: function (kod, fri) {
+      SLACK[key] = mode === 'angra' ? { slackt: false, av: NAMN, skal: '', datum: new Date().toISOString() }
+        : { slackt: true, av: NAMN, skal: window.NYA_ZAPIER_SLACK.skalText(kod, fri), datum: new Date().toISOString() };
+      if (CUR) { renderOversikt(CUR.svar, CUR.info); }   // flyttar raden på plats, ingen omladdning
+    },
+    onCancel: stangFormer
+  });
+}
+var ROOT_BOUND = false;
+function bindRoot() {
+  if (ROOT_BOUND || !ROOT() || !ROOT().addEventListener) { return; }
+  ROOT_BOUND = true;
+  ROOT().addEventListener('click', function (e) {
+    var b = nearest(e.target, 'data-slack');
+    if (b) { oppnaForm(b, 'slack'); return; }
+    b = nearest(e.target, 'data-angra');
+    if (b) { oppnaForm(b, 'angra'); }
+  });
+  ROOT().addEventListener('toggle', function (e) {
+    if (e.target && e.target.id === 'vz-bt-slackta') { SLACKTA_OPEN = !!e.target.open; }
+  }, true);
 }
 
 function boot() {
+  bindRoot();
   show(msgHtml('vz-bt-wait', '⏳ Hämtar obetalda fakturor …'));
   var token;
   t.getRestApi().getToken().then(function (tok) {
-    token = tok;
+    token = tok; TOKEN = tok || '';
     if (!token) { throw new Error('no-token'); }
     return postToGas('betalOversikt', {});
   }).then(function (svar) {
@@ -243,7 +368,9 @@ function boot() {
     }
     var ids = {};
     (svar.rader || []).concat(svar.olasbara || []).forEach(function (r) { ids[r.kortId] = true; });
-    return hamtaKortInfo(token, Object.keys(ids)).then(function (info) { renderOversikt(svar, info); });
+    return hamtaKortInfo(token, Object.keys(ids)).then(function (info) {
+      return hamtaSlack(token, svar, info).then(function () { renderOversikt(svar, info); });
+    });
   }).catch(function (e) {
     var m = String(e && e.message || '');
     var text = m === 'no-token'

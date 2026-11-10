@@ -1719,8 +1719,10 @@ function loadDocStatus(courseName, cards) {
 function loadBetalStatus(courseName, cards) {
   function apply(d) { if (window.CourseView && CourseView.applyBetalStatus) { CourseView.applyBetalStatus(d); } }
   apply(null);   // nollställ föregående kurs
+  if (window.CourseView && CourseView.applyBetalOppna) { CourseView.applyBetalOppna(null); }
   var keys = (cards || []).map(function (c) { return c && c.id; }).filter(Boolean);
   if (!keys.length) { return; }
+  loadBetalOppna(courseName, cards);   // Släck-knapparna (fail-soft: fel = cellerna ritas som förut)
   function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
   var CHUNK = 30, chunks = [];
   for (var i = 0; i < keys.length; i += CHUNK) { chunks.push(keys.slice(i, i + CHUNK)); }
@@ -1738,6 +1740,51 @@ function loadBetalStatus(courseName, cards) {
       })
       .catch(function () { /* en chunk kan fela, övriga fyller ändå */ });
   })).catch(function () {});
+}
+
+/* Släck-knappen (Robert 2026-11-10). Öppna fakturor per kort och roll ur GAS betalOversikt (ingen GAS-ändring, tomt payload) +
+ * kommentarerna på korten (kortet är sanningskälla). Skrivningen är EN kommentar via användarens token. Format, skäl och tolkning:
+ * NYA_ZAPIER_SLACK i config.js. Fel i någon hämtning ⇒ inga Släck-knappar och cellerna ritas exakt som förut. Kurs-guard som loadBetalStatus. */
+function restComment(token, cardId, text) {
+  return restWrite(token, 'POST', 'cards/' + encodeURIComponent(cardId) + '/actions/comments?text=' + encodeURIComponent(text));
+}
+var _meNamnP = null;
+function getMeNamn_(token) {
+  if (!_meNamnP) {
+    _meNamnP = restGet(token, 'members/me?fields=fullName').then(function (m) {
+      if (!m || !m.fullName) { throw new Error('namn saknas'); }
+      return String(m.fullName);
+    }).catch(function (e) { _meNamnP = null; throw e; });
+  }
+  return _meNamnP;
+}
+function loadBetalOppna(courseName, cards) {
+  var S = window.NYA_ZAPIER_SLACK;
+  if (!S || !window.CourseView || !CourseView.applyBetalOppna) { return; }
+  var ids = {};
+  (cards || []).forEach(function (c) { if (c && c.id) { ids[c.id] = true; } });
+  function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
+  Promise.all([postToGas('betalOversikt', {}), t.getRestApi().getToken()]).then(function (r) {
+    var svar = r[0], token = r[1];
+    if (!token || !svar || svar.ok !== true || !Array.isArray(svar.rader)) { throw new Error('betalOversikt'); }
+    var rader = svar.rader.filter(function (x) { return x && ids[x.kortId] && (x.typ === 'anmalan' || x.typ === 'slut'); });   // typ okand ignoreras
+    if (!rader.length || isStale()) { return; }
+    var kortIds = Object.keys(rader.reduce(function (m, x) { m[x.kortId] = true; return m; }, {}));
+    return Promise.all([S.laddaKommentarer(function (path) { return restGet(token, path); }, kortIds), getMeNamn_(token)]).then(function (res) {
+      if (isStale()) { return; }
+      var map = {};
+      rader.forEach(function (x) {
+        var m = map[x.kortId] || (map[x.kortId] = { anmalan: [], slut: [] });
+        m[x.typ].push({ fakturanr: x.fakturanr || '', belopp: x.belopp, forfallodag: x.forfallodag || '', status: x.status,
+          slack: x.fakturanr ? S.tolka(res[0][x.kortId], x.fakturanr) : { slackt: false } });
+      });
+      CourseView.applyBetalOppna(map, {
+        namn: res[1],
+        kortNamn: function (id) { var c = COURSE_CARDS_BY_ID[id]; return c ? String(c.name || '').replace(/^\s*\d+\s*[-–]\s*/, '') : ''; },
+        skriv: function (kortId, text) { return t.getRestApi().getToken().then(function (tok) { return restComment(tok, kortId, text); }); }
+      });
+    });
+  }).catch(function () { /* fail-soft: inga Släck-knappar */ });
 }
 
 /* #11 Fas 2: AUTO-BOCKA steg 8/9 när dokumentet är färdigt (ready = ≥85%, livs även bild).
