@@ -82,6 +82,34 @@
   var LIVS_LABEL = 'Livsberättelse';   // steg-medveten (sätts i render ur model.steps livs_klar-titel)
   var repaintBodyRef = null;
   var setCellStatusRef = null;   // course.js → uppdatera EN cell efter bock/label utan att rita om modalen
+  /* ---------- tooltips: EN funktion per celltyp (Robert 2026-11-10), flera rader med \n. Betydelserna är hämtade ur course.js (status-härledningen) ---------- */
+  var STEG_LAGE = {
+    done: 'Klart: kryssrutan i checklistan på kortet är bockad.',
+    gap: 'Lucka: etiketten är satt men kryssrutan i checklistan är inte bockad.',
+    wait: 'Inte påbörjat än: etiketten som startar steget är inte satt.',
+    manual: 'Väntar på att du gör det manuellt: bocka kryssrutan i checklistan på kortet.',
+    na: 'Ej relevant för den här kursen. Räknas inte med i framstegen.'
+  };
+  var STEG_KLICK = 'Klicka för att se stegets detaljer.';
+  /* docB = docCellBadge(...) eller null. Stegnamn ur modellens steg (som byggs ur NYA_ZAPIER_FLOW; livsberättelsens namn följer kurssteget). */
+  function stepCellTitle(step, stcode, docB) {
+    var namn = (step && step.title) || 'Steg';
+    var lage = docB ? docB.title : (STEG_LAGE[stcode] || STEG_LAGE.wait);
+    return namn + '\n' + lage + '\n' + (docB ? 'Klicka för att se dokumentets detaljer.' : (stcode === 'gap' ? 'Klicka för att se detaljer och stänga luckan.' : STEG_KLICK));
+  }
+  function avatarTitle(p) {
+    return (p && p.name ? p.name : 'Deltagare') + '\nKlicka på raden för att öppna deltagarens kort i Trello (ny flik).';
+  }
+  function progressTitle(prog, gaps) {
+    var rel = prog.total, ut = prog.done + ' av ' + rel + ' steg klara (' + prog.pct + ' %)';
+    return 'Framsteg: ' + ut + '.\nSteg som inte är relevanta för kursen räknas inte med.'
+      + (gaps ? '\n' + gaps + ' lucka/luckor: etiketten är satt men kryssrutan är inte bockad.' : '')
+      + '\nKlicka på raden för att öppna deltagarens kort i Trello (ny flik).';
+  }
+  function gapFlagTitle(gaps) {
+    return gaps + ' lucka/luckor: etiketten är satt men kryssrutan i checklistan är inte bockad.\nKlicka på en markerad cell för att se detaljer och stänga luckan.';
+  }
+  function nameTitle(p) { return (p && p.name ? p.name : 'Deltagare') + '\nKlicka för att öppna deltagarens kort i Trello (ny flik).'; }
   function docCellBadge(pkey, stepKey) {
     if (stepKey !== 'hf_klart' && stepKey !== 'livs_klar') { return null; }
     var d = DOC_STATUS[pkey];
@@ -89,13 +117,13 @@
     var isLivs = stepKey === 'livs_klar';
     var st = isLivs ? d.livs : d.hf;
     if (!st) { return null; }
-    if (st.loading) { return { html: '<span class="vz-cv-docpct dp-wait">⏳</span>', title: 'Skannar dokument…' }; }
+    if (st.loading) { return { html: '<span class="vz-cv-docpct dp-wait">⏳</span>', title: 'Skannar dokumentet …' }; }
     if (st.ok !== true) { return null; }
     var cls = st.ready ? 'dp-done' : (st.pct > 0 ? 'dp-part' : 'dp-empty');
     var img = isLivs ? (st.hasImage ? '<i class="dp-img on">●</i>' : '<i class="dp-img">○</i>') : '';
-    var title = (isLivs ? LIVS_LABEL : 'Hälsoformulär') + ': ' + st.filled + '/' + st.total + ' besvarat'
+    var title = (st.ready ? 'Klart: dokumentet är komplett. ' : '') + st.filled + ' av ' + st.total + ' besvarat'
       + (st.chars ? ', ' + st.chars + ' tecken' : '')
-      + (isLivs ? (st.hasImage ? ', bild ✓' : ', bild saknas') : '')
+      + (isLivs ? (st.hasImage ? ', bild finns' : ', bild saknas') : '')
       + (st.docUpdated ? ' · ändrad ' + st.docUpdated : '');
     return { html: '<span class="vz-cv-docpct ' + cls + '">' + st.pct + '%' + img + '</span>', title: title };
   }
@@ -184,7 +212,7 @@
       var delar = sl.map(function (r) {
         return (sl.length > 1 && r.fakturanr ? 'faktura ' + r.fakturanr + ': ' : '') + (r.slack.skal || 'skäl okänt') + ', av ' + (r.slack.av || 'okänd');
       });
-      return { text: 'släckt', title: 'Släckt: ' + delar.join(' · '), cls: 'bt-neutral bt-slackt' };
+      return { text: 'släckt', title: 'Släckt: ' + delar.join(' · '), cls: 'bt-neutral bt-slackt', kod: 'slackt' };
     }
     if (c.status !== cell.status) {
       var kv = rader.filter(function (r) { return !betalSlackt(r) && r.status === c.status; })[0];
@@ -192,43 +220,98 @@
     }
     return betalCellInfo(cell);
   }
-  function betalTdHtml(pkey, rolle) {
+  /* Betalcellens tooltip: flera rader. Visar bara fält som finns. Faktura (nr, belopp) ur Släck-raderna eller ur detaljhämtningen (DET_DATA). */
+  var DET_DATA = {};
+  var MAN = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  function betalDatumLang(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? (parseInt(m[3], 10) + ' ' + MAN[parseInt(m[2], 10) - 1] + ' ' + m[1]) : '';
+  }
+  function betalKr(n) { return (typeof n !== 'number' || !isFinite(n)) ? '' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr'; }
+  function betalFakturor(pkey, rolle) {
+    var ut = [], sedda = {};
+    ((DET_DATA[pkey] || []).filter(function (r) { return r.typ === rolle; })).forEach(function (r) { sedda[r.fakturanr || ''] = 1; ut.push({ nr: r.fakturanr, belopp: r.belopp }); });
+    betalRader(pkey, rolle).forEach(function (r) { if (!sedda[r.fakturanr || '']) { ut.push({ nr: r.fakturanr, belopp: r.belopp }); } });
+    return ut;
+  }
+  function betalTidKort(iso) { var B = window.NYA_ZAPIER_BOKF; var t = Date.parse(iso || ''); return (B && B.tidIso && !isNaN(t)) ? B.tidIso(iso) : ''; }
+  function betalKod(info, cell) {
+    if (info.kod) { return info.kod; }
+    var st = cell && cell.status ? String(cell.status) : '';
+    if (/bt-none/.test(info.cls || '')) { return 'ingen_faktura'; }
+    return ['betald', 'betald_avviker', 'obetald', 'forfallen', 'ej_bekraftad', 'delbetald', 'oklart', 'kunde_inte_lasas', 'ingen_faktura'].indexOf(st) !== -1 ? st : 'saknas';
+  }
+  function betalCellTitle(pkey, rolle, info, cell) {
+    var roll = rolle === 'slut' ? 'Slutfaktura' : 'Anmälningsavgift';
+    var kod = betalKod(info, cell), lines = [], sl = betalRader(pkey, rolle).filter(betalSlackt);
+    var fx = betalFakturor(pkey, rolle), harSlack = !!OPPNA;
+    var fdet = (DET_DATA[pkey] || []).filter(function (r) { return r.typ === rolle && r.forfallodag; })[0];
+    var ford = (cell && cell.forfallodag) || (fdet && fdet.forfallodag) || '';
+    var klick = 'Klicka för detaljer';
+    if (kod === 'betald') { lines.push(roll + ': betald' + (cell && cell.datum ? ' ' + betalDatumLang(cell.datum) : '')); }
+    else if (kod === 'obetald') { lines.push(roll + ': obetald' + (ford ? ', förfaller ' + betalDatumLang(ford) : '')); lines.push('Förfallodagen har inte passerat än.'); }
+    else if (kod === 'forfallen') {
+      lines.push(roll + ': förfallen' + (ford ? ' sedan ' + betalDatumLang(ford) : ''));
+      lines.push('Förfallodagen har passerat och fakturan är inte betald enligt bokföringen.');
+      klick = 'Klicka för att se detaljer' + (harSlack ? ' eller släcka' : '');
+    }
+    else if (kod === 'slackt') {
+      lines.push(roll + ': släckt'); lines.push(info.title.replace(/^Släckt:\s*/, 'Skäl: '));
+      lines.push('Fakturan räknas inte längre som obetald.');
+      klick = 'Klicka för att se detaljer eller ångra';
+    }
+    else if (kod === 'delbetald') { lines.push(roll + ': delbetald'); lines.push('En del av beloppet är betalt. Kontrollera i bokföringen vad som återstår.'); }
+    else if (kod === 'ej_bekraftad') { lines.push(roll + ': ej bekräftad'); lines.push(info.title + '.'); }
+    else { lines.push(roll + ': ' + (info.text || kod)); lines.push(info.title + (/[.!]$/.test(info.title) ? '' : '.')); }
+    if (kod === 'betald_avviker' || kod === 'oklart' || kod === 'kunde_inte_lasas') { lines.push('Kontrollera fakturan i bokföringen.'); }
+    var hasInv = ['betald', 'betald_avviker', 'obetald', 'forfallen', 'delbetald', 'ej_bekraftad', 'oklart', 'slackt'].indexOf(kod) !== -1;
+    if (hasInv && fx.length) { lines.push(fx.map(function (f) { return (f.nr ? 'Faktura ' + f.nr : 'Faktura') + (betalKr(f.belopp) ? ' · ' + betalKr(f.belopp) : ''); }).join('; ')); }
+    if (hasInv && BETAL) {
+      var kl = [];
+      if (betalTidKort(BETAL.sieHamtad)) { kl.push('bokföringen hämtad ' + betalTidKort(BETAL.sieHamtad)); }
+      if (betalTidKort(BETAL.bankHamtad)) { kl.push('banken hämtad ' + betalTidKort(BETAL.bankHamtad)); }
+      if (kl.length) { lines.push('Källa: ' + kl.join(', ')); }
+    }
+    lines.push(klick);
+    return lines.join('\n');
+  }
+  function applyBetalDetaljData(d) {
+    DET_DATA = {};
+    ((d && d.rader) || []).forEach(function (r) { if (r && r.kortId) { (DET_DATA[r.kortId] = DET_DATA[r.kortId] || []).push(r); } });
+    if (!rootElRef) { return; }
+    Array.prototype.forEach.call(rootElRef.querySelectorAll('.vz-cv-row'), function (row) {
+      var pk = row.getAttribute('data-pkey'), k = BETAL && BETAL.byKey && BETAL.byKey[pk];
+      Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-betalcell'), function (c) {
+        var rolle = c.getAttribute('data-betal-roll'), info = betalInfoFor(pk, rolle);
+        if (info) { c.setAttribute('title', betalCellTitle(pk, rolle, info, k && k[rolle])); }
+      });
+    });
+  }
+  function betalInfoFor(pkey, rolle) {
     var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
-    var rader = betalRader(pkey, rolle);
-    var info = betalEffInfo(k && k[rolle], rader);
-    // En betalcell är aldrig tom när betalstatus är laddad och kortet finns: GAS ger null för rollen när kortet har faktura för den andra rollen.
+    var info = betalEffInfo(k && k[rolle], betalRader(pkey, rolle));
     if (!info && BETAL && k && typeof k === 'object' && (k[rolle] === null || k[rolle] === undefined)) {
       info = BETAL.inaktuell === true ? betalCellInfo({ status: 'saknas' })
-        : { text: 'ingen faktura', title: 'Kortet har en faktura för den andra delen men ingen för den här. Den kan ha ingått i den andra.', cls: 'bt-neutral bt-none' };
+        : { text: 'ingen faktura', title: 'Kortet har en faktura för den andra delen men ingen för den här. Den kan ha ingått i den andra.', cls: 'bt-neutral bt-none', kod: 'ingen_faktura' };
     }
-    var klick = !!(info && rader.length);   // klickbar bara när det finns minst en öppen eller släckt faktura för rollen
-    return '<td class="vz-cv-cell vz-cv-betalcell' + (klick ? ' vz-cv-betalklick' : '') + '" data-betal-roll="' + rolle + '"' + (klick ? ' data-betal-klick="1"' : '') + (info ? ' title="' + esc(info.title) + '"' : '') + '>'
+    return info;
+  }
+  function betalTdHtml(pkey, rolle) {
+    var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
+    // En betalcell är aldrig tom när betalstatus är laddad och kortet finns: GAS ger null för rollen när kortet har faktura för den andra rollen.
+    var info = betalInfoFor(pkey, rolle);
+    var klick = true;   // betalstatus är laddad (betalTdHtml ritas bara då): alla betalceller fäller ut detaljraden
+    return '<td class="vz-cv-cell vz-cv-betalcell' + (klick ? ' vz-cv-betalklick' : '') + '" data-betal-roll="' + rolle + '"' + (klick ? ' data-betal-klick="1"' : '') + (info ? ' title="' + esc(betalCellTitle(pkey, rolle, info, k && k[rolle])) + '"' : '') + '>'
       + (info ? '<span class="vz-cv-bt ' + info.cls + '">' + esc(info.text) + (info.text2 ? '<br>' + esc(info.text2) : '') + '</span>' : '') + '</td>';
   }
   function applyBetalOppna(map, ops) {
     OPPNA = (map && ops) ? { map: map, namn: ops.namn || '', kortNamn: ops.kortNamn, skriv: ops.skriv } : null;
     if (repaintBodyRef) { repaintBodyRef(false); }
   }
-  function slackBelopp(n) {
-    if (typeof n !== 'number' || !isFinite(n)) { return '–'; }
-    return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr';
-  }
-  function slackDetailHtml(pkey, rolle) {
-    var rader = betalRader(pkey, rolle);
-    return '<div class="vz-pd-head"><b>' + esc(BETAL_ROLL_TEXT[rolle] || 'Faktura') + '</b></div>'
-      + rader.map(function (r, i) {
-        var nr = r.fakturanr || '';
-        var delar = [nr ? 'Faktura ' + nr : 'Faktura utan nummer', slackBelopp(r.belopp)];
-        if (betalSlackt(r)) {
-          return '<div class="vz-cv-slack-item" data-slack-rad="' + i + '"><span>' + esc(delar.join(' · ')) + ' · <span class="vz-cv-slack-skal">släckt: '
-            + esc(r.slack.skal || 'skäl okänt') + '. Av ' + esc(r.slack.av || 'okänd') + ', ' + esc(String(r.slack.datum || '').slice(0, 10)) + '</span></span>'
-            + '<button type="button" class="vz-cv-slack-btn" data-angra-nr="' + i + '">Ångra</button></div>';
-        }
-        delar.push('förfaller ' + (r.forfallodag || '–'), BETAL_RAD_STATUS[r.status] || r.status || '');
-        return '<div class="vz-cv-slack-item" data-slack-rad="' + i + '"><span>' + esc(delar.join(' · ')) + '</span>'
-          + (nr ? '<button type="button" class="vz-cv-slack-btn" data-slack-nr="' + i + '">Släck</button>' : '') + '</div>';
-      }).join('');
-  }
+  /* Fakturadetaljen under betalcellen (Robert 2026-11-10). DET = { detalj() -> Promise<GAS-svar courseBetalDetalj>, epost(kortId), bilagor(kortId) } eller null
+   * (då visas ändå det som redan är laddat plus "Detaljerna kunde inte hämtas"). Renderingen är DELAD med Obetalda fakturor: NYA_ZAPIER_BETALDET i config.js. */
+  var DET = null;
+  function applyBetalDetalj(ops) { DET = ops || null; }
   function applyBetalStatus(data) {
     BETAL = (data && data.byKey) ? data : null;
     if (repaintHeadRef) { repaintHeadRef(); }
@@ -347,9 +430,9 @@
       + '        <input type="text" data-cv-search placeholder="Sök deltagare…" aria-label="Sök deltagare" value="' + esc(state.query || '') + '">'
       + '      </div>'
       + '      <div class="vz-cv-seg" role="group" aria-label="Sortering">'
-      + '        <button data-sort="gaps" class="' + (state.sort === 'gaps' ? 'active' : '') + '">Flest luckor</button>'
-      + '        <button data-sort="progress" class="' + (state.sort === 'progress' ? 'active' : '') + '">Minst klar</button>'
-      + '        <button data-sort="name" class="' + (state.sort === 'name' ? 'active' : '') + '">Namn</button>'
+      + '        <button data-sort="gaps" title="Sortera deltagarna med flest luckor överst" class="' + (state.sort === 'gaps' ? 'active' : '') + '">Flest luckor</button>'
+      + '        <button data-sort="progress" title="Sortera deltagarna med minst klara steg överst" class="' + (state.sort === 'progress' ? 'active' : '') + '">Minst klar</button>'
+      + '        <button data-sort="name" title="Sortera deltagarna i bokstavsordning" class="' + (state.sort === 'name' ? 'active' : '') + '">Namn</button>'
       + '      </div>'
       + '      <span class="vz-cv-count" data-cv-count></span>'   // P1.6: "Visar X av Y" vid filtrering
       + '    </div>'
@@ -446,7 +529,7 @@
       + (complete ? ' is-complete' : '');
 
     var gapFlag = hasGaps
-      ? '<span class="gapflag">' + ic.warn + (gaps) + '</span>'
+      ? '<span class="gapflag" title="' + esc(gapFlagTitle(gaps)) + '">' + ic.warn + (gaps) + '</span>'
       : '';
 
     var cells = '';
@@ -467,7 +550,7 @@
           });
           cells += '<td class="vz-cv-cell vz-cv-collapsed-cell' + edge + (phGaps ? ' has-gaps' : '') + '"'
             + ' data-phase-key="' + esc(pk) + '"'
-            + ' title="' + (phGaps ? phGaps + ' lucka/luckor i denna fas — klicka rubriken för att fälla ut' : 'Inga luckor i denna fas') + '">'
+            + ' title="' + esc('Infälld fas\n' + (phGaps ? phGaps + ' lucka/luckor i fasen: etiketten är satt men kryssrutan är inte bockad.' : 'Inga luckor i fasen.') + '\nKlicka på fasens rubrik för att fälla ut stegen.') + '">'
             + (phGaps ? '<span class="cc-gap">' + phGaps + '</span>' : '<span class="cc-dash">·</span>')
             + '</td>';
         }
@@ -478,7 +561,7 @@
       var docB = docCellBadge(p.key, s.key);   // #11: % för steg 8/9 om dok-status finns
       var cellInner = docB ? docB.html : '<span class="vz-cv-dot ' + m.cls + '">' + (m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>') + '</span>';
       cells += '<td class="vz-cv-cell' + edge + (stcode === 'gap' && !docB ? ' is-gap' : '') + '"'
-        + ' data-step-key="' + esc(s.key) + '" title="' + esc(docB ? docB.title : (s.title + ' — ' + m.word)) + '">'
+        + ' data-step-key="' + esc(s.key) + '" title="' + esc(stepCellTitle(s, stcode, docB)) + '">'
         + cellInner
         + '</td>';
     });
@@ -486,10 +569,10 @@
     return ''
       + '<tr class="' + cls + '" data-pkey="' + esc(p.key) + '" style="animation-delay:' + delay + 'ms" tabindex="0" role="button">'
       + '  <td class="vz-cv-namecell">'
-      + '    <div class="vz-cv-avatar">' + esc(initials(p.name)) + '</div>'
+      + '    <div class="vz-cv-avatar" title="' + esc(avatarTitle(p)) + '">' + esc(initials(p.name)) + '</div>'
       + '    <div class="vz-cv-pinfo">'
-      + '      <div class="pname">' + esc(p.name || 'Deltagare') + gapFlag + '</div>'
-      + '      <div class="vz-cv-prog">'
+      + '      <div class="pname" title="' + esc(nameTitle(p)) + '">' + esc(p.name || 'Deltagare') + gapFlag + '</div>'
+      + '      <div class="vz-cv-prog" title="' + esc(progressTitle(prog, gaps)) + '">'
       + '        <span class="vz-cv-bar"><span data-pct="' + prog.pct + '"></span></span>'
       + '        <span class="frac">' + prog.done + '/' + prog.total + '</span>'
       + '      </div>'
@@ -778,8 +861,8 @@
       if (typeof handlers.onSelectCell === 'function') { try { handlers.onSelectCell(p, stepKey, hostDiv); } catch (err) { hostDiv.textContent = 'Kunde inte visa steget.'; } }
     }
 
-    // Släck: egen detaljrad (tr colSpan 99, klass vz-cv-slackrow) under deltagarraden. En öppen åt gången, nytt klick stänger.
-    function toggleSlack(row, p, rolle, cell) {
+    // Betaldetalj: egen detaljrad (tr colSpan 99, klass vz-cv-slackrow) under deltagarraden. En öppen åt gången, nytt klick stänger.
+    function toggleBetal(row, p, rolle, cell) {
       var next = row.nextSibling;
       var openSame = !!(next && next.nodeType === 1 && next.className && next.className.indexOf('vz-cv-slackrow') !== -1
         && next.getAttribute('data-pkey') === p.key && next.getAttribute('data-betal-roll') === rolle);
@@ -793,32 +876,47 @@
       tr.setAttribute('data-step', 'betal-' + rolle); tr.setAttribute('data-pkey', p.key); tr.setAttribute('data-betal-roll', rolle);
       var td = document.createElement('td'); td.colSpan = 99; td.className = 'vz-cv-detailcell';
       var hostDiv = document.createElement('div'); hostDiv.className = 'vz-cv-detail';
-      hostDiv.innerHTML = slackDetailHtml(p.key, rolle);
       td.appendChild(hostDiv); tr.appendChild(td);
       row.parentNode.insertBefore(tr, row.nextSibling);
+      var BD = window.NYA_ZAPIER_BETALDET, mineDet = DET;
       hostDiv.addEventListener('click', function (e) {
-        var n = e.target, mode = '', idx = '';
+        var n = e.target, mode = '', nr = '';
         while (n && n !== hostDiv) {
-          if (n.getAttribute && n.getAttribute('data-slack-nr') !== null && n.getAttribute('data-slack-nr') !== undefined) { mode = 'slack'; idx = n.getAttribute('data-slack-nr'); break; }
-          if (n.getAttribute && n.getAttribute('data-angra-nr') !== null && n.getAttribute('data-angra-nr') !== undefined) { mode = 'angra'; idx = n.getAttribute('data-angra-nr'); break; }
+          if (n.getAttribute && n.getAttribute('data-bd-slack') !== null && n.getAttribute('data-bd-slack') !== undefined) { mode = 'slack'; nr = n.getAttribute('data-bd-slack'); break; }
+          if (n.getAttribute && n.getAttribute('data-bd-angra') !== null && n.getAttribute('data-bd-angra') !== undefined) { mode = 'angra'; nr = n.getAttribute('data-bd-angra'); break; }
           n = n.parentNode;
         }
-        if (mode) { openSlackForm(hostDiv, p, rolle, mode, Number(idx)); }
+        if (mode) { openSlackForm(hostDiv, p, rolle, mode, nr); }
+      });
+      if (!BD) { hostDiv.textContent = 'Kunde inte visa fakturan.'; return; }
+      BD.visa(hostDiv, {
+        aktiv: function () { return !!tr.parentNode && DET === mineDet; },
+        detalj: mineDet && mineDet.detalj,
+        epost: mineDet && function () { return mineDet.epost(p.key); },
+        bilagor: mineDet && function () { return mineDet.bilagor(p.key); },
+        modell: function (x) {
+          var oppna = betalRader(p.key, rolle), k = BETAL && BETAL.byKey && BETAL.byKey[p.key];
+          var info = betalEffInfo(k && k[rolle], oppna);
+          var gas = x.detalj ? (x.detalj.rader || []).filter(function (r) { return r && r.kortId === p.key; }) : null;
+          var meta = x.detalj ? x.detalj.meta : { sieHamtad: BETAL && BETAL.sieHamtad, bankHamtad: BETAL && BETAL.bankHamtad, uppdaterad: BETAL && BETAL.uppdaterad };
+          return { titel: BD.TITEL[rolle] || 'Faktura', rader: BD.rader(gas, rolle, oppna, !!OPPNA), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel,
+            forklaring: info ? info.title : 'Ingen uppgift om fakturan.' };
+        }
       });
     }
-    function openSlackForm(hostDiv, p, rolle, mode, idx) {
-      var rad = betalRader(p.key, rolle)[idx];
+    function openSlackForm(hostDiv, p, rolle, mode, nr) {
+      var rad = betalRader(p.key, rolle).filter(function (r) { return (r.fakturanr || '') === nr; })[0];
       var S = window.NYA_ZAPIER_SLACK;
       if (!rad || !S || !OPPNA) { return; }
-      var item = hostDiv.querySelector('.vz-cv-slack-item[data-slack-rad="' + idx + '"]');
+      var item = Array.prototype.filter.call(hostDiv.querySelectorAll('.vz-bd-item'), function (el) { return el.getAttribute('data-bd-rad') === nr; })[0];
       if (!item) { return; }
       var old = hostDiv.querySelectorAll('.vz-slack-formhost');
       var samma = false;
-      Array.prototype.forEach.call(old, function (f) { if (f.getAttribute('data-mode') === mode && f.getAttribute('data-idx') === String(idx)) { samma = true; } });
+      Array.prototype.forEach.call(old, function (f) { if (f.getAttribute('data-mode') === mode && f.getAttribute('data-idx') === nr) { samma = true; } });
       Array.prototype.forEach.call(old, function (f) { f.parentNode.removeChild(f); });
       if (samma) { return; }
       var fh = document.createElement('div');
-      fh.className = 'vz-slack-formhost'; fh.setAttribute('data-mode', mode); fh.setAttribute('data-idx', String(idx));
+      fh.className = 'vz-slack-formhost'; fh.setAttribute('data-mode', mode); fh.setAttribute('data-idx', nr);
       item.appendChild(fh);
       S.bindForm(fh, {
         mode: mode, nr: rad.fakturanr, namn: OPPNA.namn,
@@ -830,7 +928,7 @@
           paintBody(false);   // målar om cellen; detaljraden öppnas igen på plats
           var nrow = body.querySelector('.vz-cv-row[data-pkey="' + p.key + '"]');
           var ncell = nrow && nrow.querySelector('.vz-cv-betalcell[data-betal-roll="' + rolle + '"]');
-          if (nrow && ncell) { toggleSlack(nrow, p, rolle, ncell); }
+          if (nrow && ncell) { toggleBetal(nrow, p, rolle, ncell); }
         },
         onCancel: function () { if (fh.parentNode) { fh.parentNode.removeChild(fh); } }
       });
@@ -847,6 +945,8 @@
       if (!cell) { return; }
       var m = meta(statusCode);
       cell.classList.toggle('is-gap', statusCode === 'gap');
+      var stObj = steps.filter(function (x) { return x.key === stepKey; })[0];
+      cell.setAttribute('title', stepCellTitle(stObj, statusCode, null));
       cell.innerHTML = '<span class="vz-cv-dot ' + m.cls + '">' + (m.icon ? m.icon : '<span class="glyph">' + m.glyph + '</span>') + '</span>';
       // uppdatera radens progress (X/total) + bar utifrån modellen
       if (pObj) {
@@ -870,11 +970,11 @@
           });
         });
 
-        // Betalcellerna har EGEN klickhanterare (Släck): går aldrig via toggleDetail eller handlers.onSelectCell, annars "Okänt steg".
+        // Betalcellerna har EGEN klickhanterare (fakturadetalj): går aldrig via toggleDetail eller handlers.onSelectCell, annars "Okänt steg".
         Array.prototype.forEach.call(row.querySelectorAll('.vz-cv-betalcell[data-betal-klick]'), function (cell) {
           cell.addEventListener('click', function (e) {
             e.stopPropagation();
-            toggleSlack(row, p, cell.getAttribute('data-betal-roll'), cell);
+            toggleBetal(row, p, cell.getAttribute('data-betal-roll'), cell);
           });
         });
 
@@ -1017,7 +1117,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, applyBetalOppna: applyBetalOppna, betalEffInfo: betalEffInfo, betalTdHtml: betalTdHtml, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, applyBetalOppna: applyBetalOppna, applyBetalDetalj: applyBetalDetalj, applyBetalDetaljData: applyBetalDetaljData, betalCellTitle: betalCellTitle, stepCellTitle: stepCellTitle, avatarTitle: avatarTitle, progressTitle: progressTitle, betalEffInfo: betalEffInfo, betalTdHtml: betalTdHtml, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 

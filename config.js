@@ -371,7 +371,109 @@ window.NYA_ZAPIER_BOKF = (function () {
       varning: (!ok || (nu - ms) > GRANS_MS) ? ('Bokföringen är inte hämtad sedan ' + (ok ? tid(ms) : 'okänd tid') + '. Statusen kan vara fel.') : ''
     };
   }
-  return { rad: rad, GRANS_MS: GRANS_MS };
+  function tidIso(iso) { var ms = Date.parse(iso || ''); return isNaN(ms) ? 'okänd tid' : tid(ms); }
+  return { rad: rad, GRANS_MS: GRANS_MS, tidIso: tidIso };
+})();
+
+/* Fakturadetaljen under en betalcell (Kursöversikten) eller en fakturarad (Obetalda fakturor): EN delad renderare så att de två vyerna
+ * inte glider isär (Robert 2026-11-10). Ren HTML-funktion + en laddare. Inga namn eller e-postadresser kommer från GAS:
+ * e-postadressen läses ur kortbeskrivningen av vyn (användarens Trello-token). Allt som skrivs ut escapas här.
+ *   rader(gasRader, typ, oppna, slackOk) -> modellrader (GAS-raderna för rollen, släckläge hämtat ur vyns öppna fakturor)
+ *   html(m)  m = { titel, rader, meta, epost, bilagor, detaljFel, forklaring }
+ *   visa(host, o) visar ⏳, hämtar detalj + e-post + bilagor parallellt (fail-soft var för sig) och ritar EN gång
+ *   epost(desc)   e-postadressen ur en kortbeskrivning ('' när den saknas) */
+window.NYA_ZAPIER_BETALDET = (function () {
+  var STATUS = { betald: 'Betald', betald_avviker: 'Betald, men något avviker', obetald: 'Obetald', forfallen: 'Förfallen', ej_bekraftad: 'Ej bekräftad',
+    delbetald: 'Delbetald', oklart: 'Oklart', kunde_inte_lasas: 'Kunde inte läsas', saknas: 'Saknas (uppgiften är okänd eller inaktuell)', ingen_faktura: 'Ingen faktura' };
+  var TITEL = { anmalan: 'Anmälningsavgift', slut: 'Kursavgift', okand: 'Faktura' };
+  function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function belopp(n) { return (typeof n !== 'number' || !isFinite(n)) ? '–' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr'; }
+  function dag(iso) { var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(iso || '')); return m ? m[1] : ''; }
+  function tid(iso) { return window.NYA_ZAPIER_BOKF ? window.NYA_ZAPIER_BOKF.tidIso(iso) : 'okänd tid'; }
+  function safeUrl(u) { u = String(u || ''); return (u.indexOf('https://trello.com/') === 0 || u.indexOf('https://trello-attachments.s3.amazonaws.com/') === 0) ? u : ''; }
+  /* Samma regel som parseContactFromDesc i course.js: raden "Epost: x" (även E-post, fetstil och markdown-länk), annars första adressen i texten. */
+  function epost(desc) {
+    var s = String(desc || ''), hit = '';
+    s.split('\n').forEach(function (line) {
+      if (hit) { return; }
+      var m = line.replace(/\*+/g, '').trim().match(/^([^:]{2,30}):\s*(.+?)\s*$/);
+      if (!m || m[1].toLowerCase().replace(/[^a-zåäö]/g, '') !== 'epost') { return; }
+      var val = m[2].trim(), link = val.match(/^\[([^\]]+)\]\([^)]*\)$/);
+      hit = (link ? link[1] : val).trim();
+    });
+    if (hit) { return hit; }
+    var f = s.match(/[\w.\-+]+@[\w.\-]+\.\w+/);
+    return f ? f[0].trim() : '';
+  }
+  function rader(gas, typ, oppna, slackOk) {
+    oppna = oppna || [];
+    var ut = [], sedda = {};
+    function slackdel(nr) {
+      var op = nr ? oppna.filter(function (o) { return o.fakturanr === nr; })[0] : null;
+      return { op: op, slack: (op && op.slack) || null, knapp: (slackOk && op && nr) ? ((op.slack && op.slack.slackt) ? 'angra' : 'slack') : '' };
+    }
+    (Array.isArray(gas) ? gas : []).filter(function (r) { return r && r.typ === typ; }).forEach(function (r) {
+      var d = slackdel(r.fakturanr || ''); sedda[r.fakturanr || ''] = true;
+      ut.push({ fakturanr: r.fakturanr || '', belopp: r.belopp, status: r.status, forfallodag: r.forfallodag, betaldDatum: r.betaldDatum, notering: r.notering, slack: d.slack, knapp: d.knapp });
+    });
+    oppna.forEach(function (o) {   // öppna fakturor som GAS-svaret saknade (eller hela svaret föll bort): visa dem ändå, med släckläget
+      if (o.fakturanr && sedda[o.fakturanr]) { return; }
+      var d = slackdel(o.fakturanr || '');
+      ut.push({ fakturanr: o.fakturanr || '', belopp: o.belopp, status: o.status, forfallodag: o.forfallodag, betaldDatum: '', notering: '', slack: o.slack || null, knapp: d.knapp });
+    });
+    return ut;
+  }
+  function pdfRad(nr, bilagor) {
+    if (!bilagor || !nr) { return ''; }
+    var v;
+    if (bilagor.loading) { v = '⏳ letar …'; }
+    else if (bilagor.fel) { v = 'kunde inte hämtas'; }
+    else {
+      var hit = (bilagor.lista || []).filter(function (b) { return b && String(b.name || '').toLowerCase() === (nr + '.pdf').toLowerCase(); })[0];
+      v = !hit ? 'ingen PDF med det numret på kortet'
+        : safeUrl(hit.url) ? '<a href="' + esc(safeUrl(hit.url)) + '" target="_blank" rel="noopener" title="Öppnar fakturans PDF i en ny flik.">' + esc(hit.name) + '</a>'
+        : esc(hit.name) + ' (länken kan inte öppnas härifrån)';
+    }
+    return '<dt>Fakturans PDF</dt><dd>' + v + '</dd>';
+  }
+  function tips() { return (window.NYA_ZAPIER_SLACK && window.NYA_ZAPIER_SLACK.TIPS) || { slack: '', angra: '' }; }
+  function html(m) {
+    m = m || {};
+    var meta = m.meta || {};
+    var out = '<div class="vz-bd"><div class="vz-bd-head"><b>' + esc(m.titel || 'Faktura') + '</b></div>';
+    if (m.detaljFel) { out += '<p class="vz-bd-warn">Detaljerna kunde inte hämtas. Det som visas är det som redan var laddat.</p>'; }
+    if (m.forklaring && !(m.rader || []).length) { out += '<p class="vz-bd-forkl">' + esc(m.forklaring) + '</p>'; }
+    (m.rader || []).forEach(function (r) {
+      var nr = r.fakturanr || '', sl = r.slack && r.slack.slackt ? r.slack : null;
+      out += '<div class="vz-bd-item" data-bd-rad="' + esc(nr) + '"><div class="vz-bd-top"><b>' + esc(nr ? 'Faktura ' + nr : 'Faktura utan nummer') + '</b>'
+        + '<span class="vz-bd-status vz-bd-s-' + esc(r.status) + '">' + esc(STATUS[r.status] || r.status || 'Okänd') + '</span>'
+        + (sl ? '<span class="vz-bd-slackt">Släckt</span>' : '') + '</div>'
+        + '<dl class="vz-bd-dl"><dt>Belopp</dt><dd>' + esc(belopp(r.belopp)) + '</dd>'
+        + '<dt>Förfallodag</dt><dd>' + esc(dag(r.forfallodag) || '–') + '</dd>'
+        + '<dt>Betald</dt><dd>' + esc(dag(r.betaldDatum) || '–') + '</dd>'
+        + (r.notering ? '<dt>Notering</dt><dd>' + esc(r.notering) + '</dd>' : '')
+        + (sl ? '<dt>Släckt</dt><dd>' + esc(sl.skal || 'skäl okänt') + '. Av ' + esc(sl.av || 'okänd') + ', ' + esc(dag(sl.datum) || '–') + '</dd>' : '')
+        + pdfRad(nr, m.bilagor) + '</dl>'
+        + (r.knapp === 'slack' ? '<button type="button" class="vz-bd-btn" data-bd-slack="' + esc(nr) + '" title="' + esc(tips().slack) + '">Släck</button>' : '')
+        + (r.knapp === 'angra' ? '<button type="button" class="vz-bd-btn" data-bd-angra="' + esc(nr) + '" title="' + esc(tips().angra) + '">Ångra</button>' : '')
+        + '</div>';
+    });
+    var ep = String(m.epost || '').trim();
+    out += '<div class="vz-bd-foot"><div><b>Källa:</b> Bokföringen (SpeedLedger) hämtad ' + esc(tid(meta.sieHamtad)) + '. Banken hämtad ' + esc(tid(meta.bankHamtad)) + '.</div>'
+      + '<div>Statusen uppdaterad ' + esc(tid(meta.uppdaterad)) + '.</div>'
+      + '<div><b>E-post på kortet:</b> ' + (!ep ? 'saknas' : /^[^\s<>"'@]+@[^\s<>"'@]+$/.test(ep) ? '<a href="mailto:' + esc(ep) + '" title="Öppnar ett nytt mejl till adressen i din mejlklient.">' + esc(ep) + '</a>' : esc(ep)) + '</div></div></div>';
+    return out;
+  }
+  function visa(host, o) {
+    host.innerHTML = '<div class="vz-bd"><div class="vz-bd-loading">⏳ Hämtar fakturadetaljer …</div></div>';
+    function fs(f) { try { return Promise.resolve(f ? f() : null).then(function (v) { return { ok: true, v: v }; }, function () { return { ok: false }; }); } catch (e) { return Promise.resolve({ ok: false }); } }
+    return Promise.all([fs(o.detalj), fs(o.epost), fs(o.bilagor)]).then(function (r) {
+      if (o.aktiv && !o.aktiv()) { return; }
+      var det = r[0].ok && r[0].v && r[0].v.ok === true ? r[0].v : null;
+      host.innerHTML = html(o.modell({ detalj: det, detaljFel: !det, epost: r[1].ok ? String(r[1].v || '') : '', bilagor: r[2].ok ? { lista: Array.isArray(r[2].v) ? r[2].v : [] } : { fel: true } }));
+    });
+  }
+  return { STATUS: STATUS, TITEL: TITEL, rader: rader, html: html, visa: visa, epost: epost, safeUrl: safeUrl };
 })();
 
 /* Släck-knappen (Robert 2026-11-10): en obetald faktura kan släckas med ett skäl. Allt sparas som en KOMMENTAR på
@@ -410,6 +512,12 @@ window.NYA_ZAPIER_SLACK = (function () {
     if (skal == null) { return null; }
     return PREFIX + enRad(nr) + ' släckt av ' + enRad(namn) + ', ' + skal;
   }
+  /* Tooltip-texterna för alla Släck-, Ångra- och Avbryt-knappar i båda vyerna (Robert 2026-11-10): EN källa. */
+  var TIPS = {
+    slack: 'Markera fakturan som hanterad (t.ex. betald på annat sätt eller ersatt). Skriver en kommentar på kortet. Kan ångras.',
+    angra: 'Gör fakturan obetald igen. Skriver en ny kommentar på kortet.',
+    avbryt: 'Stäng utan att ändra något.'
+  };
   function angraText(nr, namn) { return PREFIX + enRad(nr) + ' återställd av ' + enRad(namn); }
 
   function reEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -496,8 +604,8 @@ window.NYA_ZAPIER_SLACK = (function () {
       + '<p class="vz-slack-prev" data-slack-prev></p>'
       + '<p class="vz-slack-err" data-slack-err style="display:none"></p>'
       + '<div class="vz-slack-btns">'
-      + '<button type="button" class="vz-slack-ok" data-slack-ok>' + (angra ? 'Ångra släckningen' : 'Släck') + '</button>'
-      + '<button type="button" class="vz-slack-avbryt" data-slack-avbryt>Avbryt</button>'
+      + '<button type="button" class="vz-slack-ok" data-slack-ok title="' + escH(angra ? TIPS.angra : TIPS.slack) + '">' + (angra ? 'Ångra släckningen' : 'Släck') + '</button>'
+      + '<button type="button" class="vz-slack-avbryt" data-slack-avbryt title="' + escH(TIPS.avbryt) + '">Avbryt</button>'
       + '</div></div>';
   }
 
@@ -549,6 +657,6 @@ window.NYA_ZAPIER_SLACK = (function () {
     paintPrev();
   }
 
-  return { PREFIX: PREFIX, SKAL: SKAL, VARNING: VARNING, MAX_FRI: MAX_FRI, skalText: skalText, slackText: slackText, angraText: angraText,
+  return { PREFIX: PREFIX, SKAL: SKAL, VARNING: VARNING, MAX_FRI: MAX_FRI, TIPS: TIPS, skalText: skalText, slackText: slackText, angraText: angraText,
     tolka: tolka, cellStatus: cellStatus, laddaKommentarer: laddaKommentarer, formHtml: formHtml, bindForm: bindForm };
 })();

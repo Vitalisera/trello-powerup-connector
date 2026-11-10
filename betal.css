@@ -35,6 +35,25 @@ body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
 .vz-bt-slackbtn, .vz-bt-angrabtn { font: inherit; font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 9px; cursor: pointer; background: #fff; color: #08445c; border: 1px solid #357087; white-space: nowrap; }
 .vz-bt-slackbtn:hover, .vz-bt-angrabtn:hover { background: #eef6f6; }
 .vz-bt-formrow > td { background: #eef6f6; }
+.vz-bt-klickrad { cursor: pointer; }
+.vz-bt-detailrow > td { background: #f6fafb; }
+.vz-bd{font-size:13px;color:#08445c}
+.vz-bd-head{margin-bottom:8px}.vz-bd-head b{font-size:15px}
+.vz-bd-loading,.vz-bd-forkl{color:#5b6b73;margin:0 0 8px}
+.vz-bd-warn{background:#fbe9c6;color:#6b4600;border:1px solid #e8c98a;border-radius:9px;padding:6px 10px;margin:0 0 8px;font-weight:600}
+.vz-bd-item{padding:8px 0;border-top:1px solid #dbe8ea}
+.vz-bd-item:first-of-type{border-top:0}
+.vz-bd-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:4px}
+.vz-bd-status{border-radius:20px;padding:1px 9px;font-size:12px;font-weight:700;background:#e6ebee;color:#4a5b63}
+.vz-bd-s-forfallen{background:rgba(178,58,46,.13);color:#9b2f24}.vz-bd-s-obetald{background:#fbe9c6;color:#8a5a00}
+.vz-bd-s-betald{background:rgba(46,125,80,.14);color:#1f6b43}
+.vz-bd-slackt{border-radius:20px;padding:1px 9px;font-size:12px;font-weight:700;background:#f1f1ee;color:#6b7a7f}
+.vz-bd-dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 14px;margin:0 0 6px}
+.vz-bd-dl dt{color:#5b6b73;font-weight:700}.vz-bd-dl dd{margin:0;overflow-wrap:anywhere}
+.vz-bd-btn{font:inherit;font-size:13px;font-weight:700;padding:4px 12px;border-radius:9px;cursor:pointer;background:#fff;color:#08445c;border:1px solid #357087;white-space:nowrap;margin-right:6px}
+.vz-bd-btn:hover{background:#eef6f6}
+.vz-bd-foot{border-top:1px solid #dbe8ea;padding-top:8px;color:#5b6b73;display:grid;gap:2px}
+.vz-bd-foot a{color:#08445c;font-weight:600}
 .vz-bt-slackta { background: #fff; border: 1px solid #e1e7ea; border-radius: 14px; padding: 4px 16px 10px; }
 .vz-bt-slackta summary { cursor: pointer; font-weight: 700; color: #08445c; font-size: 15px; padding: 8px 0; }
 .vz-bt-slackrad { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; padding: 8px 0; border-top: 1px solid #eef2f3; font-size: 14px; }
@@ -62,6 +81,12 @@ body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
   .vz-bt-table td { border: 0; padding: 4px 0; display: flex; justify-content: space-between; gap: 14px; text-align: right; }
   .vz-bt-table td::before { content: attr(data-label); font-weight: 700; color: #5b6b73; font-size: 12.5px; text-align: left; flex: none; }
   .vz-bt-table td.num { text-align: right; }
-  .vz-bt-table tr.vz-bt-formrow { padding: 0; background: transparent; border: 0; box-shadow: none; }
+  .vz-bt-table tr.vz-bt-formrow, .vz-bt-table tr.vz-bt-detailrow { padding: 0; background: transparent; border: 0; box-shadow: none; }
+  .vz-bt-table tr.vz-bt-formrow > td, .vz-bt-table tr.vz-bt-detailrow > td { display: block; width: 100%; text-align: left; }
+  .vz-bt-table tr.vz-bt-formrow > td::before, .vz-bt-table tr.vz-bt-detailrow > td::before { content: none; }
   .vz-bt-table td[data-label="Åtgärd"] { justify-content: flex-end; }
 }
+
+.vz-bt-slacktabell { width: 100%; border-collapse: collapse; }
+.vz-bt-slacktabell .vz-bt-slackrad td { padding: 8px 0; border-top: 1px solid #eef2f3; font-size: 14px; vertical-align: top; }
+.vz-bt-slacktabell .vz-bt-slackakt { text-align: right; white-space: nowrap; }

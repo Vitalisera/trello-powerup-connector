@@ -1720,20 +1720,22 @@ function loadBetalStatus(courseName, cards) {
   function apply(d) { if (window.CourseView && CourseView.applyBetalStatus) { CourseView.applyBetalStatus(d); } }
   apply(null);   // nollställ föregående kurs
   if (window.CourseView && CourseView.applyBetalOppna) { CourseView.applyBetalOppna(null); }
+  if (window.CourseView && CourseView.applyBetalDetalj) { CourseView.applyBetalDetalj(null); CourseView.applyBetalDetaljData(null); }
   var keys = (cards || []).map(function (c) { return c && c.id; }).filter(Boolean);
   if (!keys.length) { return; }
   loadBetalOppna(courseName, cards);   // Släck-knapparna (fail-soft: fel = cellerna ritas som förut)
+  loadBetalDetalj(courseName, cards);  // fakturadetaljen under betalcellen (fail-soft: raden säger att detaljerna inte kunde hämtas)
   function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
   var CHUNK = 30, chunks = [];
   for (var i = 0; i < keys.length; i += CHUNK) { chunks.push(keys.slice(i, i + CHUNK)); }
-  var acc = { byKey: {}, sieHamtad: '', bankHamtad: '', sieSenast: '', inaktuell: false }, gotAny = false;
+  var acc = { byKey: {}, sieHamtad: '', bankHamtad: '', uppdaterad: '', sieSenast: '', inaktuell: false }, gotAny = false;
   Promise.all(chunks.map(function (grp) {
     return postToGas('courseBetalstatus', { items: grp.map(function (k) { return { key: k }; }) })
       .then(function (data) {
         if (isStale()) { return; }
         if (!data || data.ok !== true || !Array.isArray(data.items)) { return; }
         data.items.forEach(function (r) { if (r && r.key) { acc.byKey[r.key] = { anmalan: r.anmalan || null, slut: r.slut || null }; } });
-        acc.sieHamtad = data.sieHamtad || acc.sieHamtad; acc.bankHamtad = data.bankHamtad || acc.bankHamtad; acc.sieSenast = data.sieSenast || acc.sieSenast;
+        acc.sieHamtad = data.sieHamtad || acc.sieHamtad; acc.bankHamtad = data.bankHamtad || acc.bankHamtad; acc.uppdaterad = data.uppdaterad || acc.uppdaterad; acc.sieSenast = data.sieSenast || acc.sieSenast;
         if (data.inaktuell === true) { acc.inaktuell = true; }   // sant om någon delhämtning säger inaktuell
         gotAny = true;
         apply(acc);   // progressivt
@@ -1785,6 +1787,41 @@ function loadBetalOppna(courseName, cards) {
       });
     });
   }).catch(function () { /* fail-soft: inga Släck-knappar */ });
+}
+
+/* Fakturadetaljen (Robert 2026-11-10): GAS courseBetalDetalj (READ-ONLY, högst 60 kort-id per anrop, inga namn och ingen e-post) hämtas EN gång per kurs i
+ * bakgrunden och används när en betalcell klickas. E-postadressen läses ur kortbeskrivningen (COURSE_CARDS_BY_ID, redan hämtad med användarens token),
+ * aldrig från GAS. PDF-bilagorna hämtas när cellen klickas: cards/<id>/attachments?fields=name,url, en gång per kort. Kurs-guard som loadBetalStatus. */
+function loadBetalDetalj(courseName, cards) {
+  var BD = window.NYA_ZAPIER_BETALDET;
+  if (!BD || !window.CourseView || !CourseView.applyBetalDetalj) { return; }
+  var ids = (cards || []).map(function (c) { return c && c.id; }).filter(function (k) { return /^[0-9a-f]{24}$/.test(String(k || '')); });
+  if (!ids.length) { return; }
+  function isStale() { return norm(courseName) !== norm(COURSE_NAME); }
+  var chunks = [];
+  for (var i = 0; i < ids.length; i += 60) { chunks.push(ids.slice(i, i + 60)); }
+  var detaljP = Promise.all(chunks.map(function (grp) {
+    return postToGas('courseBetalDetalj', { kortIds: grp }).then(function (d) {
+      if (!d || d.ok !== true || !Array.isArray(d.rader)) { throw new Error('courseBetalDetalj'); }
+      return d;
+    });
+  })).then(function (list) {
+    return { ok: true, meta: list[0].meta, rader: list.reduce(function (a, d) { return a.concat(d.rader); }, []) };
+  });
+  detaljP.then(function (d) { if (!isStale()) { CourseView.applyBetalDetaljData(d); } }).catch(function () { /* hanteras när cellen klickas */ });
+  var bilagorP = {};
+  if (isStale()) { return; }
+  CourseView.applyBetalDetalj({
+    detalj: function () { return detaljP; },
+    epost: function (kortId) { var c = COURSE_CARDS_BY_ID[kortId]; return Promise.resolve(c ? BD.epost(c.desc) : ''); },
+    bilagor: function (kortId) {
+      if (!bilagorP[kortId]) {
+        bilagorP[kortId] = t.getRestApi().getToken().then(function (tok) { return restGet(tok, 'cards/' + encodeURIComponent(kortId) + '/attachments?fields=name,url'); })
+          .catch(function (e) { delete bilagorP[kortId]; throw e; });
+      }
+      return bilagorP[kortId];
+    }
+  });
 }
 
 /* #11 Fas 2: AUTO-BOCKA steg 8/9 när dokumentet är färdigt (ready = ≥85%, livs även bild).
