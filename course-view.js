@@ -117,6 +117,13 @@
     if (!cell || typeof cell !== 'object') { return null; }
     var dm, st = String(cell.status || '');
     if (st === 'betald') { dm = betalDM(cell.datum); return { text: 'betald', text2: dm, title: dm ? 'Betald ' + dm : 'Betald', cls: 'bt-done' }; }
+    if (st === 'betald_avviker') {
+      dm = betalDM(cell.datum);
+      return { text: 'betald?', text2: dm, cls: 'bt-pending',
+        title: cell.avvik === 'makulerad' ? 'Betald enligt banken, men bokföringen har makulerat betalningen'
+          : cell.avvik === 'belopp' ? 'Betald enligt bokföringen, men beloppet avviker från fakturan'
+          : 'Betald, men något avviker. Kontrollera' };
+    }
     if (st === 'obetald') { dm = betalDM(cell.forfallodag); return { text: 'obetald', text2: dm, title: dm ? 'Obetald, förfaller ' + dm : 'Obetald', cls: 'bt-open' }; }
     if (st === 'forfallen') { return { text: 'förfallen', title: 'Förfallen: förfallodagen har passerat och fakturan är inte betald enligt bokföringen', cls: 'bt-late' }; }
     if (st === 'ej_bekraftad') { return { text: 'ej bekräftad', title: 'Förfallodagen har passerat men bokföringen är inte ikapp', hint: 'Förfallodagen har passerat men bokföringen är inte ikapp', cls: 'bt-pending' }; }
@@ -131,7 +138,17 @@
     var dm = betalDM(b && b.sieSenast);
     return dm ? 'Förfallen enligt bokföringen t.o.m. ' + dm : 'Bokföringens datum okänt';
   }
-  function betalHamtadText(b) {
+  var BETAL_GAMMAL_MS = 36 * 3600 * 1000;
+  var BETAL_GAMMAL_TEXT = 'Uppgifterna är äldre än 36 timmar. Inga bockar sätts förrän de är färska.';
+  /* Sant när GAS sa inaktuell, när en tid saknas/är otolkbar, eller när den äldsta källan är över 36 h. Fail-closed. */
+  function betalGammal(b) {
+    if (!b) { return false; }
+    if (b.inaktuell === true) { return true; }
+    var ts = [b.sieHamtad, b.bankHamtad].map(function (x) { var t = Date.parse(x || ''); return isNaN(t) ? null : t; });
+    if (ts.some(function (t) { return t == null; })) { return true; }
+    return (Date.now() - Math.min.apply(null, ts)) > BETAL_GAMMAL_MS;
+  }
+  function betalHamtadBas(b) {
     if (!b) { return ''; }
     var ts = [b.sieHamtad, b.bankHamtad].map(function (x) { var t = Date.parse(x || ''); return isNaN(t) ? null : t; })
       .filter(function (t) { return t != null; });
@@ -143,6 +160,11 @@
         .formatToParts(d).forEach(function (x) { parts[x.type] = x.value; });
       return 'Betalningar hämtade ' + parts.day + '/' + parts.month + ' ' + parts.hour + ':' + parts.minute + ' · ' + betalBokfText(b);
     } catch (e) { return ''; }
+  }
+  function betalHamtadText(b) {
+    if (!b) { return ''; }
+    var t = betalHamtadBas(b);
+    return betalGammal(b) ? (t ? t + ' ' : '') + BETAL_GAMMAL_TEXT : t;
   }
   function betalTdHtml(pkey, rolle) {
     var k = BETAL && BETAL.byKey && BETAL.byKey[pkey];
@@ -158,7 +180,13 @@
   }
   function betalMetaPaint() {
     var el = rootElRef && rootElRef.querySelector ? rootElRef.querySelector('[data-cv-betalmeta]') : null;
-    if (el) { el.textContent = BETAL ? betalHamtadText(BETAL) : ''; }
+    if (!el) { return; }
+    el.textContent = BETAL ? betalHamtadBas(BETAL) : '';   // textContent: escapas av webbläsaren
+    if (BETAL && betalGammal(BETAL) && el.appendChild && rootElRef.ownerDocument) {
+      var w = rootElRef.ownerDocument.createElement('span');
+      w.className = 'vz-cv-bt bt-pending'; w.style.marginLeft = '8px'; w.textContent = BETAL_GAMMAL_TEXT;
+      el.appendChild(w);
+    }
   }
 
   /* ---------- topbar (kurs + datum + dagar till start) ---------- */
@@ -848,7 +876,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalBokfText: betalBokfText,
+    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 
