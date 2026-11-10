@@ -5,7 +5,7 @@
  * Capabilities (måste även bockas i admin-portalen):
  *   - card-buttons        : Kursöversikt (denna kurs)
  *   - card-detail-badges  : Kursöversikt-badge på kortet
- *   - board-buttons       : Kursöversikt (board-brett, list-väljare) + Inställningar
+ *   - board-buttons       : Kursöversikt (board-brett, list-väljare) + Inställningar + Obetalda fakturor
  *
  * Vy2 Kursöversikt (modal, board-brett) är den enda vyn. appKey aktiverar t.getRestApi() för checklist-läsning.
  * Vy1 Deltagarstatus BORTTAGEN 2026-06-17 (Robert) — all funktionalitet ersatt av Kursöversiktens fold-out
@@ -21,7 +21,7 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '166';
+var V = '167';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 // Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
@@ -57,6 +57,13 @@ function openCourseFromBoard(t) {
 function openSettings(t) {
   return resolveTestSuffix(t).then(function (suf) {
     return t.modal({ url: vurl('./settings.html'), fullscreen: true, title: CFG.APP_NAME + ' – Inställningar' + suf, accentColor: '#08445c' });
+  });
+}
+
+// Obetalda fakturor: alla deltagare som inte betalat enligt förväntan, över alla kurser. Bara läsning.
+function openBetalOversikt(t) {
+  return resolveTestSuffix(t).then(function (suf) {
+    return t.modal({ url: vurl('./betal.html'), fullscreen: true, title: CFG.APP_NAME + ' – Obetalda fakturor' + suf, accentColor: '#08445c' });
   });
 }
 
@@ -134,6 +141,7 @@ TrelloPowerUp.initialize({
     return [
       { icon: { dark: MARK, light: MARK_WHITE }, text: CFG.APP_NAME + ' – Kursöversikt', callback: openCourseFromBoard, condition: 'edit' },
       { icon: { dark: MARK, light: MARK_WHITE }, text: CFG.APP_NAME + ' – Inställningar', callback: openSettings, condition: 'edit' },
+      { icon: { dark: MARK, light: MARK_WHITE }, text: CFG.APP_NAME + ' – Obetalda fakturor', callback: openBetalOversikt, condition: 'edit' },
     ];
   },
 }, {

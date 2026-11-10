@@ -343,3 +343,33 @@ window.NYA_ZAPIER_DOCTOR = (function () {
 
   return { lookup: lookup, buildRows: buildRows, toSaved: toSaved, withCourseEmail: withCourseEmail, knownEmails: knownEmails };
 })();
+
+/* Bokföringsraden (betalstatus): EN ren funktion som både Kursöversikten och Obetalda fakturor använder.
+ * rad(sieHamtad, sieSenast, nuMs) -> { text, varning }. varning är '' eller en gul varningstext.
+ * Varning när sieHamtad saknas, inte går att tolka, eller är ÄLDRE än 26 timmar (exakt 26 h varnar inte). Tid visas som svensk tid. */
+window.NYA_ZAPIER_BOKF = (function () {
+  var GRANS_MS = 26 * 3600 * 1000;
+  var MAN = ['jan', 'feb', 'mars', 'apr', 'maj', 'juni', 'juli', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  function tid(ms) {
+    try {
+      var p = {};
+      new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .formatToParts(new Date(ms)).forEach(function (x) { p[x.type] = x.value; });
+      return parseInt(p.day, 10) + ' ' + MAN[parseInt(p.month, 10) - 1] + ' ' + p.hour + ':' + p.minute;
+    } catch (e) { return 'okänd tid'; }
+  }
+  function datum(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? (parseInt(m[3], 10) + ' ' + MAN[parseInt(m[2], 10) - 1]) : 'okänd';
+  }
+  function rad(sieHamtad, sieSenast, nuMs) {
+    var ms = Date.parse(sieHamtad || '');
+    var nu = typeof nuMs === 'number' ? nuMs : Date.now();
+    var ok = !isNaN(ms);
+    return {
+      text: 'Bokföringen hämtad ' + (ok ? tid(ms) : 'okänd tid') + ', senaste inbetalning i bokföringen ' + datum(sieSenast),
+      varning: (!ok || (nu - ms) > GRANS_MS) ? ('Bokföringen är inte hämtad sedan ' + (ok ? tid(ms) : 'okänd tid') + '. Statusen kan vara fel.') : ''
+    };
+  }
+  return { rad: rad, GRANS_MS: GRANS_MS };
+})();

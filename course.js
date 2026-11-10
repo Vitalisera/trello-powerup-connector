@@ -4012,6 +4012,20 @@ function boot() {
   }).catch(function () { settled = true; clearTimeout(watchdog); showAuth('Kunde inte kontrollera Trello-anslutningen.'); });
 }
 
+// "Visa obetalda" i sidhuvudet: navigerar modalens iframe till betal.html (samma ?v= som sidan, context-hashen bevaras
+// så att TrelloPowerUp.iframe fungerar). from=course ger betal.html en länk tillbaka hit.
+function openBetalFromCourse_() {
+  var v = (new URLSearchParams(location.search)).get('v') || '';
+  location.href = './betal.html?from=course' + (v ? '&v=' + encodeURIComponent(v) : '') + (location.hash || '');
+}
+document.addEventListener('click', function (e) {
+  var b = e.target && e.target.closest ? e.target.closest('#vz-cv-betalbtn') : null;
+  if (b) { e.preventDefault(); openBetalFromCourse_(); }
+});
+document.addEventListener('keydown', function (e) {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.id === 'vz-cv-betalbtn') { e.preventDefault(); openBetalFromCourse_(); }
+});
+
 // Esc stänger modalen oavsett var fokus ligger i iframen.
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') { try { t.closeModal(); } catch (_) {} }

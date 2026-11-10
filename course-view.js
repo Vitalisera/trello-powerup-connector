@@ -177,6 +177,22 @@
     if (repaintHeadRef) { repaintHeadRef(); }
     if (repaintBodyRef) { repaintBodyRef(false); }
     betalMetaPaint();
+    betalBokfPaint();
+  }
+  /* Bokföringsraden (config.js NYA_ZAPIER_BOKF.rad): hämtad-tid + senaste inbetalning, gul varning vid >26 h eller saknad tid. */
+  function betalBokfPaint() {
+    var el = rootElRef && rootElRef.querySelector ? rootElRef.querySelector('[data-cv-bokf]') : null;
+    var B = (typeof window !== 'undefined') && window.NYA_ZAPIER_BOKF;
+    if (!el || !B) { return; }
+    el.textContent = '';
+    if (!BETAL) { return; }
+    var r = B.rad(BETAL.sieHamtad, BETAL.sieSenast);
+    el.textContent = r.text;
+    if (r.varning && el.appendChild && rootElRef.ownerDocument) {
+      var w = rootElRef.ownerDocument.createElement('span');
+      w.className = 'vz-cv-bt bt-pending'; w.style.marginLeft = '8px'; w.style.background = '#fbe9c6'; w.style.color = '#6b4600'; w.textContent = r.varning;
+      el.appendChild(w);
+    }
   }
   function betalMetaPaint() {
     var el = rootElRef && rootElRef.querySelector ? rootElRef.querySelector('[data-cv-betalmeta]') : null;
@@ -221,6 +237,7 @@
       + '    <div class="crumb">Kursöversikt<b>' + esc(course.name || 'Kurs') + '</b></div>'
       + '  </div>'
       + '  <div class="vz-cv-when">'
+      + '    <a class="vz-cv-betalbtn" id="vz-cv-betalbtn" role="button" tabindex="0" title="Alla deltagare som inte har betalat enligt förväntan, över alla kurser">Visa obetalda</a>'
       + '    <div class="vz-cv-date">'
       + '      <div class="label">Kursdatum</div>'
       + '      <div class="val">' + esc(course.datum || '–') + '</div>'
@@ -450,6 +467,7 @@
       + '    <span class="vz-cv-lg lg-na"><span class="swab">–</span>Ej relevant</span>'
       + '  </div>'
       + '  <span class="vz-cv-betalmeta" data-cv-betalmeta></span>'
+      + '  <span class="vz-cv-betalmeta" data-cv-bokf></span>'
       + '</footer>';
   }
 
@@ -759,7 +777,7 @@
     paintSummary();
     paintHead();
     paintBody(true);
-    betalMetaPaint();
+    betalMetaPaint(); betalBokfPaint();
   }
 
   /* ---------- ihågkom infällda faser i sessionen (valfritt, fail-soft) ---------- */

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vitalisera – Obetalda fakturor</title>
+  <script>
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      document.write('<link rel="stylesheet" href="./betal.css' + q + '">');
+    })();
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      ['https://p.trellocdn.com/power-up.min.js?vz=1', './config.js' + q, './betal.js' + q]
+        .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
+    })();
+  </script>
+  <!-- Versions-badge (cache-diagnos): visar vilken connector-version modalen laddades med. -->
+  <script>
+    (function () {
+      var sp = new URLSearchParams(location.search);
+      if (sp.get('compact') === '1') { return; }
+      var b = document.createElement('div');
+      b.id = 'vz-ver';
+      b.textContent = 'v' + (sp.get('v') || '?');
+      b.title = 'Connector-version';
+      b.style.cssText = 'position:fixed;bottom:6px;right:8px;z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
+      function add(){ (document.body || document.documentElement).appendChild(b); }
+      if (document.body) { add(); } else { document.addEventListener('DOMContentLoaded', add); }
+    })();
+  </script>
+</body>
+</html>
