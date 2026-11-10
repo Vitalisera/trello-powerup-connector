@@ -127,6 +127,10 @@ function hamtaKortInfo(token, kortIds) {
 }
 
 /* ---------- Rendering ---------- */
+function arDateradKurs(listnamn) {
+  return !!(listnamn && window.NYA_ZAPIER_DATE && window.NYA_ZAPIER_DATE.courseStartDate(listnamn));
+}
+
 function msgHtml(cls, html) { return '<div class="' + cls + '">' + html + '</div>'; }
 
 function shell(inner) {
@@ -165,7 +169,10 @@ function renderOversikt(svar, info) {
       typ: r.typ, fakturanr: r.fakturanr || '', belopp: r.belopp, forfallodag: r.forfallodag || '', status: r.status,
       dagar: dagarSedan(r.forfallodag, nu) };
   });
-  rader = sorteraRader(rader);
+  // Robert 2026-11-10: bara kort i en daterad kurslista (kursstarten går att räkna ut). Övriga kurser har inte
+  // genomförts, och deras fakturor ska inte drivas in. En sådan rad som ändå har en betalning pekar på ett felplacerat kort.
+  var utanfor = rader.filter(function (r) { return !arDateradKurs(r.kurs); });
+  rader = sorteraRader(rader.filter(function (r) { return arDateradKurs(r.kurs); }));
   var bokf = window.NYA_ZAPIER_BOKF.rad(svar.sieHamtad, svar.sieSenast);
   var meta = '<div class="vz-bt-meta"><span>Uppdaterad ' + esc(fmtTid(svar.uppdaterad)) + '</span><span>Bokföringen läst ' + esc(fmtTid(svar.sieHamtad)) + '</span><span>' + esc(bokf.text) + '</span></div>'
     + (bokf.varning ? msgHtml('vz-bt-warn', esc(bokf.varning)) : '');
@@ -204,7 +211,22 @@ function renderOversikt(svar, info) {
         return '<li>' + lank + (k.kurs ? ' (' + esc(k.kurs) + ')' : '') + (o.fakturanr ? ', faktura ' + esc(o.fakturanr) : '') + '</li>';
       }).join('') + '</ul></div>';
   }
-  show(meta + warn + body + olas);
+  var felkort = utanfor.filter(function (r) { return r.status === 'delbetald'; });
+  var utanforHtml = '';
+  if (felkort.length) {
+    utanforHtml = '<div class="vz-bt-sec"><h2>Betalning på kort utanför kurslistorna</h2>'
+      + '<p class="vz-bt-note">Fakturan har en betalning men kortet ligger inte i en kurslista. Troligen ligger fakturan på fel kort.</p><ul>'
+      + felkort.map(function (r) {
+        var namn = r.namn || 'Okänt kort';
+        var lank = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(namn) + '</a>' : esc(namn);
+        return '<li>' + lank + (r.kurs ? ' (' + esc(r.kurs) + ')' : '') + (r.fakturanr ? ', faktura ' + esc(r.fakturanr) : '') + '</li>';
+      }).join('') + '</ul></div>';
+  }
+  if (utanfor.length) {
+    utanforHtml += '<p class="vz-bt-note">' + utanfor.length + ' faktur' + (utanfor.length === 1 ? 'a' : 'or')
+      + ' på kort utanför de daterade kurslistorna visas inte.</p>';
+  }
+  show(meta + warn + body + utanforHtml + olas);
 }
 
 function boot() {
