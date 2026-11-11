@@ -568,7 +568,10 @@ function postToGas(action, payload) {
   }).then(function (res) {
     return res.text().then(function (text) {
       if (!res.ok) { throw new Error('GAS HTTP ' + res.status + ': ' + text.slice(0, 200)); }
-      try { return JSON.parse(text); } catch (e) { throw new Error('Ogiltigt JSON-svar från GAS: ' + text.slice(0, 200)); }
+      var j; try { j = JSON.parse(text); } catch (e) { throw new Error('Ogiltigt JSON-svar från GAS: ' + text.slice(0, 200)); }
+      // Servern nekar kontot: texten visas EN gång som banner överst i vyn (central text i config.js), i stället för att varje cell sväljer felet.
+      if (j && j.error === 'ej_behorig' && window.vzVisaEjBehorig) { window.vzVisaEjBehorig(); }
+      return j;
     });
   });
 }
@@ -2020,6 +2023,7 @@ function renderPracticalInfoPanel(rows, courseName) {
  * ligger det kvar, och då är det just det dokumentet som återanvänds nästa gång. */
 function practicalDocError_(r, courseName) {
   var err = (r && r.error) || 'okänt fel';
+  if (err === 'ej_behorig') { return CFG.EJ_BEHORIG_TEXT; }
   if (err === 'course_folder_not_found') { return 'Hittar ingen kursmapp för "' + courseName + '" — dokumentet kan inte skapas än.'; }
   if (err === 'tokens_missing') { return 'Kursdatumen kunde inte tolkas ur kursnamnet — dokumentet kan inte fyllas.'; }
   if (err === 'course_step_unknown') { return 'Kurslistans namn säger inte vilket steg det är, så rätt mall kan inte väljas. Lägg till t.ex. «(Steg 2)» i namnet.'; }

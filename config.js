@@ -34,6 +34,23 @@ window.NYA_ZAPIER_CONFIG = {
   //   ej hemlig token) → ok att ligga här. Token hämtas per-användare via authorize().
   APP_KEY: 'cdc7127c27c4442723c2ef5108ee9388',
   APP_AUTHOR: 'Vitalisera',
+
+  // ENDA källan till texten när servern svarar error 'ej_behorig' (Trello-kontot står inte i behörighetslistan).
+  // client.js, betal.js och course.js visar den i stället för sina egna felmeddelanden.
+  EJ_BEHORIG_TEXT: 'Ditt Trello-konto har inte behörighet till Vitaliseras Power-Up. Hör av dig till Robert.',
+};
+
+/* Visar EJ_BEHORIG_TEXT EN gång som banner överst på sidan (utanför #root, så den överlever omritning). */
+window.vzVisaEjBehorig = function () {
+  try {
+    if (document.getElementById('vz-ej-behorig')) { return; }
+    var d = document.createElement('div');
+    d.id = 'vz-ej-behorig'; d.setAttribute('role', 'alert');
+    d.style.cssText = 'margin:0 0 8px;padding:10px 12px;background:#fdecea;color:#7a1f16;border:1px solid #e5a39b;border-radius:4px;font:14px/1.4 sans-serif;';
+    d.textContent = window.NYA_ZAPIER_CONFIG.EJ_BEHORIG_TEXT;
+    var root = document.getElementById('root');
+    if (root && root.parentNode) { root.parentNode.insertBefore(d, root); } else { document.body.insertBefore(d, document.body.firstChild); }
+  } catch (e) { /* bannern är en hjälp, aldrig ett nytt fel */ }
 };
 
 /*

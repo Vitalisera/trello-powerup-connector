@@ -185,7 +185,8 @@ function show(inner) { ROOT().innerHTML = shell(inner); bindBack(); }
 
 var FEL_TEXT = {
   fil_saknas: 'Betalstatus finns inte ännu. Jobbet som läser bokföringen har inte skrivit någon fil.',
-  fil_ogiltig: 'Betalstatusfilen går inte att läsa just nu. Försök igen om en stund.'
+  fil_ogiltig: 'Betalstatusfilen går inte att läsa just nu. Försök igen om en stund.',
+  ej_behorig: CFG.EJ_BEHORIG_TEXT
 };
 
 function sorteraRader(rader) {
@@ -360,7 +361,7 @@ function toggleDetalj(tr) {
   BD.visa(host, {
     aktiv: function () { return !!dr.parentNode; },
     detalj: function () {
-      return postToGas('courseBetalDetalj', { kortIds: [rad.kortId] }).then(function (d) { if (!d || d.ok !== true) { throw new Error('detalj'); } return d; });
+      return postToGas('courseBetalDetalj', { kortIds: [rad.kortId] }).then(function (d) { if (d && d.error === 'ej_behorig' && window.vzVisaEjBehorig) { window.vzVisaEjBehorig(); } if (!d || d.ok !== true) { throw new Error('detalj'); } return d; });
     },
     // E-post läses ur kortbeskrivningen med användarens token, aldrig från GAS.
     epost: function () { return restGet(TOKEN, 'cards/' + encodeURIComponent(rad.kortId) + '?fields=desc').then(function (c) { return BD.epost(c && c.desc); }); },

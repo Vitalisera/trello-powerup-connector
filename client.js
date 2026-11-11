@@ -21,7 +21,7 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '172';
+var V = '173';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 // Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
@@ -103,7 +103,7 @@ var PAMINN_SKAL = {
   mejl_misslyckades: 'Mejlet kunde inte skickas. Inget skickat.'
 };
 function paminnSvar(t, r, okText) {
-  var text = r && r.ok ? okText + (r.testlage ? ' (testläge: mejlet gick till ' + r.till + ')' : '')
+  var text = r && r.error === 'ej_behorig' ? CFG.EJ_BEHORIG_TEXT : r && r.ok ? okText + (r.testlage ? ' (testläge: mejlet gick till ' + r.till + ')' : '')
     : (PAMINN_SKAL[r && r.skal] || ('Inget skickat (' + ((r && r.skal) || 'okänt fel') + ').'));
   return t.alert({ message: text, duration: 8, display: r && r.ok ? 'success' : 'warning' });
 }
