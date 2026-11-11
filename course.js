@@ -557,17 +557,24 @@ function postToGas(action, payload) {
   if (!url || url.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
     return Promise.reject(new Error('GAS_URL är inte ifylld i config.js'));
   }
-  var body = JSON.stringify({ action: action, payload: payload || {} });
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: body,
+  // Behörighetsgrinden i GAS kräver Trello-token (body.token, utanför payload) för allt som skriver/delar/mejlar.
+  return gasToken().then(function (tok) {
+    var body = JSON.stringify({ action: action, payload: payload || {}, token: tok || undefined });
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body,
+    });
   }).then(function (res) {
     return res.text().then(function (text) {
       if (!res.ok) { throw new Error('GAS HTTP ' + res.status + ': ' + text.slice(0, 200)); }
       try { return JSON.parse(text); } catch (e) { throw new Error('Ogiltigt JSON-svar från GAS: ' + text.slice(0, 200)); }
     });
   });
+}
+function gasToken() {
+  try { return t.getRestApi().getToken().then(function (x) { return x || ''; }, function () { return ''; }); }
+  catch (e) { return Promise.resolve(''); }
 }
 
 /* ---------- REST ---------- */

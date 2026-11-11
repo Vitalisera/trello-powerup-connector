@@ -32,11 +32,12 @@ function postToGas(action, payload) {
   if (!url || url.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
     return Promise.reject(new Error('GAS_URL är inte ifylld i config.js'));
   }
-  return fetch(url, {
+  var tokP; try { tokP = t.getRestApi().getToken().then(function (x) { return x || ''; }, function () { return ''; }); } catch (e) { tokP = Promise.resolve(''); }
+  return tokP.then(function (tok) { return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, payload: payload || {} }),
-  }).then(function (res) {
+    body: JSON.stringify({ action: action, payload: payload || {}, token: tok || undefined }),
+  }); }).then(function (res) {
     return res.text().then(function (text) {
       if (!res.ok) { throw new Error('GAS HTTP ' + res.status); }
       try { return JSON.parse(text); } catch (e) { throw new Error('Ogiltigt svar från servern'); }

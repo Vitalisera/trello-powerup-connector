@@ -21,7 +21,7 @@ var MARK_WHITE = CFG.MARK_WHITE_URL || CFG.MARK_URL;
 // ⚙️ ASSET-VERSION — bumpa vid varje deploy. Modal-/iframe-filer (course/dashboard)
 // laddas on-demand och cachas annars av webbläsaren (GitHub Pages max-age=600);
 // versions-query tvingar färska filer när client.js (board-nivå) laddats om.
-var V = '171';
+var V = '172';
 function vurl(p) { return p + (p.indexOf('?') === -1 ? '?' : '&') + 'v=' + V; }
 
 // Suffix " - TEST" i modaltiteln när testläget är på (vz_settings.testMode) — så Malin direkt
@@ -70,12 +70,14 @@ function openBetalOversikt(t) {
 // ── Påminnelsen efter intresseanmälan (mejldelen). Knapparna syns bara när kortet har etiketten "Påminna?".
 // Allt avgörs av servern (GAS): läget (test/skarpt), max två påminnelser, dubbelklick. Sms är avstängt (tom krok).
 var PAMINN_ETIKETT = 'Påminna?';
-function paminnGas(action, payload) {
-  return fetch(CFG.GAS_URL, {
+function paminnGas(t, action, payload) {
+  // Servern (behörighetsgrind) kräver Trello-token för skrivande routes; token ligger utanför payload.
+  var tokP; try { tokP = t.getRestApi().getToken().then(function (x) { return x || ''; }, function () { return ''; }); } catch (e) { tokP = Promise.resolve(''); }
+  return tokP.then(function (tok) { return fetch(CFG.GAS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, payload: payload || {} }),
-  }).then(function (res) { return res.text(); }).then(function (text) {
+    body: JSON.stringify({ action: action, payload: payload || {}, token: tok || undefined }),
+  }); }).then(function (res) { return res.text(); }).then(function (text) {
     try { return JSON.parse(text); } catch (e) { return { ok: false, skal: 'ogiltigt_svar' }; }
   });
 }
@@ -107,7 +109,7 @@ function paminnSvar(t, r, okText) {
 }
 function paminnKnapp(text, fn) {
   return { icon: MARK, text: text, condition: 'edit', callback: function (t) {
-    return t.card('id').then(function (c) { return fn(c.id); }).then(function (r) { return paminnSvar(t, r.r, r.ok); })
+    return t.card('id').then(function (c) { return fn(c.id, t); }).then(function (r) { return paminnSvar(t, r.r, r.ok); })
       .catch(function () { return t.alert({ message: 'Det gick inte att nå servern. Inget skickat.', duration: 8, display: 'error' }); });
   } };
 }
@@ -116,9 +118,9 @@ function paminnKortknappar(t) {
     var har = (c.labels || []).some(function (l) { return l && l.name === PAMINN_ETIKETT; });
     if (!har) { return []; }
     return [
-      paminnKnapp('Påminn med mejl', function (id) { return paminnGas('paminnSkicka', { cardId: id, kanal: 'mejl' }).then(function (r) { return { r: r, ok: 'Påminnelsen är skickad.' }; }); }),
-      paminnKnapp('Påminn med sms', function (id) { return paminnGas('paminnSkicka', { cardId: id, kanal: 'sms' }).then(function (r) { return { r: r, ok: '' }; }); }),
-      paminnKnapp('Ingen påminnelse', function (id) { return paminnGas('paminnIngen', { cardId: id }).then(function (r) { return { r: r, ok: 'Markerat: ingen påminnelse.' }; }); })
+      paminnKnapp('Påminn med mejl', function (id, tt) { return paminnGas(tt, 'paminnSkicka', { cardId: id, kanal: 'mejl' }).then(function (r) { return { r: r, ok: 'Påminnelsen är skickad.' }; }); }),
+      paminnKnapp('Påminn med sms', function (id, tt) { return paminnGas(tt, 'paminnSkicka', { cardId: id, kanal: 'sms' }).then(function (r) { return { r: r, ok: '' }; }); }),
+      paminnKnapp('Ingen påminnelse', function (id, tt) { return paminnGas(tt, 'paminnIngen', { cardId: id }).then(function (r) { return { r: r, ok: 'Markerat: ingen påminnelse.' }; }); })
     ];
   }).catch(function () { return []; });
 }
