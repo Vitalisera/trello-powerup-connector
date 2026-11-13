@@ -80,7 +80,7 @@ window.NYA_ZAPIER_FLOW = [
   { key: 'avgift_faktura', phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift – faktura', desc: 'Faktura för anmälningsavgift skickad (manuell bock)', checkItem: 'Faktura för anmälningsavgift skickad' },
   { key: 'avgift',         phase: 'Förberedelse inför kurs', title: 'Anmälningsavgift – betald',  desc: 'Avgiften betald (label + checklista, ingen automation)', checkItem: 'Anmälningsavgift betald', triggerLabel: 'Anm. avgift betald', implies: ['avgift_faktura'] }, // #15: betald ⇒ faktura var skickad
   { key: 'praktisk',       phase: 'Förberedelse inför kurs', title: 'Praktisk info',             desc: 'Praktisk information skickad (manuell bock)', checkItem: 'Praktisk info skickat' },
-  { key: 'steg1',          phase: 'Förberedelse inför kurs', title: 'Steg 1 – formulär',         desc: 'Label triggar nya-zapier som skickar formuläret och kryssar checklistan', checkItem: 'Fått formulär', triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
+  { key: 'steg1',          phase: 'Förberedelse inför kurs', title: 'Steg 1 – formulär',         desc: 'Kryssas av automationen när mejlet med formuläret har gått. Kryssa inte själv.', checkItem: 'Fått formulär', triggerLabel: 'steg 1 - Skicka formulär till deltagare', automation: 'Steg 1 - Skicka formulär' },
   { key: 'hf_klart',       phase: 'Förberedelse inför kurs', title: 'Hälsoformulär klart',       desc: 'Deltagarens hälsoformulär ifyllt (manuell bock; ska autobockas framöver)', checkItem: 'Hälsoformulär klart' },
   { key: 'livs_klar',      phase: 'Förberedelse inför kurs', title: 'Livsberättelse klar',       desc: 'Deltagarens livsberättelse klar (manuell bock; ska autobockas framöver)', checkItem: 'Levnadsbeskrivning klar' },
   { key: 'hf_delad',       phase: 'Förberedelse inför kurs', title: 'Hälsoformulär → läkare',    desc: 'Bockas manuellt → nya-zapier skapar anonym kopia till läkaren', checkItem: 'Delat Hälsoformulär till läkare/kursledare', automation: 'Kopiera HF till läkare' },
@@ -418,7 +418,7 @@ window.NYA_ZAPIER_BETALROLL = (function () {
 
 window.NYA_ZAPIER_BETALDET = (function () {
   var STATUS = { betald: 'Betald', betald_avviker: 'Betald, men något avviker', obetald: 'Obetald', forfallen: 'Förfallen', ej_bekraftad: 'Ej bekräftad',
-    delbetald: 'Delbetald', oklart: 'Oklart', kunde_inte_lasas: 'Kunde inte läsas', saknas: 'Saknas (uppgiften är okänd eller inaktuell)', ingen_faktura: 'Ingen faktura' };
+    delbetald: 'Delbetald', gammal: 'Obetald enligt äldre uppgifter', oklart: 'Oklart', kunde_inte_lasas: 'Kunde inte läsas', saknas: 'Saknas (uppgiften är okänd eller inaktuell)', ingen_faktura: 'Ingen faktura' };
   var TITEL = window.NYA_ZAPIER_BETALROLL.NAMN;
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function belopp(n) { return (typeof n !== 'number' || !isFinite(n)) ? '–' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' kr'; }

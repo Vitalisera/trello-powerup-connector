@@ -27,6 +27,7 @@ body { font-family: Calibri, 'Segoe UI', system-ui, sans-serif; color: #0d3142;
 .vz-bt-pill.obetald { background: #fbe9c6; color: #8a5a00; }
 .vz-bt-pill.delbetald { background: rgba(53,112,135,.14); color: #235468; }
 .vz-bt-pill.ej_bekraftad { background: #e6ebee; color: #4a5b63; }
+.vz-bt-pill.gammal { background: #f1eadb; color: #6b5a2e; }
 .vz-bt-note { color: #5b6b73; font-size: 13px; margin: 10px 2px 0; }
 .vz-bt-sec { margin-top: 26px; }
 .vz-bt-sec h2 { font-size: 16px; color: #08445c; margin: 0 0 8px; }

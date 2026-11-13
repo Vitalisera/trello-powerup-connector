@@ -14,8 +14,8 @@
 var CFG = window.NYA_ZAPIER_CONFIG;
 var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var BETAL_BOARDS = ['5e3829153e99a8775073f2aa', 'tXFUio8P'];   // Admin, Tidigare kurser
-var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad' };
-var BETAL_STATUS_RANK = { forfallen: 0, obetald: 1, delbetald: 2, ej_bekraftad: 3 };
+var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad', gammal: 'Obetald enligt äldre uppgifter' };
+var BETAL_STATUS_RANK = { forfallen: 0, obetald: 1, delbetald: 2, ej_bekraftad: 3, gammal: 4 };
 var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen och skälet till okand bor i config.js
 var FROM_COURSE = (new URLSearchParams(location.search)).get('from') === 'course';
 
@@ -227,9 +227,12 @@ function renderOversikt(svar, info) {
   }
   var bokf = window.NYA_ZAPIER_BOKF.rad(svar.sieHamtad, svar.sieSenast);
   var meta = '<div class="vz-bt-meta"><span>Uppdaterad ' + esc(fmtTid(svar.uppdaterad)) + '</span><span>Bokföringen läst ' + esc(fmtTid(svar.sieHamtad)) + '</span><span>' + esc(bokf.text) + '</span></div>'
-    + (bokf.varning ? msgHtml('vz-bt-warn', esc(bokf.varning)) : '');
-  var warn = svar.inaktuell
-    ? msgHtml('vz-bt-warn', 'Uppgifterna är äldre än tre timmar och kan ha ändrats. Kontrollera i SpeedLedger innan du agerar.') : '';
+    + ((bokf.varning && svar.gamlaUppgifter !== true) ? msgHtml('vz-bt-warn', esc(bokf.varning)) : '');   // gamla uppgifter-raden säger redan när bokföringen lästes
+  // EN gul ruta, den mest relevanta: gamla uppgifter (nytt GAS-fält, saknas i äldre svar) > tre timmar > bokf.varning (egen rad ovan)
+  var warn = svar.gamlaUppgifter === true
+    ? msgHtml('vz-bt-warn', 'Banken lästes senast ' + esc(fmtTid(svar.bankHamtad)) + ', bokföringen ' + esc(fmtTid(svar.sieHamtad))
+      + '. Betalningar som kommit in efter det syns inte här, så kontrollera i SpeedLedger innan du agerar.')
+    : (svar.inaktuell ? msgHtml('vz-bt-warn', 'Uppgifterna är äldre än tre timmar och kan ha ändrats. Kontrollera i SpeedLedger innan du agerar.') : '');
   var slackWarn = SLACK_FEL
     ? msgHtml('vz-bt-warn', 'Det gick inte att läsa kommentarerna på korten, så Släck-knapparna är avstängda och släckta fakturor visas som vanligt. Ladda om vyn för att försöka igen.') : '';
   var body;
@@ -257,7 +260,8 @@ function renderOversikt(svar, info) {
           + '</tr>';
       }).join('')
       + '</tbody></table></div>'
-      + '<p class="vz-bt-note">Ej bekräftad: förfallodagen har passerat, men bokföringen var inte uppdaterad fram till den dagen när den lästes.</p>';
+      + '<p class="vz-bt-note">Ej bekräftad: förfallodagen har passerat, men bokföringen var inte uppdaterad fram till den dagen när den lästes.</p>'
+      + (svar.gamlaUppgifter === true ? '<p class="vz-bt-note">Obetald enligt äldre uppgifter: fakturan hade ingen känd betalning när uppgifterna lästes. Den kan ha betalats sedan dess.</p>' : '');
   }
   var olas = '';
   if ((svar.olasbara || []).length) {
