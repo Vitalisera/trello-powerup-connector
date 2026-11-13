@@ -800,12 +800,20 @@
   .vz-cv-sumside{align-items:flex-start;text-align:left}
   .vz-cv-controls{justify-content:flex-start}
 }
-/* stapla: matris överst, Personal-aside under (full bredd). Brytpunkten är matrisens minsta bredd, inte 1080:
-   14 steg + namn + betalkolumner är ~990 px + 120 px svans-padding, plus asidens 320 px; smalare än så trängde tabellen in under panelen (1280 px: 80 px). */
-@media (max-width:1420px){
+/* stapla: matris överst, Personal-aside under (full bredd). Brytpunkten är matrisens minsta bredd plus asidens minsta bredd (200 px) plus rullningslist (15 px).
+   Mätt (18 deltagare, 14 steg, betalkolumner, dokumentprocent på steg 8 och 9): tabellens minsta bredd är 939 px (+1 px kant) efter kompaktering av fasrubrikerna; mätt: 940 px matris + 200 px ruta kräver 1165 px sidbredd, plus 15 px rullningslist = 1180. Smalare än så trängde tabellen in under panelen. */
+@media (max-width:1180px){
   .vz-cv-row-region{flex-direction:column}
   .vz-region-matrix{border-right:none;border-bottom:1px solid var(--hairline);width:100%}
   .vz-region-aside{flex:1 1 auto;width:100%;align-self:auto;max-height:none;overflow:visible}   /* staplad under tabellen: ingen egen scroll */
+}
+/* över 1180 till 1420 (1180.02 täcker bråkdelspixlar vid zoom): Personal-rutan bredvid tabellen. Tabellen krymper aldrig; rutan får krympa från 240 till 200 px. */
+@media (min-width:1180.02px) and (max-width:1420px){
+  .vz-region-matrix{flex:1 0 auto}
+  .vz-region-aside{flex:0 1 240px;width:auto;min-width:200px;padding:14px 12px 18px}
+  .vz-cv-phasehead .ph-count,.vz-cv-phasehead .bar{display:none}
+  .vz-cv-phasehead{padding-left:6px;padding-right:4px;letter-spacing:.04em}
+  .vz-cv-matrixwrap{padding-right:0}
 }
 @media (max-width:680px){
   .vz-course{padding:8px}
