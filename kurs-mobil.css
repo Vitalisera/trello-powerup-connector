@@ -24,6 +24,10 @@ html.vz-lasande #vz-hf-doctor,
 html.vz-lasande .vz-cv-betalcell{pointer-events:none}
 html.vz-lasande .vz-cv-betalcell.vz-cv-betalklick{cursor:default}
 
+/* Robert 2026-11-14 (iPhone-provet): alla sex nedre paneler bort på egna sidan (livsberättelse- och
+   uppföljningsmatriserna, hälsoformulär, praktisk info, matallergier, kurschecklista). De finns kvar i Trello. */
+html.vz-lasande .vz-region-below{display:none !important}
+
 /* Banderoll överst: talar om att sidan bara visar. */
 html.vz-lasande #root::before{
   content:"Den här sidan visar bara. Ändringar görs i Trello.";
@@ -68,6 +72,33 @@ html.vz-lasande #root::before{
   .vz-cv-search input{width:100%}
 }
 
+/* ---- Deltagarlistan i telefonen (kurs-lasande.js). Ersätter tabellen under 680 px; tabellen nås via knappen.
+   Över 680 px syns tabellen som förut och listan inte alls. ---- */
+.vz-mlista{display:none}
+@media (max-width:680px){
+  html.vz-lasande .vz-mlista{display:block;padding:12px 10px 4px}
+  html.vz-lasande:not(.vz-visa-tabell) .vz-cv-matrixwrap,
+  html.vz-lasande:not(.vz-visa-tabell) .vz-cv-foot,
+  html.vz-lasande:not(.vz-visa-tabell) .vz-cv-controls{display:none !important}
+}
+.vz-ml-topp{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 8px}
+.vz-ml-topp h3{margin:0;font:700 16px/1.3 Calibri,system-ui,sans-serif;color:#08445c}
+.vz-ml-vaxla{flex:none;padding:7px 11px;border:1px solid #cfe0e3;border-radius:8px;background:#fff;color:#08445c;font:600 13px/1 Calibri,system-ui,sans-serif}
+.vz-ml-rad{margin:0 0 8px;border:1px solid #dbe7ea;border-radius:12px;background:#fff}
+.vz-ml-rad summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 14px;cursor:pointer;list-style:none}
+.vz-ml-rad summary::-webkit-details-marker{display:none}
+.vz-ml-namn{flex:1 1 auto;min-width:0;font:600 15px/1.3 Calibri,system-ui,sans-serif;color:#0d2f3c;overflow-wrap:anywhere}
+.vz-ml-lucka{flex:none;padding:2px 8px;border-radius:999px;background:#fbefd9;color:#8a5a00;font:600 12px/1.4 Calibri,system-ui,sans-serif}
+.vz-ml-prog{flex:0 0 100%;display:flex;align-items:center;gap:8px;color:#5d7c87;font:600 13px/1 Calibri,system-ui,sans-serif}
+.vz-ml-bar{flex:1;height:6px;border-radius:3px;background:#e6eef0;overflow:hidden}
+.vz-ml-bar i{display:block;height:100%;background:#3f7f8f}
+.vz-ml-rad.is-klar .vz-ml-bar i{background:#2f7a55}
+.vz-ml-kvar{list-style:none;margin:0;padding:0 14px 10px}
+.vz-ml-kvar li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #eef3f4;font:14px/1.35 Calibri,system-ui,sans-serif;color:#0d2f3c}
+.vz-ml-kvar em{flex:none;font-style:normal;font-size:12px;color:#5d7c87}
+.vz-ml-kvar li.vz-ml-gap em{color:#8a5a00;font-weight:700}
+.vz-ml-allt{margin:0;padding:0 14px 12px;color:#2f7a55;font:600 14px/1.35 Calibri,system-ui,sans-serif}
+
 /* ---- Telefonlistan (kurs-listor.js): namn och tel-länk, stora tryckytor. ---- */
 .vz-tel{margin:0 0 14px;padding:12px 14px;border:1px solid #cfe0e3;border-radius:12px;background:#fff}
 .vz-tel-rubrik{margin:0 0 6px;font:700 15px/1.3 Calibri,system-ui,sans-serif;color:#08445c}
@@ -78,3 +109,6 @@ html.vz-lasande #root::before{
 .vz-tel-roll{color:#5d7c87;font-size:12px}
 .vz-tel-nr{flex:none;padding:6px 10px;border-radius:8px;background:#eef6f6;color:#08445c;font-weight:600;text-decoration:none;white-space:nowrap}
 .vz-tel-saknas{flex:none;color:#8a9ba1;font-size:12px}
+
+.vz-tel-karta{display:block;margin:6px 0 10px;padding:14px 12px;border-radius:10px;background:#eef6f6;color:#08445c;font:700 16px/1.2 Calibri,system-ui,sans-serif;text-align:center;text-decoration:none;min-height:44px;box-sizing:border-box}
+.vz-tel-notis{margin:0 0 8px;color:#5d7c87;font:12px/1.4 Calibri,system-ui,sans-serif}

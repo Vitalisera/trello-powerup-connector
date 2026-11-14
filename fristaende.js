@@ -29,7 +29,7 @@
   var LAS_TEXT = 'Den här sidan visar bara. Ändringar görs i Trello.';
   // Serveråtgärder som bara läser (genomgångna i gas/Code.gs och gas/Assistent.gs 2026-11-14).
   var LASATGARDER = ['ping', 'courseAllergies', 'courseGenderSplit', 'courseDocStatus', 'courseFollowupStatus',
-    'courseBetalstatus', 'courseBetalDetalj', 'betalOversikt', 'assistStatus', 'findCarriedDocs'];
+    'courseBetalstatus', 'courseBetalDetalj', 'betalOversikt', 'assistStatus', 'findCarriedDocs', 'kursark'];
   var LOKALA_NYCKLAR = { vz_panel_layout: true, vz_panel_collapsed: true };
 
   function las() { try { return localStorage.getItem(NYCKEL) || ''; } catch (e) { return ''; } }
