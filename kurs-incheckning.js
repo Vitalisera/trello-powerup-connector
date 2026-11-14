@@ -51,22 +51,67 @@
       return post('incheckningSkriv', { listName: listName, namn: namn, falt: falt, varde: varde, live: true });
     }).then(function (r) {
       if (r && r.ok === true && !r.torrkorning) { return { ok: true, sparat: r.sparat, varning: r.varning || '' }; }
-      return { ok: false, fel: felText(r && r.error) };
-    }, function () { return { ok: false, fel: felText('') }; });
+      var kod = (r && r.error) ? String(r.error) : (r && r.torrkorning ? 'torrkorning' : 'okant_svar');
+      return { ok: false, fel: felMedKod(kod), kod: kod };
+    }, function (e) {
+      var kod = 'natfel: ' + String((e && e.message) || e || '').slice(0, 60);
+      return { ok: false, fel: felMedKod(kod), kod: kod };
+    });
   }
 
-  // Bocken: ritas om direkt (visa), sparas, och återställs vid fel.
-  function skrivBock(post, listName, rad, nytt, visa) {
+  var BESTAMDA_FEL = ['ej_behorig', 'namn_hittas_inte', 'namn_flera', 'tillbakalasning_avviker', 'flera_kursark', 'rad_flaggad', 'ej_flaggad', 'varde_for_langt', 'torrkorning'];
+
+  // Klartext + felkoden, så att den som ser felet kan återge exakt vad som hände (TL 2026-11-14).
+  function felMedKod(kod) { return felText(kod) + ' (felkod: ' + (kod || 'okänd') + ')'; }
+
+  // Efter ett misslyckat sparande: läs om listan från servern. Uppdaterar bockarna (och därmed räknaren) på
+  // rader som inte håller på att sparas. Löser med serverns rad för `rad` (matchad på radnummer + namn), eller null.
+  // Bara rader som varken sparade när omläsningen startade eller har börjat spara sedan dess (versionen _v) får arkets läge.
+  function lasOmEfterFel(post, listName, rad, rader) {
+    var fore = (rader || []).filter(function (x) { return x !== rad && !(x.status && x.status.typ === 'sparar'); })
+      .map(function (x) { return { x: x, v: x._v || 0 }; });
+    return Promise.resolve().then(function () { return post('incheckning', { listName: listName }); })
+      .then(function (r) {
+        if (!r || r.ok !== true || !r.hittat || !Array.isArray(r.rader)) { return null; }
+        var karta = {};
+        r.rader.forEach(function (x) { karta[x.rad + '|' + x.namn] = x; });
+        fore.forEach(function (f) {
+          var s = karta[f.x.rad + '|' + f.x.namn];
+          if (s && (f.x._v || 0) === f.v && !(f.x.status && f.x.status.typ === 'sparar')) { f.x.incheckad = s.incheckad === true; }
+        });
+        return karta[rad.rad + '|' + rad.namn] || null;
+      }, function () { return null; });
+  }
+
+  // Bocken: ritas om direkt (visa) och sparas. Vid fel läses arket om (TL 2026-11-14, Amanda 22:45: servern hade
+  // sparat men svaret nådde inte appen). Ligger bocken ändå i arket visas raden som sparad; annars visas arkets läge
+  // och felet med felkod. Går omläsningen inte heller sätts det gamla läget tillbaka och man uppmanas ladda om.
+  function skrivBock(post, listName, rad, nytt, visa, rader) {
     if (rad.flagga) { return Promise.resolve({ ok: false, fel: felText('rad_flaggad') }); }
     var gammal = rad.incheckad === true;
+    rad._v = (rad._v || 0) + 1;
     rad.incheckad = nytt;
     rad.status = { typ: 'sparar', text: 'Sparar…' };
     visa();
     return skrivEn(post, listName, rad.namn, 'incheckad', nytt).then(function (r) {
-      if (r.ok) { rad.status = { typ: 'ok', text: 'Sparat' }; rad.varning = r.varning || ''; }
-      else { rad.incheckad = gammal; rad.status = { typ: 'fel', text: r.fel }; }
+      if (r.ok) { rad.status = { typ: 'ok', text: 'Sparat' }; rad.varning = r.varning || ''; visa(); return r; }
+      // Ett bestämt svar från servern (behörighet, flaggad rad, avvikande tillbakaläsning …) gäller: ingen omläsning
+      // som kan överrösta det. Omläsning bara när svaret är okänt: nätfel, oklart svar eller ett oväntat serverfel.
+      if (BESTAMDA_FEL.indexOf(r.kod) !== -1) { rad.incheckad = gammal; rad.status = { typ: 'fel', text: r.fel }; visa(); return r; }
+      rad.status = { typ: 'sparar', text: 'Kontrollerar i arket…' };
       visa();
-      return r;
+      return lasOmEfterFel(post, listName, rad, rader).then(function (s) {
+        if (s && (s.incheckad === true) === nytt) {
+          rad.incheckad = nytt;
+          rad.status = { typ: 'ok', text: 'Sparat' };
+          visa();
+          return { ok: true, efterKontroll: true };
+        }
+        if (s) { rad.incheckad = s.incheckad === true; rad.status = { typ: 'fel', text: r.fel }; }
+        else { rad.incheckad = gammal; rad.status = { typ: 'fel', text: r.fel + ' Ladda om sidan för att se vad som står i arket.' }; }
+        visa();
+        return r;
+      });
     });
   }
 
@@ -104,8 +149,8 @@
       return post('incheckningSkriv', { listName: listName, namn: rad.namn, falt: 'kvittera', live: true });
     }).then(function (r) {
       if (r && r.ok === true && !r.torrkorning) { return { ok: true }; }
-      return { ok: false, fel: felText(r && r.error) };
-    }, function () { return { ok: false, fel: felText('') }; }).then(function (r) {
+      return { ok: false, fel: felMedKod((r && r.error) ? String(r.error) : 'okant_svar') };
+    }, function (e) { return { ok: false, fel: felMedKod('natfel: ' + String((e && e.message) || e || '').slice(0, 60)) }; }).then(function (r) {
       if (r.ok) { return Promise.resolve(laddaOm ? laddaOm() : null).then(function () { return r; }); }
       rad.status = { typ: 'fel', text: r.fel };
       visa();
@@ -227,7 +272,7 @@
       }
       if (b !== null && rader[b] && !rader[b].flagga) {
         if (rader[b].status && rader[b].status.typ === 'sparar') { return; }
-        skrivBock(post, listName, rader[b], !rader[b].incheckad, ritaOm);
+        skrivBock(post, listName, rader[b], !rader[b].incheckad, ritaOm, rader);
       } else if (v !== null && rader[v]) {
         oppnade[v] = !oppnade[v];
         ritaOm();
@@ -266,7 +311,7 @@
       });
   }
 
-  window.VZ_INCHECKNING_PROV = { html: html, radHtml: radHtml, raknare: raknare, felText: felText, skrivEn: skrivEn, skrivBock: skrivBock, skrivFalt: skrivFalt, skrivKvittera: skrivKvittera, flaggText: flaggText, antalAvvikande: antalAvvikande, montera: montera, rita: rita };
+  window.VZ_INCHECKNING_PROV = { html: html, radHtml: radHtml, raknare: raknare, felText: felText, felMedKod: felMedKod, lasOmEfterFel: lasOmEfterFel, skrivEn: skrivEn, skrivBock: skrivBock, skrivFalt: skrivFalt, skrivKvittera: skrivKvittera, flaggText: flaggText, antalAvvikande: antalAvvikande, montera: montera, rita: rita };
 
   if (!window.VZ_SIDA) { return; }   // bara på den egna sidan
   var orig = window.renderStaffPanel;
