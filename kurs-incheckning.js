@@ -21,6 +21,7 @@
     { key: 'regnr', etikett: 'Registreringsnummer (bil)', typ: 'text' }
   ];
   var MAX = 500;
+  var icOppen = false;   // sektionen Incheckning: infälld tills man trycker på rubriken
 
   function escH(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -179,7 +180,7 @@
   function html(rader, notis, oppnade, bekraftar) {
     oppnade = oppnade || {}; bekraftar = bekraftar || {};
     var n = antalAvvikande(rader);
-    return '<h3 class="vz-ic-rubrik">Incheckning</h3>'
+    return '<summary class="vz-sek-rub">Incheckning' + (rader.length ? ' (' + rader.length + ')' : '') + '</summary>'
       + (notis ? '<p class="vz-ic-notis">' + escH(notis) + '</p>' : '')
       + (n > 0 ? '<p class="vz-ic-summa" role="status">' + n + (n === 1 ? ' rad behöver' : ' rader behöver') + ' rättas i arket</p>' : '')
       + (rader.length
@@ -253,9 +254,12 @@
         else { notis = 'Kunde inte läsa incheckningen.'; }
         var gammal = document.getElementById('vz-ic');
         if (gammal && gammal.parentNode) { gammal.parentNode.removeChild(gammal); }
-        var el = document.createElement('section');
+        // Infälld från början (Robert 2026-11-14). Läget bevaras när sektionen ritas om (efter en kvittering).
+        var el = document.createElement('details');
         el.id = 'vz-ic';
-        el.className = 'vz-ic';
+        el.className = 'vz-ic vz-sek';
+        el.open = icOppen;
+        el.addEventListener('toggle', function () { icOppen = !!el.open; });
         if (mal) { mal.appendChild(el); }
         montera(el, rader, notis, listName, post, function () { return rita(post, listName); });
         return rader.length;

@@ -71,17 +71,19 @@
 
   function html(delt, pers, ark, notis) {
     var karta = kartaHref(ark), kartaPdf = kartaHref(ark, true);
-    return '<h3 class="vz-tel-rubrik">Telefonlista</h3>' +
+    return '<summary class="vz-sek-rub">Telefonlista (' + delt.length + ' deltagare, ' + pers.length + ' personal)</summary>' +
       (karta ? '<a class="vz-tel-karta" href="' + escH(karta) + '" target="_blank" rel="noopener">Rumskarta</a>' +
         '<p class="vz-tel-notis"><a href="' + escH(kartaPdf) + '" target="_blank" rel="noopener">Ladda ned som pdf</a></p>' : '') +
       (notis ? '<p class="vz-tel-notis">' + escH(notis) + '</p>' : '') +
-      '<details open><summary>Deltagare (' + delt.length + ')</summary><ul class="vz-tel-lista">' +
+      '<details><summary>Deltagare (' + delt.length + ')</summary><ul class="vz-tel-lista">' +
       (delt.length ? delt.map(function (p) { return rad(p, false); }).join('') : '<li>Inga deltagare.</li>') +
       '</ul></details>' +
-      '<details open><summary>Personal (' + pers.length + ')</summary><ul class="vz-tel-lista">' +
+      '<details><summary>Personal (' + pers.length + ')</summary><ul class="vz-tel-lista">' +
       (pers.length ? pers.map(function (p) { return rad(p, true); }).join('') : '<li>Ingen personal hittad.</li>') +
       '</ul></details>';
   }
+
+  var telOppen = false;
 
   function rita(groups) {
     var delt = deltagare(window.COURSE_CARDS_BY_ID);
@@ -110,10 +112,13 @@
       var pers = r.pers;
       var gammal = document.getElementById('vz-tel');
       if (gammal && gammal.parentNode) { gammal.parentNode.removeChild(gammal); }
-      var el = document.createElement('section');
+      // Infälld från början (Robert 2026-11-14). Läget bevaras när listan ritas om.
+      var el = document.createElement('details');
       el.id = 'vz-tel';
-      el.className = 'vz-tel';
+      el.className = 'vz-tel vz-sek';
       el.innerHTML = html(delt, pers, r.ark, r.notis);
+      el.open = telOppen;
+      el.addEventListener('toggle', function () { telOppen = !!el.open; });
       var mal = window.vzRegion ? window.vzRegion('aside') : document.getElementById('root');
       if (mal) { mal.insertBefore(el, mal.firstChild); }
       return { deltagare: delt.length, personal: pers.length };

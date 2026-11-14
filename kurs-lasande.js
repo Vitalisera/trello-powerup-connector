@@ -22,6 +22,7 @@
     });
   }
 
+  var sekOppen = false;   // avsnittet Deltagare: infällt tills man trycker på rubriken
   var ORD = { gap: 'Lucka', wait: 'Väntar', manual: 'Manuellt' };
 
   // Dokumentlänkar för en deltagare (Robert 2026-11-14: "Varför visas inte länken till livsberättelser etc?").
@@ -78,7 +79,8 @@
   function listaHtml(model) {
     var ps = (model && model.participants) || [];
     var steps = (model && model.steps) || [];
-    return '<div class="vz-ml-topp"><h3>Deltagare (' + ps.length + ')</h3>'
+    return '<summary class="vz-sek-rub">Deltagare (' + ps.length + ')</summary>'
+      + '<div class="vz-ml-topp">'
       + '<button type="button" class="vz-ml-vaxla" aria-pressed="false">Visa hela tabellen</button></div>'
       + (ps.length ? ps.map(function (p) { return radHtml(p, steps); }).join('') : '<p class="vz-ml-allt">Inga deltagare.</p>');
   }
@@ -88,10 +90,13 @@
     if (!host) { return; }
     var gammal = host.querySelector('#vz-mlista');
     if (gammal) { gammal.parentNode.removeChild(gammal); }
-    var el = document.createElement('section');
+    // Infälld från början (Robert 2026-11-14). Läget bevaras när sidan ritas om.
+    var el = document.createElement('details');
     el.id = 'vz-mlista';
-    el.className = 'vz-mlista';
+    el.className = 'vz-mlista vz-sek';
     el.innerHTML = listaHtml(model);
+    el.open = sekOppen;
+    el.addEventListener('toggle', function () { sekOppen = !!el.open; });
     host.insertBefore(el, host.firstChild);
     var knapp = el.querySelector('.vz-ml-vaxla');
     var visar = document.documentElement.classList.contains('vz-visa-tabell');
