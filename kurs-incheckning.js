@@ -1,6 +1,6 @@
 /* Webbappen: Incheckning (Robert 2026-11-14). Laddas BARA av kurs.html, efter course.js och kurs-listor.js.
  * Power-Upen i Trello laddar aldrig filen. Visar och sparar fliken "Incheckning" i kursets Rumsindelning-ark:
- * en bock per person och fälten anhörig, mobil (anhörig), förvaring, lån och anteckningar.
+ * en bock per person och fälten anhörig, mobil (anhörig), förvaring, lån, anteckningar och registreringsnummer (bil).
  * Listar BARA det som står i arket och försöker inte para ihop raderna med Trello-deltagarna.
  * Servern (gas/Code.gs, incheckning och incheckningSkriv) hittar arket själv på kursnamnet och skriver EN cell åt
  * gången, och läser tillbaka den. Skrivningar skickas med live:true: servern torrkör utan det.
@@ -17,7 +17,8 @@
     { key: 'mobil', etikett: 'Mobil (anhörig)', typ: 'tel' },
     { key: 'forvaring', etikett: 'Förvaring', typ: 'text' },
     { key: 'lan', etikett: 'Lån', typ: 'text' },
-    { key: 'anteckningar', etikett: 'Anteckningar', typ: 'area' }
+    { key: 'anteckningar', etikett: 'Anteckningar', typ: 'area' },
+    { key: 'regnr', etikett: 'Registreringsnummer (bil)', typ: 'text' }
   ];
   var MAX = 500;
 
