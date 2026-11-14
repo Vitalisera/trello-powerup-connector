@@ -23,7 +23,10 @@
   }
 
   var sekOppen = false;   // avsnittet Deltagare: infällt tills man trycker på rubriken
-  var ORD = { gap: 'Lucka', wait: 'Väntar', manual: 'Manuellt' };
+  // Läslägets egna ord (TL 2026-11-14, Erika): "Manuellt" lästes som "konstaterat/betalt". manual betyder bara att
+  // punkten inte är bockad (även betalsteg som automatiken bockar), wait att steget inte har börjat.
+  // Power-Upens ord (course-view.js) är orörda.
+  var ORD = { gap: 'Lucka', wait: 'Ej påbörjad', manual: 'Ej bockad' };
 
   // Dokumentlänkar för en deltagare (Robert 2026-11-14: "Varför visas inte länken till livsberättelser etc?").
   // Samma källor som Power-Upen: stegets eget dokument (storyLinkForCard, steg-medveten etikett), det medförda
@@ -64,7 +67,7 @@
     var klar = pr.total > 0 && pr.done >= pr.total;
     var lucka = p.gapCount ? '<span class="vz-ml-lucka">' + p.gapCount + (p.gapCount === 1 ? ' lucka' : ' luckor') + '</span>' : '';
     var lista = kvar.length
-      ? '<ul class="vz-ml-kvar">' + kvar.map(function (s) {
+      ? '<p class="vz-ml-kvarrub">Kvar (' + kvar.length + ')</p><ul class="vz-ml-kvar">' + kvar.map(function (s) {
           var v = st[s.key];
           return '<li class="vz-ml-' + escH(v) + '"><span>' + escH(s.title) + '</span><em>' + escH(ORD[v] || '') + '</em></li>';
         }).join('') + '</ul>'
