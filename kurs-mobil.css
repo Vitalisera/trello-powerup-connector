@@ -72,6 +72,64 @@ html.vz-lasande #root::before{
   .vz-cv-search input{width:100%}
 }
 
+/* ---- Hela tabellen i telefonen (Robert 2026-11-14): deltagare x 14 steg ryms i 390 px utan sidledsrullning.
+   Bara telefonbredd OCH tabelläge (knappen "Visa hela tabellen"). Datorn och Power-Upen berörs inte. ----
+   Budget i 390 px: matrisen är ca 376 px. Namn 92 + (betalkolumner 2 x 28) + 14 steg a ca 16 px. */
+@media (max-width:680px){
+  html.vz-lasande.vz-visa-tabell .vz-cv-matrixwrap{padding-right:0;overflow-x:hidden}
+  html.vz-lasande.vz-visa-tabell .vz-cv-table{table-layout:fixed;width:100%;max-width:none}
+
+  /* Namnkolumnen: hela namnet, bryts på flera rader, ingen stapel (5/14 står kvar). */
+  html.vz-lasande.vz-visa-tabell .vz-cv-table .vz-cv-corner,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal .vz-cv-corner,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table .vz-cv-namecell,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal .vz-cv-namecell{min-width:92px;width:92px;max-width:92px;box-sizing:border-box;padding:6px 5px;gap:0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-corner .ct{font-size:12px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-namecell .pname{display:block;white-space:normal;overflow:visible;text-overflow:clip;font-size:11.5px;line-height:1.2;overflow-wrap:anywhere;hyphens:auto}
+  html.vz-lasande.vz-visa-tabell .vz-cv-namecell .pname .gapflag{margin-left:3px;padding:0 4px;font-size:9px;vertical-align:1px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-namecell .vz-cv-prog{margin-top:2px;gap:0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-namecell .vz-cv-bar{display:none}
+  html.vz-lasande.vz-visa-tabell .vz-cv-namecell .vz-cv-prog .frac{font-size:11px}
+
+  /* Fasrubriker: korta ord, kryss och räknare bort. Okänd fas behåller sin text i liten stil. */
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead{padding:8px 1px 5px;letter-spacing:0;text-align:center;font-size:9px;white-space:normal}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead .vz-cv-chev,
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead .ph-count,
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead .bar{display:none}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead .ph-line{justify-content:center;gap:0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead .ph-name{font-size:9px;line-height:1.15;overflow-wrap:normal}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead[data-phase-key^="Anm"] .ph-name,
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead[data-phase-key^="Slut"] .ph-name{font-size:0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead[data-phase-key^="Anm"] .ph-name::before{content:"Anmälan";font-size:9px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-phasehead[data-phase-key^="Slut"] .ph-name::before{content:"Slut";font-size:9px}
+
+  /* Stegrubriker: lodräta, lästa nerifrån och upp, med stegnumret under. */
+  html.vz-lasande.vz-visa-tabell .vz-cv-stephead:not(.vz-cv-namehead):not(.vz-cv-collapsed-head){width:auto;min-width:0;max-width:none;height:150px;padding:0 0 4px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-stephead .stitle,
+  html.vz-lasande.vz-visa-tabell .vz-cv-bethead .stitle{position:static;display:block;margin:0 auto 4px;transform:rotate(180deg);transform-origin:center;writing-mode:vertical-rl;font-size:10px;line-height:1.1;letter-spacing:0;white-space:nowrap}
+  html.vz-lasande.vz-visa-tabell .vz-cv-stephead .sidx{width:15px;height:15px;font-size:9px}
+
+  /* Celler: små ikoner (bock, tom ring, hand). */
+  html.vz-lasande.vz-visa-tabell .vz-cv-cell{padding:7px 0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-dot{width:16px;height:16px;border-width:1.5px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-dot svg{width:10px;height:10px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-dot .glyph{font-size:9px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-dot.d-gap{box-shadow:0 0 0 2px rgba(181,113,11,.16);animation:none}
+  html.vz-lasande.vz-visa-tabell .vz-cv-docpct{font-size:7px;letter-spacing:-.4px;padding:1px 0;border-radius:5px;width:100%;box-sizing:border-box}
+  html.vz-lasande.vz-visa-tabell .vz-cv-docpct .dp-img{display:none}
+  html.vz-lasande.vz-visa-tabell .vz-cv-collapsed-head{min-width:0;width:auto}
+
+  /* Betalkolumnerna (om de finns): smala, texten i liten stil. */
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal th.vz-cv-bethead,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal td.vz-cv-betalcell,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal th.vz-cv-bethead.phase-edge,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal td.vz-cv-betalcell[data-betal-roll="anmalan"],
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal th.vz-cv-bethead:last-child,
+  html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal td.vz-cv-betalcell[data-betal-roll="slut"]{width:32px;min-width:32px;max-width:32px;padding:2px 0;text-align:center;box-sizing:border-box}
+  html.vz-lasande.vz-visa-tabell .vz-cv-bt{font-size:7px;line-height:1.15;padding:1px 0;border-radius:5px;width:100%;overflow-wrap:normal;word-break:keep-all;letter-spacing:-.02em}
+  html.vz-lasande.vz-visa-tabell .vz-cv-bt.bt-none{font-size:7px;padding:1px 0}
+}
+
 /* ---- Deltagarlistan i telefonen (kurs-lasande.js). Ersätter tabellen under 680 px; tabellen nås via knappen.
    Över 680 px syns tabellen som förut och listan inte alls. ---- */
 .vz-mlista{display:none}

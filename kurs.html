@@ -4,7 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Kurser" />
+  <meta name="apple-mobile-web-app-title" content="Kursöversikt" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#08445c" />
+  <link rel="manifest" href="./kurs-manifest.json" />
+  <link rel="apple-touch-icon" href="./kurs-ikon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./kurs-ikon-192.png" />
   <title>Kursöversikt</title>
   <!-- Webbappen steg 2 (Robert 2026-11-14): kursöversikten som egen sida, för att SE. Samma filer som Power-Upen,
        men ersättaren fristaende.js i stället för Trellos bibliotek, och läsläge: inga skrivningar härifrån. -->
@@ -12,7 +18,7 @@
     // Standardversion för webbappens filer (Robert 2026-11-14: tabellen syntes i telefonen). Hemskärmsikonen öppnar
     // utan ?v, och då laddades filerna oversionerade, så en gammal cachad kurs-mobil.css kunde visas. HÖJ VID VARJE
     // UPPLADDNING av webbappens filer.
-    window.VZ_KURS_V = 'k9';
+    window.VZ_KURS_V = 'k10';
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
