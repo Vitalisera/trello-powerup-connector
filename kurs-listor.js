@@ -49,10 +49,14 @@
     }).catch(function () { return []; });
   }
 
-  function kartaHref(ark) {
+  // Robert 14/11: pdf-adressen laddas ned i telefonen i stället för att visas (Google skickar den som bilaga, det går
+  // inte att styra härifrån). Knappen öppnar därför kartfliken i Googles läsvy; pdf:en finns kvar som liten länk.
+  function kartaHref(ark, somPdf) {
     if (!ark || !ark.hittat || !ark.arkId || ark.kartaGid == null || ark.kartaGid === '') { return ''; }
-    return 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(ark.arkId) + '/export?format=pdf&gid=' +
-      encodeURIComponent(ark.kartaGid) + '&portrait=false&fitw=true';
+    var bas = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(ark.arkId);
+    return somPdf
+      ? bas + '/export?format=pdf&gid=' + encodeURIComponent(ark.kartaGid) + '&portrait=false&fitw=true'
+      : bas + '/htmlview?gid=' + encodeURIComponent(ark.kartaGid);
   }
 
   function rad(p, medRoll) {
@@ -66,9 +70,10 @@
   }
 
   function html(delt, pers, ark, notis) {
-    var karta = kartaHref(ark);
+    var karta = kartaHref(ark), kartaPdf = kartaHref(ark, true);
     return '<h3 class="vz-tel-rubrik">Telefonlista</h3>' +
-      (karta ? '<a class="vz-tel-karta" href="' + escH(karta) + '" target="_blank" rel="noopener">Rumskarta (pdf)</a>' : '') +
+      (karta ? '<a class="vz-tel-karta" href="' + escH(karta) + '" target="_blank" rel="noopener">Rumskarta</a>' +
+        '<p class="vz-tel-notis"><a href="' + escH(kartaPdf) + '" target="_blank" rel="noopener">Ladda ned som pdf</a></p>' : '') +
       (notis ? '<p class="vz-tel-notis">' + escH(notis) + '</p>' : '') +
       '<details open><summary>Deltagare (' + delt.length + ')</summary><ul class="vz-tel-lista">' +
       (delt.length ? delt.map(function (p) { return rad(p, false); }).join('') : '<li>Inga deltagare.</li>') +
