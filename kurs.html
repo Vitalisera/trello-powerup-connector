@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Kursöversikt" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#08445c" />
   <link rel="manifest" href="./kurs-manifest.json" />
@@ -17,8 +17,9 @@
   <script>
     // Standardversion för webbappens filer (Robert 2026-11-14: tabellen syntes i telefonen). Hemskärmsikonen öppnar
     // utan ?v, och då laddades filerna oversionerade, så en gammal cachad kurs-mobil.css kunde visas. HÖJ VID VARJE
-    // UPPLADDNING av webbappens filer.
-    window.VZ_KURS_V = 'k10';
+    // UPPLADDNING av webbappens filer, OCH i kurs-version.json (uppdateringsbanderollen jämför de två; proof_kursuppdatering.js
+    // fångar en glömd höjning).
+    window.VZ_KURS_V = 'k11';
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
@@ -37,7 +38,7 @@
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
-      ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q, './kurs-incheckning.js' + q, './kurs-nav.js' + q]
+      ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q, './kurs-incheckning.js' + q, './kurs-nav.js' + q, './kurs-uppdatering.js' + q]
         .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
     })();
   </script>
@@ -49,7 +50,7 @@
       b.id = 'vz-ver';
       b.textContent = 'v' + (sp.get('v') || window.VZ_KURS_V || '?');
       b.title = 'Connector-version';
-      b.style.cssText = 'position:fixed;bottom:6px;right:8px;z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
+      b.style.cssText = 'position:fixed;bottom:calc(6px + env(safe-area-inset-bottom,0px));right:calc(8px + env(safe-area-inset-right,0px));z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
       function add(){ (document.body || document.documentElement).appendChild(b); }
       if (document.body) { add(); } else { document.addEventListener('DOMContentLoaded', add); }
     })();

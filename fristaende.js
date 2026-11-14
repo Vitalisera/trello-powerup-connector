@@ -91,7 +91,7 @@
     a.id = 'vz-fr-glom';
     a.textContent = 'Glöm den här enheten';
     a.title = 'Tar bort inloggningen från den här webbläsaren. Nästa gång behöver du logga in igen.';
-    a.style.cssText = 'position:fixed;bottom:6px;left:8px;z-index:99999;font:600 12px/1 Calibri,system-ui,sans-serif;'
+    a.style.cssText = 'position:fixed;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:calc(8px + env(safe-area-inset-left,0px));z-index:99999;font:600 12px/1 Calibri,system-ui,sans-serif;'
       + 'color:#5d7c87;background:rgba(255,255,255,.9);border:1px solid #c9d6db;padding:5px 9px;border-radius:6px;cursor:pointer';
     a.addEventListener('click', function () { glom(); MINNE = ''; location.reload(); });
     document.body.appendChild(a);
@@ -106,7 +106,7 @@
       el = document.createElement('div');
       el.id = 'vz-fr-toast';
       el.setAttribute('role', 'status');
-      el.style.cssText = 'position:fixed;left:50%;bottom:40px;transform:translateX(-50%);z-index:100000;max-width:min(92vw,520px);'
+      el.style.cssText = 'position:fixed;left:50%;bottom:calc(40px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100000;max-width:min(92vw,520px);'
         + 'font:600 14px/1.4 Calibri,system-ui,sans-serif;color:#fff;background:#08445c;padding:10px 14px;border-radius:9px;'
         + 'box-shadow:0 4px 16px rgba(0,0,0,.2)';
       document.body.appendChild(el);
@@ -115,6 +115,60 @@
     el.hidden = false;
     if (toastTimer) { clearTimeout(toastTimer); }
     toastTimer = setTimeout(function () { el.hidden = true; }, 6000);
+  }
+
+  // Felrad överst (k11, Robert 2026-11-14): ett fel som annars ger en tom eller halv sida visas som en begriplig rad med
+  // "Försök igen". kod = teknisk kod i liten text (aldrig namn, e-post eller annat om en person). Får ALDRIG kasta,
+  // eftersom den körs i felvägar. Går att anropa flera gånger: raden uppdateras i stället för att dubbleras.
+  function visaFel(text, kod, forsok) {
+    try {
+      if (!document.body || !document.createElement) { return null; }
+      var el = document.getElementById ? document.getElementById('vz-fel') : null;
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'vz-fel';
+        el.setAttribute('role', 'alert');
+        el.style.cssText = 'box-sizing:border-box;margin:0;padding:12px 16px;background:#fdecea;border-bottom:2px solid #b23a2e;color:#7a1f14;'
+          + 'font:600 15px/1.4 Calibri,system-ui,sans-serif';
+        if (document.body.firstChild && document.body.insertBefore) { document.body.insertBefore(el, document.body.firstChild); }
+        else { document.body.appendChild(el); }
+      }
+      while (el.firstChild) { el.removeChild(el.firstChild); }
+      var rad = document.createElement('div');
+      rad.textContent = String(text || 'Något gick fel.');
+      el.appendChild(rad);
+      if (kod) {
+        var liten = document.createElement('div');
+        liten.style.cssText = 'margin-top:2px;font:400 12px/1.3 Calibri,system-ui,sans-serif;color:#8a4a42';
+        liten.textContent = 'Felkod: ' + String(kod).slice(0, 120);
+        el.appendChild(liten);
+      }
+      var kn = document.createElement('button');
+      kn.type = 'button';
+      kn.textContent = 'Försök igen';
+      kn.style.cssText = 'margin-top:8px;min-height:44px;padding:10px 16px;border:0;border-radius:10px;background:#08445c;color:#fff;'
+        + 'font:700 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer';
+      kn.addEventListener('click', function () { if (typeof forsok === 'function') { forsok(); } else { location.reload(); } });
+      el.appendChild(kn);
+      el.hidden = false;
+      return el;
+    } catch (e) { return null; }   // felraden själv får aldrig fälla något
+  }
+
+  // Webbappen (SIDA.lasande): vakter mot en tom sida. (1) Ett skript som inte går att hämta (nätet föll bort, cachad
+  // fil saknas) ger annars en tom vit sida utan förklaring. (2) Om #root fortfarande är tomt efter 15 s har ingen
+  // vy ritat något. Gäller bara kurs.html; obetalda.html har sina egna meddelanden och rörs inte.
+  if (SIDA.lasande) {
+    try {
+      if (typeof window.addEventListener === 'function') {
+        window.addEventListener('error', function (e) {
+          var el = e && e.target;
+          if (!el || el === window || String(el.tagName || '').toUpperCase() !== 'SCRIPT' || !el.src) { return; }
+          var fil = String(el.src).split('?')[0].split('/').pop();
+          visaFel('Sidan kunde inte laddas helt. Kontrollera nätet.', 'skript ' + fil);
+        }, true);
+      }
+    } catch (e) { /* ingen vakt tillgänglig i den här webbläsaren: sidan fungerar som förut */ }
   }
 
   var VANTA = new Promise(function () { /* löses aldrig: inloggningen visas i stället */ });
@@ -143,17 +197,20 @@
           var ut = {};
           (Array.isArray(arr) ? arr : []).forEach(function (pd) {
             if (!pd || (pd.access && pd.access !== 'shared')) { return; }
-            var v; try { v = JSON.parse(pd.value); } catch (e) { return; }
+            var v; try { v = JSON.parse(pd.value); } catch (e) { return; }   // tyst: en trasig rad hoppas över, övriga läses
             if (!v || typeof v !== 'object') { return; }
             Object.keys(v).forEach(function (k) { if (k.indexOf('vz_') === 0) { ut[k] = v[k]; } });
           });
           return ut;
         })
+        // TYST med avsikt (k11-genomgång): pluginData bär bara panelernas ordning och hopfällning. Faller hämtningen ger det
+        // standardlayouten, inte en tom sida; ett riktigt nätfel visar course.js själv i sin egen hämtning.
         .catch(function () { return {}; });
     }
     return lagringsCache[vag];
   }
   function lokal(k) {
+    // tyst: privat läge eller trasigt värde ger standardlayouten
     try { var s = localStorage.getItem('vz_fr_' + k); return s ? JSON.parse(s) : undefined; } catch (e) { return undefined; }
   }
 
@@ -191,6 +248,7 @@
   /* ---------- Läsläge: spärr i window.fetch ---------- */
   function atgard(body) {
     if (typeof body !== 'string') { return ''; }
+    // tyst: oläsbar kropp ger '' och stoppas av spärren (avsiktligt, fail-closed)
     try { var j = JSON.parse(body); return (j && typeof j.action === 'string') ? j.action : ''; } catch (e) { return ''; }
   }
   // Ren funktion (provas i proof.js): null = släpp igenom, annars skälet att stoppa.
@@ -235,11 +293,19 @@
 
   window.TrelloPowerUp = { iframe: function () { return t; } };
   window.VZ_FRISTAENDE = true;
-  window.VZ_FRISTAENDE_PROV = { sparrSkal: sparrSkal, LASATGARDER: LASATGARDER, LAS_TEXT: LAS_TEXT, t: t };
+  window.VZ_VISA_FEL = visaFel;
+  window.VZ_FRISTAENDE_PROV = { visaFel: visaFel, sparrSkal: sparrSkal, LASATGARDER: LASATGARDER, LAS_TEXT: LAS_TEXT, t: t };
 
   // Registreras före vyns egen DOMContentLoaded-lyssnare (det här skriptet laddas först).
   document.addEventListener('DOMContentLoaded', function () {
     if (SIDA.lasande && document.body) { document.body.classList.add('vz-lasande'); }
+    if (SIDA.lasande) {
+      // Täcker bara fallet att inget skript ritade något alls; en hämtning som hänger på "Hämtar …" fångas inte (k12).
+      setTimeout(function () {
+        var r = document.getElementById('root');
+        if (r && !String(r.innerHTML || '').replace(/\s+/g, '')) { visaFel('Sidan kunde inte laddas. Kontrollera nätet.', 'tom sida efter 15 s'); }
+      }, 15000);
+    }
     if (token()) { glomKnapp(); return; }
     // Vyns boot() ritar "Hämtar …"/"Anslut" och väntar på getToken(); vi ritar inloggningen efter den.
     setTimeout(inloggning, 0);

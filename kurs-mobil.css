@@ -212,12 +212,12 @@ html.vz-lasande #root::before{
 .vz-ic-lagvarning{display:block;margin-top:2px;font:12px/1.3 Calibri,system-ui,sans-serif;color:#6b7b82}
 
 /* ---- Snabbnavigering (kurs-nav.js): fast rad högst upp, rullar vågrätt om knapparna inte ryms. ---- */
-#vz-nav{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid #cfe0e3;max-width:100%;box-sizing:border-box}
+#vz-nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:#fff;border-bottom:1px solid #cfe0e3;max-width:100%;box-sizing:border-box}
 #vz-nav::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(90deg,rgba(255,255,255,0),#fff)}
 .vz-nav-rad{display:flex;gap:8px;padding:8px 36px 8px 10px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 .vz-nav-knapp{flex:none;min-height:44px;padding:10px 16px;border:1px solid #cfe0e3;border-radius:999px;background:#eef6f6;color:#08445c;font:700 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer;white-space:nowrap}
 .vz-nav-knapp:active{background:#08445c;color:#fff}
-#vz-mlista,.vz-region-matrix,#vz-tel,#vz-personal,#vz-ic{scroll-margin-top:64px}
+#vz-mlista,.vz-region-matrix,#vz-tel,#vz-personal,#vz-ic{scroll-margin-top:calc(64px + env(safe-area-inset-top,0px))}
 
 /* ---- Infällda avsnitt (Robert 2026-11-14): Telefonlista, Deltagare, Personal och Incheckning är stängda från start. ---- */
 .vz-sek > summary.vz-sek-rub,.vz-panel--aside.vz-sek-stangd .vz-panel-title,.vz-panel--aside[data-vz-sek] .vz-panel-title{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;list-style:none;font:700 16px/1.3 Calibri,system-ui,sans-serif;color:#08445c}
@@ -226,3 +226,17 @@ html.vz-lasande #root::before{
 .vz-sek[open] > summary.vz-sek-rub::before,.vz-panel--aside[data-vz-sek]:not(.vz-sek-stangd) .vz-panel-title::before{transform:rotate(90deg)}
 .vz-panel--aside.vz-sek-stangd > :not(.vz-panel-title){display:none !important}
 .vz-sek-stangd .vz-panel-title{margin-bottom:0 !important}
+
+/* ---- k11: uppdateringsbanderoll, felrad, installationsguide och iOS-säkra kanter. ---- */
+/* Banderollen (#vz-uppd) och guiden gäller alla bredder. Felraden (#vz-fel) stylas inline av fristaende.js. */
+#vz-uppd{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;box-sizing:border-box;padding:10px 16px;background:#08445c;color:#fff;font:600 14px/1.4 Calibri,system-ui,sans-serif}
+#vz-uppd button{min-height:44px;padding:10px 16px;border:0;border-radius:10px;background:#fff;color:#08445c;font:700 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer}
+#vz-guide{position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;box-sizing:border-box;background:rgba(8,68,92,.55);padding:calc(16px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px))}
+.vz-guide-kort{max-width:380px;padding:18px;border-radius:14px;background:#fff;color:#0d2f3c;box-shadow:0 8px 28px rgba(0,0,0,.3)}
+.vz-guide-kort p{margin:0 0 14px;font:16px/1.45 Calibri,system-ui,sans-serif}
+.vz-guide-kort button{min-height:44px;padding:10px 18px;border:0;border-radius:10px;background:#08445c;color:#fff;font:700 15px/1.2 Calibri,system-ui,sans-serif;cursor:pointer}
+
+/* Statusfältet (black-translucent, vit text): sidan går under det, så kanterna får utrymme. Fältet ovanför får sidhuvudets
+   petrolfärg så att den vita texten syns. env() är 0 i datorn, där inget ändras. */
+html.vz-lasande body{box-sizing:border-box;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+html.vz-lasande::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:#08445c;z-index:60;pointer-events:none}

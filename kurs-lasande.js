@@ -44,7 +44,7 @@
       var cd = typeof w.carriedDocForCourse === 'function' ? w.carriedDocForCourse(kurs) : null;
       if (cd && typeof w.carriedLinkForCard === 'function') { lagg(cd.label, w.carriedLinkForCard(kort, kurs)); }
       if (typeof w.commentLink === 'function' && w.HF_LINK_RES) { lagg('Hälsoformulär', w.commentLink(kort, w.HF_LINK_RES)); }
-    } catch (e) { /* en trasig länk får aldrig fälla listan */ }
+    } catch (e) { /* TYST (k11): en trasig dokumentlänk lämnar bara den länken utan; listan och övriga länkar ritas */ }
     return out;
   }
 
@@ -112,7 +112,19 @@
     });
   }
 
-  window.VZ_MLISTA_PROV = { radHtml: radHtml, listaHtml: listaHtml, rita: rita, dokLankar: dokLankar };
+  // VISAS (k11): kunde deltagarlistan inte ritas är telefonvyn tom (tabellen är dold i telefonbredd). Då visas en rad
+  // med skälet och "Försök igen" (ritar listan på nytt), och hela tabellen slås på så att kursen ändå går att se.
+  function ritaFel(rootEl, model, e) {
+    try { document.documentElement.classList.add('vz-visa-tabell'); } catch (e2) { /* klassen är bara en förbättring */ }
+    var kod = (e && (e.name || e.message)) ? String(e.name || '') + (e.message ? ': ' + String(e.message).slice(0, 80) : '') : 'okänt fel';
+    if (typeof window.VZ_VISA_FEL === 'function') {
+      window.VZ_VISA_FEL('Kunde inte visa deltagarlistan. Hela tabellen visas i stället.', 'lista ' + kod, function () {
+        try { rita(rootEl, model); var f = document.getElementById('vz-fel'); if (f) { f.hidden = true; } } catch (e3) { ritaFel(rootEl, model, e3); }
+      });
+    }
+  }
+
+  window.VZ_MLISTA_PROV = { ritaFel: ritaFel, radHtml: radHtml, listaHtml: listaHtml, rita: rita, dokLankar: dokLankar };
 
   // course.js anropar window.CourseView.render vid varje ritning; omslaget ritar listan efteråt.
   var cv = window.CourseView;
@@ -120,7 +132,7 @@
     var orig = cv.render;
     cv.render = function (rootEl, model) {
       try { return orig.apply(this, arguments); }
-      finally { try { rita(rootEl, model); } catch (e) { /* listan får aldrig fälla sidan */ } }
+      finally { try { rita(rootEl, model); } catch (e) { ritaFel(rootEl, model, e); } }
     };
   }
 })();
