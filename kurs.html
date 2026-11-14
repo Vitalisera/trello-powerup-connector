@@ -12,7 +12,7 @@
     // Standardversion för webbappens filer (Robert 2026-11-14: tabellen syntes i telefonen). Hemskärmsikonen öppnar
     // utan ?v, och då laddades filerna oversionerade, så en gammal cachad kurs-mobil.css kunde visas. HÖJ VID VARJE
     // UPPLADDNING av webbappens filer.
-    window.VZ_KURS_V = 'k3';
+    window.VZ_KURS_V = 'k5';
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
@@ -31,7 +31,7 @@
     (function () {
       var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
-      ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q]
+      ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q, './kurs-incheckning.js' + q]
         .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
     })();
   </script>

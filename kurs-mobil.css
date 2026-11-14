@@ -30,7 +30,7 @@ html.vz-lasande .vz-region-below{display:none !important}
 
 /* Banderoll överst: talar om att sidan bara visar. */
 html.vz-lasande #root::before{
-  content:"Den här sidan visar bara. Ändringar görs i Trello.";
+  content:"Den här sidan visar mest. Incheckningen kan ändras här, allt annat ändras i Trello.";
   display:block;margin:0 0 8px;padding:7px 12px;border-radius:9px;
   background:#eef6f6;border:1px solid #cfe0e3;color:#08445c;
   font:600 13px/1.4 Calibri,system-ui,sans-serif;text-align:center
@@ -118,3 +118,36 @@ html.vz-lasande #root::before{
 
 .vz-tel-karta{display:block;margin:6px 0 10px;padding:14px 12px;border-radius:10px;background:#eef6f6;color:#08445c;font:700 16px/1.2 Calibri,system-ui,sans-serif;text-align:center;text-decoration:none;min-height:44px;box-sizing:border-box}
 .vz-tel-notis{margin:0 0 8px;color:#5d7c87;font:12px/1.4 Calibri,system-ui,sans-serif}
+
+/* ---- Incheckning (kurs-incheckning.js): stor bock per person, fälten fälls ut vid tryck. ---- */
+.vz-ic{margin:0 0 14px;padding:12px 14px;border:1px solid #cfe0e3;border-radius:12px;background:#fff;max-width:100%;box-sizing:border-box}
+.vz-ic-rubrik{margin:0 0 6px;font:700 15px/1.3 Calibri,system-ui,sans-serif;color:#08445c}
+.vz-ic-raknare{margin:0 0 10px;font:700 16px/1.3 Calibri,system-ui,sans-serif;color:#0d2f3c}
+.vz-ic-notis{margin:0 0 8px;color:#5d7c87;font:12px/1.4 Calibri,system-ui,sans-serif}
+.vz-ic-rad{border-top:1px solid #eef3f4;padding:6px 0}
+.vz-ic-huvud{display:flex;align-items:stretch;gap:10px}
+.vz-ic-bock{flex:none;width:52px;min-height:52px;border:2px solid #3f7f8f;border-radius:12px;background:#fff;color:#fff;font:700 26px/1 system-ui,sans-serif;cursor:pointer;padding:0}
+.vz-ic-rad.is-incheckad .vz-ic-bock{background:#2f7a55;border-color:#2f7a55}
+.vz-ic-namn{flex:1 1 auto;min-width:0;min-height:52px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;padding:4px 6px;border:0;background:none;text-align:left;cursor:pointer;color:#0d2f3c}
+.vz-ic-n{font:600 16px/1.3 Calibri,system-ui,sans-serif;overflow-wrap:anywhere}
+.vz-ic-rum{font:13px/1.3 Calibri,system-ui,sans-serif;color:#5d7c87}
+.vz-ic-status-rad{min-height:0;padding-left:62px}
+.vz-ic-status{font:600 13px/1.4 Calibri,system-ui,sans-serif}
+.vz-ic-sparar{color:#5d7c87}.vz-ic-ok{color:#2f7a55}.vz-ic-fel{color:#a33a2a}
+.vz-ic-falten{padding:8px 0 4px 62px}
+.vz-ic-falten[hidden]{display:none}
+.vz-ic-falt{display:block;margin:0 0 10px}
+.vz-ic-falt span{display:block;margin:0 0 3px;font:600 13px/1.3 Calibri,system-ui,sans-serif;color:#5d7c87}
+.vz-ic-falt input,.vz-ic-falt textarea{width:100%;box-sizing:border-box;min-height:44px;padding:9px 10px;border:1px solid #cfe0e3;border-radius:8px;font:16px/1.3 Calibri,system-ui,sans-serif;color:#0d2f3c}
+.vz-ic-spara{min-height:44px;padding:10px 18px;border:0;border-radius:10px;background:#08445c;color:#fff;font:700 15px/1 Calibri,system-ui,sans-serif;cursor:pointer}
+/* Rutorna finns bara på rader som glidit: stämmer allt ritas ingen av dem. */
+.vz-ic-summa{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#fbefd9;border:1px solid #e6c27a;color:#6b4500;font:700 14px/1.35 Calibri,system-ui,sans-serif}
+.vz-ic-ruta{margin:6px 0 4px;padding:10px 12px;border-radius:10px;background:#fdeceb;border:2px solid #d9534f;color:#7a1f1a;font:600 14px/1.4 Calibri,system-ui,sans-serif}
+.vz-ic-kvitt,.vz-ic-ja,.vz-ic-nej{min-height:44px;margin:4px 8px 4px 0;padding:10px 14px;border-radius:10px;border:1px solid #cfe0e3;background:#fff;color:#08445c;font:700 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer}
+.vz-ic-ja{background:#08445c;color:#fff;border-color:#08445c}
+.vz-ic-dialog{margin:6px 0;padding:12px;border-radius:10px;background:#fff;border:2px solid #08445c}
+.vz-ic-dialog p{margin:0 0 8px;font:14px/1.4 Calibri,system-ui,sans-serif;color:#0d2f3c}
+.vz-ic-avviker .vz-ic-bock{opacity:.4;cursor:not-allowed}
+@media (max-width:680px){.vz-ic-status-rad,.vz-ic-falten{padding-left:0}}
+
+.vz-ic-lagvarning{display:block;margin-top:2px;font:12px/1.3 Calibri,system-ui,sans-serif;color:#6b7b82}

@@ -26,10 +26,13 @@
   'use strict';
   var NYCKEL = 'vz_fristaende_token';
   var SIDA = window.VZ_SIDA || {};
-  var LAS_TEXT = 'Den här sidan visar bara. Ändringar görs i Trello.';
+  var LAS_TEXT = 'Den här sidan visar mest. Incheckningen kan ändras här, allt annat ändras i Trello.';
   // Serveråtgärder som bara läser (genomgångna i gas/Code.gs och gas/Assistent.gs 2026-11-14).
   var LASATGARDER = ['ping', 'courseAllergies', 'courseGenderSplit', 'courseDocStatus', 'courseFollowupStatus',
-    'courseBetalstatus', 'courseBetalDetalj', 'betalOversikt', 'assistStatus', 'findCarriedDocs', 'kursark'];
+    'courseBetalstatus', 'courseBetalDetalj', 'betalOversikt', 'assistStatus', 'findCarriedDocs', 'kursark', 'incheckning'];
+  // Robert 2026-11-14: incheckningen i Rumsindelning-arket är det enda som får skrivas från webbappen. Skriver EN cell;
+  // servern tillåter bara fälten kryssruta, anhörig, mobil, förvaring, lån och anteckningar. Allt annat stoppas som förut.
+  var SKRIVUNDANTAG = ['incheckningSkriv'];
   var LOKALA_NYCKLAR = { vz_panel_layout: true, vz_panel_collapsed: true };
 
   function las() { try { return localStorage.getItem(NYCKEL) || ''; } catch (e) { return ''; } }
@@ -195,7 +198,8 @@
     url = String(url || '');
     metod = String(metod || 'GET').toUpperCase();
     if (gasUrl && url.indexOf(gasUrl) === 0) {
-      return (LASATGARDER.indexOf(atgard(body)) !== -1) ? null : 'serveråtgärd utanför läslistan';
+      var a = atgard(body);
+      return (LASATGARDER.indexOf(a) !== -1 || SKRIVUNDANTAG.indexOf(a) !== -1) ? null : 'serveråtgärd utanför läslistan';
     }
     if (metod !== 'GET' && metod !== 'HEAD') { return 'skrivning (' + metod + ')'; }
     return null;
