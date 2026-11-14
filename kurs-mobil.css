@@ -4,8 +4,8 @@
 /* ---- Läsläge: åtgärder döljs, kryssrutor går inte att klicka. Elementen ligger kvar i sidan
    (inte borttagna), så att framtida kontextstyrda knappar kan visas med en enda regel här. ---- */
 html.vz-lasande .vz-btn--send,
-html.vz-lasande .vz-pd-actions,
-html.vz-lasande .vz-pd-act,
+html.vz-lasande .vz-pd-actions > :not(a[target="_blank"]),
+html.vz-lasande .vz-pd-act:not(a[target="_blank"]),
 html.vz-lasande [class^="vz-assist"],
 html.vz-lasande [class*=" vz-assist"],
 html.vz-lasande #vz-pi-batch,
@@ -75,7 +75,9 @@ html.vz-lasande #root::before{
 /* ---- Deltagarlistan i telefonen (kurs-lasande.js). Ersätter tabellen under 680 px; tabellen nås via knappen.
    Över 680 px syns tabellen som förut och listan inte alls. ---- */
 .vz-mlista{display:none}
-@media (max-width:680px){
+/* Listan i ALLA telefoner, även liggande (844–932 px) och iPad: pekskärm utan hovring (Robert 2026-11-14 såg
+   tabellen i telefonen). Smal datorruta får listan också. Tabellen nås via knappen. */
+@media (max-width:680px), (hover:none) and (pointer:coarse){
   html.vz-lasande .vz-mlista{display:block;padding:12px 10px 4px}
   html.vz-lasande:not(.vz-visa-tabell) .vz-cv-matrixwrap,
   html.vz-lasande:not(.vz-visa-tabell) .vz-cv-foot,
@@ -97,6 +99,10 @@ html.vz-lasande #root::before{
 .vz-ml-kvar li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #eef3f4;font:14px/1.35 Calibri,system-ui,sans-serif;color:#0d2f3c}
 .vz-ml-kvar em{flex:none;font-style:normal;font-size:12px;color:#5d7c87}
 .vz-ml-kvar li.vz-ml-gap em{color:#8a5a00;font-weight:700}
+.vz-ml-lankar{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 10px}
+.vz-ml-lank{display:inline-flex;align-items:center;min-height:40px;padding:8px 12px;border-radius:9px;background:#eef6f6;border:1px solid #cfe0e3;color:#08445c;font:600 14px/1.2 Calibri,system-ui,sans-serif;text-decoration:none;box-sizing:border-box}
+.vz-ml-kort{background:#fff}
+.vz-ml-inga{align-self:center;color:#8a9ba1;font:13px/1.3 Calibri,system-ui,sans-serif}
 .vz-ml-allt{margin:0;padding:0 14px 12px;color:#2f7a55;font:600 14px/1.35 Calibri,system-ui,sans-serif}
 
 /* ---- Telefonlistan (kurs-listor.js): namn och tel-länk, stora tryckytor. ---- */

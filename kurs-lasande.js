@@ -24,6 +24,37 @@
 
   var ORD = { gap: 'Lucka', wait: 'Väntar', manual: 'Manuellt' };
 
+  // Dokumentlänkar för en deltagare (Robert 2026-11-14: "Varför visas inte länken till livsberättelser etc?").
+  // Samma källor som Power-Upen: stegets eget dokument (storyLinkForCard, steg-medveten etikett), det medförda
+  // dokumentet på steg 2 (carriedLinkForCard) och hälsoformuläret (commentLink + HF_LINK_RES). Bara https-länkar.
+  function dokLankar(p) {
+    var w = window, out = [];
+    var kort = w.COURSE_CARDS_BY_ID && p && w.COURSE_CARDS_BY_ID[p.key];
+    if (!kort) { return out; }
+    var kurs = w.COURSE_NAME || '';
+    function lagg(etikett, url) {
+      if (etikett && url && /^https:\/\//i.test(String(url)) && !out.some(function (l) { return l.url === url; })) { out.push({ etikett: etikett, url: String(url) }); }
+    }
+    try {
+      if (typeof w.storyLinkForCard === 'function' && typeof w.livsLabelForCourse === 'function') { lagg(w.livsLabelForCourse(kurs), w.storyLinkForCard(kort, kurs)); }
+      var cd = typeof w.carriedDocForCourse === 'function' ? w.carriedDocForCourse(kurs) : null;
+      if (cd && typeof w.carriedLinkForCard === 'function') { lagg(cd.label, w.carriedLinkForCard(kort, kurs)); }
+      if (typeof w.commentLink === 'function' && w.HF_LINK_RES) { lagg('Hälsoformulär', w.commentLink(kort, w.HF_LINK_RES)); }
+    } catch (e) { /* en trasig länk får aldrig fälla listan */ }
+    return out;
+  }
+
+  function lankarHtml(p) {
+    var l = dokLankar(p);
+    var kortUrl = p && p.cardUrl && /^https:\/\//i.test(String(p.cardUrl)) ? String(p.cardUrl) : '';
+    if (!l.length && !kortUrl) { return ''; }
+    return '<div class="vz-ml-lankar">'
+      + l.map(function (x) { return '<a class="vz-ml-lank" href="' + escH(x.url) + '" target="_blank" rel="noopener">' + escH(x.etikett) + ' ↗</a>'; }).join('')
+      + (l.length ? '' : '<span class="vz-ml-inga">Inga dokument på kortet ännu.</span>')
+      + (kortUrl ? '<a class="vz-ml-lank vz-ml-kort" href="' + escH(kortUrl) + '" target="_blank" rel="noopener">Trello-kortet ↗</a>' : '')
+      + '</div>';
+  }
+
   // En deltagare: sammanfattning (namn, n/total, luckor) och det som återstår, i stegordning.
   function radHtml(p, steps) {
     var st = p.status || {};
@@ -41,7 +72,7 @@
       + '<span class="vz-ml-namn">' + escH(p.name) + '</span>' + lucka
       + '<span class="vz-ml-prog"><span class="vz-ml-bar"><i style="width:' + Math.max(0, Math.min(100, Number(pr.pct) || 0)) + '%"></i></span>'
       + escH(pr.done + '/' + pr.total) + '</span>'
-      + '</summary>' + lista + '</details>';
+      + '</summary>' + lankarHtml(p) + lista + '</details>';
   }
 
   function listaHtml(model) {
@@ -73,7 +104,7 @@
     });
   }
 
-  window.VZ_MLISTA_PROV = { radHtml: radHtml, listaHtml: listaHtml, rita: rita };
+  window.VZ_MLISTA_PROV = { radHtml: radHtml, listaHtml: listaHtml, rita: rita, dokLankar: dokLankar };
 
   // course.js anropar window.CourseView.render vid varje ritning; omslaget ritar listan efteråt.
   var cv = window.CourseView;

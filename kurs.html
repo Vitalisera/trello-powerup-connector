@@ -9,8 +9,12 @@
   <!-- Webbappen steg 2 (Robert 2026-11-14): kursöversikten som egen sida, för att SE. Samma filer som Power-Upen,
        men ersättaren fristaende.js i stället för Trellos bibliotek, och läsläge: inga skrivningar härifrån. -->
   <script>
+    // Standardversion för webbappens filer (Robert 2026-11-14: tabellen syntes i telefonen). Hemskärmsikonen öppnar
+    // utan ?v, och då laddades filerna oversionerade, så en gammal cachad kurs-mobil.css kunde visas. HÖJ VID VARJE
+    // UPPLADDNING av webbappens filer.
+    window.VZ_KURS_V = 'k3';
     (function () {
-      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
       document.write('<link rel="stylesheet" href="./course.css' + q + '">');
       document.write('<link rel="stylesheet" href="./kurs-mobil.css' + q + '">');
@@ -25,7 +29,7 @@
   <script>
     window.VZ_SIDA = { titel: 'Kursöversikt', tavla: '5e3829153e99a8775073f2aa', lasande: true };   // Vitalisera Admin
     (function () {
-      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
       ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q]
         .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
@@ -37,7 +41,7 @@
       var sp = new URLSearchParams(location.search);
       var b = document.createElement('div');
       b.id = 'vz-ver';
-      b.textContent = 'v' + (sp.get('v') || '?');
+      b.textContent = 'v' + (sp.get('v') || window.VZ_KURS_V || '?');
       b.title = 'Connector-version';
       b.style.cssText = 'position:fixed;bottom:6px;right:8px;z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
       function add(){ (document.body || document.documentElement).appendChild(b); }
