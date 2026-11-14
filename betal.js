@@ -17,7 +17,8 @@ var BETAL_BOARDS = ['5e3829153e99a8775073f2aa', 'tXFUio8P'];   // Admin, Tidigar
 var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad', gammal: 'Obetald enligt äldre uppgifter' };
 var BETAL_STATUS_RANK = { forfallen: 0, obetald: 1, delbetald: 2, ej_bekraftad: 3, gammal: 4 };
 var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen och skälet till okand bor i config.js
-var FROM_COURSE = (new URLSearchParams(location.search)).get('from') === 'course';
+// 'kurs' = från den fristående kursöversikten (kurs.html, webbappen steg 2). Trello skickar aldrig det värdet.
+var FROM_COURSE = /^(course|kurs)$/.test((new URLSearchParams(location.search)).get('from') || '');
 
 function ROOT() { return document.getElementById('root'); }
 function esc(s) {

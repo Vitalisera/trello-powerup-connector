@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Kurser" />
+  <title>Kursöversikt</title>
+  <!-- Webbappen steg 2 (Robert 2026-11-14): kursöversikten som egen sida, för att SE. Samma filer som Power-Upen,
+       men ersättaren fristaende.js i stället för Trellos bibliotek, och läsläge: inga skrivningar härifrån. -->
+  <script>
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      document.write('<link rel="stylesheet" href="./course.css' + q + '">');
+      document.write('<link rel="stylesheet" href="./kurs-mobil.css' + q + '">');
+    })();
+  </script>
+  <style>html,body{height:100%;margin:0}</style>
+</head>
+<body>
+  <!-- data-vz-manual FRÅN START: sidan ligger överst i fönstret, så course-view.js demospärr (self !== top) gäller inte.
+       Utan attributet skulle påhittade deltagare (DEMO_MODEL) visas om course.js inte hann laddas. -->
+  <div id="root" data-vz-manual="1"></div>
+  <script>
+    window.VZ_SIDA = { titel: 'Kursöversikt', tavla: '5e3829153e99a8775073f2aa', lasande: true };   // Vitalisera Admin
+    (function () {
+      var v = (new URLSearchParams(location.search)).get('v') || '';
+      var q = v ? ('?v=' + encodeURIComponent(v)) : '';
+      ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-listor.js' + q]
+        .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
+    })();
+  </script>
+  <!-- Versions-badge (cache-diagnos). -->
+  <script>
+    (function () {
+      var sp = new URLSearchParams(location.search);
+      var b = document.createElement('div');
+      b.id = 'vz-ver';
+      b.textContent = 'v' + (sp.get('v') || '?');
+      b.title = 'Connector-version';
+      b.style.cssText = 'position:fixed;bottom:6px;right:8px;z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
+      function add(){ (document.body || document.documentElement).appendChild(b); }
+      if (document.body) { add(); } else { document.addEventListener('DOMContentLoaded', add); }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+/* Webbappen steg 2 (Robert 2026-11-14): kursöversikten i telefonen. Laddas BARA av kurs.html, efter course.css.
+   Power-Upen i Trello laddar aldrig den här filen. */
+
+/* ---- Läsläge: åtgärder döljs, kryssrutor går inte att klicka. Elementen ligger kvar i sidan
+   (inte borttagna), så att framtida kontextstyrda knappar kan visas med en enda regel här. ---- */
+html.vz-lasande .vz-btn--send,
+html.vz-lasande .vz-pd-actions,
+html.vz-lasande .vz-pd-act,
+html.vz-lasande [class^="vz-assist"],
+html.vz-lasande [class*=" vz-assist"],
+html.vz-lasande #vz-pi-batch,
+html.vz-lasande #vz-hf-sharefolder,
+html.vz-lasande .vz-hf-share,
+html.vz-lasande .vz-pi-send,
+html.vz-lasande #vz-allergi-kock,
+html.vz-lasande #vz-mail-btn,
+html.vz-lasande #vzchk-add,
+html.vz-lasande #vzchk-new,
+html.vz-lasande .vz-panel-drag{display:none !important}
+html.vz-lasande .vzchk-box,
+html.vz-lasande .vzchk-daysinp,
+html.vz-lasande .vz-story-box,
+html.vz-lasande #vz-hf-doctor,
+html.vz-lasande .vz-cv-betalcell{pointer-events:none}
+html.vz-lasande .vz-cv-betalcell.vz-cv-betalklick{cursor:default}
+
+/* Banderoll överst: talar om att sidan bara visar. */
+html.vz-lasande #root::before{
+  content:"Den här sidan visar bara. Ändringar görs i Trello.";
+  display:block;margin:0 0 8px;padding:7px 12px;border-radius:9px;
+  background:#eef6f6;border:1px solid #cfe0e3;color:#08445c;
+  font:600 13px/1.4 Calibri,system-ui,sans-serif;text-align:center
+}
+
+/* ---- Telefon ---- */
+@media (max-width:680px){
+  html.vz-lasande #root{padding:6px 6px 40px}
+  .vz-course{padding:0}
+  .vz-cv-shell{border-radius:14px}
+
+  /* Sidhuvudet: staplas, inget sticker ut åt höger. */
+  .vz-cv-topbar{flex-wrap:wrap;gap:10px;padding:12px 14px;border-radius:14px 14px 0 0}
+  .vz-cv-topbar > *{min-width:0;max-width:100%}
+
+  /* Matrisen: egen vågrät rullning, namnkolumnen står still. Sidan själv rullar aldrig i sidled. */
+  .vz-cv-matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-right:60px}
+  .vz-cv-corner,.vz-cv-namehead,.vz-cv-namecell,
+  .vz-cv-table.has-betal .vz-cv-namecell,.vz-cv-table.has-betal .vz-cv-corner,
+  .vz-cv-table.has-betal .vz-cv-stephead.vz-cv-namehead{min-width:128px;width:128px;max-width:128px}
+  .vz-cv-namecell{padding:8px 8px;gap:7px}
+  .vz-cv-corner{padding:10px 8px}
+  .vz-cv-corner .cn{display:none}
+  .vz-cv-namecell .vz-cv-av,.vz-cv-namecell [class*="avatar"]{display:none}
+  .vz-cv-bar{min-width:40px}
+
+  /* Nedre delen och personalrutan: en kolumn, full bredd. */
+  .vz-region-below{padding:12px 10px 18px;flex-direction:column;align-items:stretch}
+  .vz-course .vz-panel-col{flex:none;width:100%;min-height:0}
+  .vz-course .vz-panel-col:empty{display:none}
+  .vz-course .vz-panel-wrap .vz-panel--below{height:auto;overflow-x:auto}
+  .vz-course .vz-panel-wrap,.vz-course .vz-panel--below{max-width:100%}
+  /* ? och ▾ ligger absolut uppe till höger; ⠿ är dold i läsläget, så de flyttas ut och rubriken får plats. */
+  html.vz-lasande .vz-course .vz-panel-collapse{right:12px}
+  html.vz-lasande .vz-course .vz-panel-help{right:50px}
+  .vz-course .vz-panel-wrap .vz-panel--below > *:first-child{padding-right:84px}
+  .vz-region-aside{padding:12px 10px}
+  .vz-course .vz-col-status{width:auto;max-width:100%}
+  .vz-cv-search input{width:100%}
+}
+
+/* ---- Telefonlistan (kurs-listor.js): namn och tel-länk, stora tryckytor. ---- */
+.vz-tel{margin:0 0 14px;padding:12px 14px;border:1px solid #cfe0e3;border-radius:12px;background:#fff}
+.vz-tel-rubrik{margin:0 0 6px;font:700 15px/1.3 Calibri,system-ui,sans-serif;color:#08445c}
+.vz-tel summary{cursor:pointer;font:600 14px/1.4 Calibri,system-ui,sans-serif;color:#08445c;padding:6px 0}
+.vz-tel-lista{list-style:none;margin:0;padding:0}
+.vz-tel-lista li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef3f4;font:14px/1.35 Calibri,system-ui,sans-serif}
+.vz-tel-namn{min-width:0;overflow-wrap:anywhere}
+.vz-tel-roll{color:#5d7c87;font-size:12px}
+.vz-tel-nr{flex:none;padding:6px 10px;border-radius:8px;background:#eef6f6;color:#08445c;font-weight:600;text-decoration:none;white-space:nowrap}
+.vz-tel-saknas{flex:none;color:#8a9ba1;font-size:12px}
