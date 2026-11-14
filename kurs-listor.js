@@ -55,7 +55,7 @@
     if (!ark || !ark.hittat || !ark.arkId || ark.kartaGid == null || ark.kartaGid === '') { return ''; }
     var bas = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(ark.arkId);
     return somPdf
-      ? bas + '/export?format=pdf&gid=' + encodeURIComponent(ark.kartaGid) + '&portrait=false&fitw=true'
+      ? bas + '/export?format=pdf&gid=' + encodeURIComponent(ark.kartaGid) + '&portrait=true&scale=4&size=A4&gridlines=false'
       : bas + '/htmlview?gid=' + encodeURIComponent(ark.kartaGid);
   }
 
