@@ -2196,6 +2196,12 @@ function sendPracticalInfoFlow(targets, courseName, btn, label, onSent) {
   });
 }
 
+/* Namnet som står i kock-mejlets matallergirader: hela namnet (för- och efternamn), blanksteg hopslagna.
+ * Aldrig bara förnamn: samma förnamn förekommer på samma kurs (tre Erika 18-26/11 2026). */
+function allergiVisningsnamn_(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim();
+}
+
 function loadHfPanel(cards, courseName) {
   var rows = (cards || []).map(function (c, i) {
     var hf = hfDoneForCard(c);
@@ -2423,15 +2429,9 @@ function renderHfPanel(rows, courseName) {
           // ── Malins mall: per person, FÖRNAMN, mejl-ramat. ──
           var raw = String(data.summary || '');
           var byCode = data.byCode || {};
-          // Förnamn; kollision (samma förnamn på flera) → + efternamnsinitial ("Lena S").
-          var firstCount = {};
-          Object.keys(codeToName).forEach(function (code) {
-            var fn = (codeToName[code] || '').trim().split(/\s+/)[0]; if (fn) { firstCount[fn] = (firstCount[fn] || 0) + 1; }
-          });
-          function displayFirst(code) {
-            var toks = (codeToName[code] || '').trim().split(/\s+/); var fn = toks[0] || '';
-            return (firstCount[fn] > 1 && toks.length > 1) ? (fn + ' ' + toks[toks.length - 1].charAt(0)) : fn;
-          }
+          // Fullständigt namn (Robert 15/11 via TL): tre Erika på samma kurs gav bara "Erika" i kock-mejlet,
+          // och en initial kan också krocka. För allergier måste namnet vara entydigt.
+          function displayFirst(code) { return allergiVisningsnamn_(codeToName[code]) || code; }
           function deanonFirst(s) {
             Object.keys(codeToName).forEach(function (code) { s = s.replace(new RegExp('\\b' + code + '\\b', 'g'), displayFirst(code)); });
             return s;
