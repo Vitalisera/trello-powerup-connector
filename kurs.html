@@ -19,9 +19,9 @@
     // utan ?v, och då laddades filerna oversionerade, så en gammal cachad kurs-mobil.css kunde visas. HÖJ VID VARJE
     // UPPLADDNING av webbappens filer, OCH i kurs-version.json (uppdateringsbanderollen jämför de två; proof_kursuppdatering.js
     // fångar en glömd höjning).
-    window.VZ_KURS_V = 'k11';
+    window.VZ_KURS_V = 'k12';
     (function () {
-      var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
+      var v = window.VZ_KURS_V;   // ?v i adressen ignoreras helt: html, css och js ska alltid höra ihop (Robert 14/11: kurs.html?v=176)
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
       document.write('<link rel="stylesheet" href="./course.css' + q + '">');
       document.write('<link rel="stylesheet" href="./kurs-mobil.css' + q + '">');
@@ -36,7 +36,7 @@
   <script>
     window.VZ_SIDA = { titel: 'Kursöversikt', tavla: '5e3829153e99a8775073f2aa', lasande: true };   // Vitalisera Admin
     (function () {
-      var v = (new URLSearchParams(location.search)).get('v') || window.VZ_KURS_V;
+      var v = window.VZ_KURS_V;   // ?v i adressen ignoreras helt: html, css och js ska alltid höra ihop (Robert 14/11: kurs.html?v=176)
       var q = v ? ('?v=' + encodeURIComponent(v)) : '';
       ['./fristaende.js' + q, './config.js' + q, './course-view.js' + q, './course.js' + q, './kurs-lasande.js' + q, './kurs-listor.js' + q, './kurs-incheckning.js' + q, './kurs-nav.js' + q, './kurs-uppdatering.js' + q]
         .forEach(function (src) { document.write('<script src="' + src + '"><\/script>'); });
@@ -45,10 +45,9 @@
   <!-- Versions-badge (cache-diagnos). -->
   <script>
     (function () {
-      var sp = new URLSearchParams(location.search);
       var b = document.createElement('div');
       b.id = 'vz-ver';
-      b.textContent = 'v' + (sp.get('v') || window.VZ_KURS_V || '?');
+      b.textContent = 'v' + (window.VZ_KURS_V || '?');   // sidans egen version, inte ?v ur adressen
       b.title = 'Connector-version';
       b.style.cssText = 'position:fixed;bottom:calc(6px + env(safe-area-inset-bottom,0px));right:calc(8px + env(safe-area-inset-right,0px));z-index:99999;font:600 11px/1 Calibri,system-ui,sans-serif;color:#5d7c87;background:rgba(255,255,255,.82);padding:3px 7px;border-radius:6px;pointer-events:none;opacity:.7';
       function add(){ (document.body || document.documentElement).appendChild(b); }

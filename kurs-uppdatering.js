@@ -21,18 +21,22 @@
     return typeof ny === 'string' && /^[A-Za-z0-9._-]{1,20}$/.test(ny) && String(lokal || '') !== ny;
   }
 
-  // Versionen filerna faktiskt laddades med: ?v i adressen om den finns, annars sidans egen.
+  // Sidans EGEN version (VZ_KURS_V i kurs.html), aldrig ?v ur adressen: ?v är bara cachebrytare och kan vara vad som helst
+  // (en gammal länk med ?v=176 fick annars banderollen att stå kvar för alltid och märket visa fel).
   function lokalVersion() {
-    var v = '';
-    try { v = (new URLSearchParams(location.search)).get('v') || ''; } catch (e) { /* ingen adress att läsa: sidans egen version gäller */ }
-    return v || window.VZ_KURS_V || '';
+    return window.VZ_KURS_V || '';
+  }
+
+  // Ren funktion (provas): ska banderollen visas? lokal = versionen sidan kör med, ny = svaret ur kurs-version.json.
+  function skiljer(lokal, ny) {
+    return typeof ny === 'string' && /^[A-Za-z0-9._-]{1,20}$/.test(ny) && String(lokal || '') !== ny;
   }
 
   // Ren funktion (provas): adressen "Ladda om" går till. Behåller övriga parametrar, sätter ?v=<ny> och en cachebrytare
   // så att den cachade kurs.html inte används igen. Hashen lämnas (den bär aldrig något efter inloggningen).
   function laddaOmUrl(nuvarande, ny, nu) {
     var u = new URL(nuvarande);
-    u.searchParams.set('v', ny);
+    u.searchParams.delete('v');   // sidan väljer själv sin version (VZ_KURS_V); ett ?v i adressen får aldrig styra css och js
     u.searchParams.set('_', String(nu));
     return u.pathname + u.search;
   }
@@ -56,9 +60,16 @@
     document.body.insertBefore(el, document.body.firstChild);
   }
 
+  /* En omladdning kräver att inloggningen överlever: utan fungerande localStorage (Safari privat, token bara i minnet) vore
+   * "Ladda om" en väg till utloggning. Då visas ingen banderoll alls. */
+  function lagringFungerar() {
+    try { var k = 'vz_lagringstest'; localStorage.setItem(k, '1'); var ok = localStorage.getItem(k) === '1'; localStorage.removeItem(k); return ok; } catch (e) { return false; }
+  }
+
   function kolla() {
     var nu = Date.now();
     if (visad || nu - senast < INTERVALL_MS) { return; }
+    if (!lagringFungerar()) { return; }
     senast = nu;
     if (typeof window.fetch !== 'function') { return; }
     try {
@@ -127,7 +138,7 @@
     document.body.appendChild(ov);
   }
 
-  window.VZ_UPPDATERING_PROV = { skiljer: skiljer, laddaOmUrl: laddaOmUrl, kolla: kolla, guideFor: guideFor, enhet: enhet, visaGuide: visaGuide, lokalVersion: lokalVersion };
+  window.VZ_UPPDATERING_PROV = { skiljer: skiljer, laddaOmUrl: laddaOmUrl, kolla: kolla, guideFor: guideFor, enhet: enhet, visaGuide: visaGuide, lokalVersion: lokalVersion, lagringFungerar: lagringFungerar };
 
   function start() {
     kolla();

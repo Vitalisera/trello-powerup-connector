@@ -32,7 +32,8 @@
     'courseBetalstatus', 'courseBetalDetalj', 'betalOversikt', 'assistStatus', 'findCarriedDocs', 'kursark', 'incheckning'];
   // Robert 2026-11-14: incheckningen i Rumsindelning-arket är det enda som får skrivas från webbappen. Skriver EN cell;
   // servern tillåter bara fälten kryssruta, anhörig, mobil, förvaring, lån och anteckningar. Allt annat stoppas som förut.
-  var SKRIVUNDANTAG = ['incheckningSkriv'];
+  // k12: betalHamtaNu skriver ETT fält (meta.begard) och används bara av banknappen, som är dold tills BANKKNAPP_PA slås på i config.js.
+  var SKRIVUNDANTAG = ['incheckningSkriv', 'betalHamtaNu'];
   var LOKALA_NYCKLAR = { vz_panel_layout: true, vz_panel_collapsed: true };
 
   function las() { try { return localStorage.getItem(NYCKEL) || ''; } catch (e) { return ''; } }
@@ -300,10 +301,14 @@
   document.addEventListener('DOMContentLoaded', function () {
     if (SIDA.lasande && document.body) { document.body.classList.add('vz-lasande'); }
     if (SIDA.lasande) {
-      // Täcker bara fallet att inget skript ritade något alls; en hämtning som hänger på "Hämtar …" fångas inte (k12).
+      // Fångar både en helt tom sida och en som hänger på "Hämtar …" (k12): efter 15 s ska något annat än laddtexten synas.
       setTimeout(function () {
         var r = document.getElementById('root');
-        if (r && !String(r.innerHTML || '').replace(/\s+/g, '')) { visaFel('Sidan kunde inte laddas. Kontrollera nätet.', 'tom sida efter 15 s'); }
+        if (!r) { return; }
+        var txt = String(r.textContent || '').replace(/\s+/g, ' ').trim();
+        var tom = !String(r.innerHTML || '').replace(/\s+/g, '');
+        var hanger = /^(⏳\s*)?Hämtar\b/.test(txt) && !(r.querySelector && r.querySelector('table, .vz-cv-table, .vz-mlista'));
+        if (tom || hanger) { visaFel(tom ? 'Sidan kunde inte laddas. Kontrollera nätet.' : 'Hämtningen tar för lång tid. Kontrollera nätet och försök igen.', (tom ? 'tom sida' : 'hänger på Hämtar') + ' efter 15 s'); }
       }, 15000);
     }
     if (token()) { glomKnapp(); return; }

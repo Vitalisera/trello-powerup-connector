@@ -902,3 +902,8 @@
 .vz-slack-ok:disabled { opacity: .65; cursor: default; }
 .vz-slack-avbryt { background: #fff; color: var(--dark); }
 
+
+/* k12: banknappen i Kursöversikten (visas bara när BANKKNAPP_PA är på i config.js) */
+.vz-cv-bankbtn{min-height:44px;margin:0 8px;padding:8px 14px;border:1px solid #cfe0e3;border-radius:10px;background:#fff;color:#08445c;font:600 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
+.vz-cv-bankbtn:disabled{opacity:.6;cursor:default}
+.vz-cv-bankmsg{display:block;max-width:34em;font:400 13px/1.4 Calibri,system-ui,sans-serif;color:#0d2f3c}

@@ -14,7 +14,7 @@
 var CFG = window.NYA_ZAPIER_CONFIG;
 var t = TrelloPowerUp.iframe({ appKey: CFG.APP_KEY, appName: CFG.APP_NAME, appAuthor: CFG.APP_AUTHOR });
 var BETAL_BOARDS = ['5e3829153e99a8775073f2aa', 'tXFUio8P'];   // Admin, Tidigare kurser
-var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad', gammal: 'Obetald enligt äldre uppgifter' };
+var BETAL_STATUS_TEXT = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej hittad', gammal: 'Obetald enligt äldre uppgifter' };
 var BETAL_STATUS_RANK = { forfallen: 0, obetald: 1, delbetald: 2, ej_bekraftad: 3, gammal: 4 };
 var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen och skälet till okand bor i config.js
 // 'kurs' = från den fristående kursöversikten (kurs.html, webbappen steg 2). Trello skickar aldrig det värdet.
@@ -28,13 +28,24 @@ function esc(s) {
 }
 
 /* ---------- GAS (samma mönster som course.js: text/plain, ingen preflight) ---------- */
+/* Mobilstandard 1 (k12): samma timeout som course.js (30 s), så att ingen vy hänger på "Hämtar …". */
+var GAS_TIMEOUT_MS = 30000;
+function fetchMedTimeout_(url, opt) {
+  var ac = (typeof AbortController === 'function') ? new AbortController() : null;
+  var timer = null, avbrutet = false;
+  if (ac) { opt = Object.assign({}, opt, { signal: ac.signal }); timer = setTimeout(function () { avbrutet = true; try { ac.abort(); } catch (e) { /* inget att avbryta */ } }, GAS_TIMEOUT_MS); }
+  return fetch(url, opt).then(function (r) { if (timer) { clearTimeout(timer); } return r; }, function (e) {
+    if (timer) { clearTimeout(timer); }
+    throw (avbrutet ? new Error('Servern svarade inte inom ' + Math.round(GAS_TIMEOUT_MS / 1000) + ' sekunder. Försök igen.') : e);
+  });
+}
 function postToGas(action, payload) {
   var url = CFG.GAS_URL;
   if (!url || url.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
     return Promise.reject(new Error('GAS_URL är inte ifylld i config.js'));
   }
   var tokP; try { tokP = t.getRestApi().getToken().then(function (x) { return x || ''; }, function () { return ''; }); } catch (e) { tokP = Promise.resolve(''); }
-  return tokP.then(function (tok) { return fetch(url, {
+  return tokP.then(function (tok) { return fetchMedTimeout_(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: action, payload: payload || {}, token: tok || undefined }),
@@ -241,7 +252,7 @@ function renderOversikt(svar, info) {
     body = msgHtml('vz-bt-empty', 'Inga obetalda fakturor.');
   } else {
     body = '<div class="vz-bt-tablewrap"><table class="vz-bt-table"><thead><tr>'
-      + '<th>Deltagare</th><th>Kurs</th><th>Faktura</th><th class="num">Belopp</th><th>Förfallodag</th><th>Status</th><th class="num">Dagar sedan förfallodagen</th>'
+      + '<th>Deltagare</th><th>Kurs</th><th>Faktura</th><th class="num">Belopp</th><th>Förfallodag</th><th>Status</th><th class="num">Dagar sedan förfallodagen' + (window.NYA_ZAPIER_INFO ? window.NYA_ZAPIER_INFO.knapp('dagar') : '') + '</th>'
       + (SLACK_OK ? '<th>Åtgärd</th>' : '')
       + '</tr></thead><tbody>'
       + rader.map(function (r) {
@@ -254,14 +265,14 @@ function renderOversikt(svar, info) {
           + '<td data-label="Faktura"' + (BR.arOkand(r) ? ' title="' + esc(BR.skalOkand(r, r.antalPaKortet)) + '"' : '') + '>' + esc((r.fakturanr ? r.fakturanr + ' ' : '') + BR.namn(r.typ)) + '</td>'
           + '<td data-label="Belopp" class="num">' + esc(fmtBelopp(r.belopp)) + '</td>'
           + '<td data-label="Förfallodag">' + esc(r.forfallodag || '–') + '</td>'
-          + '<td data-label="Status"><span class="vz-bt-pill ' + esc(r.status) + '">' + esc(BETAL_STATUS_TEXT[r.status] || r.status) + '</span></td>'
+          + '<td data-label="Status"><span class="vz-bt-pill ' + esc(r.status) + '">' + esc(BETAL_STATUS_TEXT[r.status] || r.status) + '</span>' + (r.status === 'ej_bekraftad' ? (window.NYA_ZAPIER_INFO ? window.NYA_ZAPIER_INFO.knapp('ej_bekraftad') : '') : r.status === 'forfallen' ? (window.NYA_ZAPIER_INFO ? window.NYA_ZAPIER_INFO.knapp('forfallen') : '') : '') + '</td>'
           + '<td data-label="Dagar sedan förfallodagen" class="num">' + esc(dagar) + '</td>'
           + (SLACK_OK ? '<td data-label="Åtgärd">' + (r.fakturanr
-            ? '<button type="button" class="vz-bt-slackbtn" data-slack="' + esc(radKey(r.kortId, r.fakturanr)) + '" title="' + tip('slack') + '">Släck</button>' : '') + '</td>' : '')
+            ? '<button type="button" class="vz-bt-slackbtn" data-slack="' + esc(radKey(r.kortId, r.fakturanr)) + '" title="' + tip('slack') + '">Släck</button>' + (window.NYA_ZAPIER_INFO ? window.NYA_ZAPIER_INFO.knapp('slack') : '') : '') + '</td>' : '')
           + '</tr>';
       }).join('')
       + '</tbody></table></div>'
-      + '<p class="vz-bt-note">Ej bekräftad: förfallodagen har passerat, men bokföringen var inte uppdaterad fram till den dagen när den lästes.</p>'
+      + '<p class="vz-bt-note">Ej hittad: förfallodagen har passerat, men varken banken eller bokföringen visar en betalning ännu.</p>'
       + (svar.gamlaUppgifter === true ? '<p class="vz-bt-note">Obetald enligt äldre uppgifter: fakturan hade ingen känd betalning när uppgifterna lästes. Den kan ha betalats sedan dess.</p>' : '');
   }
   var olas = '';
@@ -374,7 +385,7 @@ function toggleDetalj(tr) {
     modell: function (x) {
       var sl = SLACK[key] || null;
       var oppna = [{ fakturanr: rad.fakturanr, belopp: rad.belopp, status: rad.status, forfallodag: rad.forfallodag, slack: sl }];
-      var meta = x.detalj ? x.detalj.meta : { sieHamtad: CUR && CUR.svar.sieHamtad, bankHamtad: CUR && CUR.svar.bankHamtad, uppdaterad: CUR && CUR.svar.uppdaterad };
+      var meta = x.detalj ? x.detalj.meta : { sieHamtad: CUR && CUR.svar.sieHamtad, bankHamtad: CUR && CUR.svar.bankHamtad, uppdaterad: CUR && CUR.svar.uppdaterad, sieSenast: CUR && CUR.svar.sieSenast };
       var gas = x.detalj ? (x.detalj.rader || []).filter(function (g) { return g.kortId === rad.kortId; }) : null;
       return { titel: BR.namn(rad.typ) + ', ' + (rad.namn || 'okänt kort'), skal: BR.arOkand(rad) ? BR.skalOkand(rad, gas ? gas.length : rad.antalPaKortet) : '', rader: BD.rader(gas, rad.roll, oppna, SLACK_OK), meta: meta, epost: x.epost, bilagor: x.bilagor, detaljFel: x.detaljFel };
     }

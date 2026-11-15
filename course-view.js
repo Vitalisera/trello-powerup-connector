@@ -154,7 +154,7 @@
     }
     if (st === 'obetald') { dm = betalDM(cell.forfallodag); return { text: 'obetald', text2: dm, title: dm ? 'Obetald, förfaller ' + dm : 'Obetald', cls: 'bt-open' }; }
     if (st === 'forfallen') { return { text: 'förfallen', title: 'Förfallen: förfallodagen har passerat och fakturan är inte betald enligt bokföringen', cls: 'bt-late' }; }
-    if (st === 'ej_bekraftad') { return { text: 'ej bekräftad', title: 'Förfallodagen har passerat men bokföringen är inte ikapp', hint: 'Förfallodagen har passerat men bokföringen är inte ikapp', cls: 'bt-pending' }; }
+    if (st === 'ej_bekraftad') { return { text: 'ej hittad', title: 'Förfallodagen har passerat och varken banken eller bokföringen visar en betalning ännu', hint: 'Förfallodagen har passerat och varken banken eller bokföringen visar en betalning ännu', cls: 'bt-pending' }; }
     if (st === 'delbetald') { return { text: 'delbetald', title: 'Delbetald: en del av beloppet är betalt', cls: 'bt-neutral' }; }
     if (st === 'oklart') { return { text: 'oklart', title: 'Oklart: fakturan går inte att tolka entydigt', cls: 'bt-neutral' }; }
     if (st === 'kunde_inte_lasas') { return { text: 'oläslig', title: 'Fakturan kunde inte läsas', cls: 'bt-neutral' }; }
@@ -198,7 +198,7 @@
    * eller null (då inga Släck-knappar och cellerna ritas som förut). rad = { fakturanr, belopp, forfallodag, status, slack: { slackt, av, skal, datum } }.
    * Texter och kommentarsformat kommer från window.NYA_ZAPIER_SLACK (config.js). */
   var OPPNA = null;
-  var BETAL_RAD_STATUS = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej bekräftad' };
+  var BETAL_RAD_STATUS = { forfallen: 'Förfallen', obetald: 'Obetald', delbetald: 'Delbetald', ej_bekraftad: 'Ej hittad' };
   var BR = window.NYA_ZAPIER_BETALROLL;   // rollnamnen bor i config.js
   function betalRader(pkey, rolle) { var m = OPPNA && OPPNA.map && OPPNA.map[pkey]; return (m && m[rolle]) || []; }
   function betalSlackt(r) { return !!(r && r.slack && r.slack.slackt); }
@@ -261,7 +261,7 @@
       klick = 'Klicka för att se detaljer eller ångra';
     }
     else if (kod === 'delbetald') { lines.push(roll + ': delbetald'); lines.push('En del av beloppet är betalt. Kontrollera i bokföringen vad som återstår.'); }
-    else if (kod === 'ej_bekraftad') { lines.push(roll + ': ej bekräftad'); lines.push(info.title + '.'); }
+    else if (kod === 'ej_bekraftad') { lines.push(roll + ': ej hittad'); lines.push(info.title + '.'); }
     else { lines.push(roll + ': ' + (info.text || kod)); lines.push(info.title + (/[.!]$/.test(info.title) ? '' : '.')); }
     if (kod === 'betald_avviker' || kod === 'oklart' || kod === 'kunde_inte_lasas') { lines.push('Kontrollera fakturan i bokföringen.'); }
     var hasInv = ['betald', 'betald_avviker', 'obetald', 'forfallen', 'delbetald', 'ej_bekraftad', 'oklart', 'slackt'].indexOf(kod) !== -1;
@@ -378,6 +378,8 @@
       + '  </div>'
       + '  <div class="vz-cv-when">'
       + '    <a class="vz-cv-betalbtn" id="vz-cv-betalbtn" role="button" tabindex="0" title="Alla deltagare som inte har betalat enligt förväntan, över alla kurser">Visa obetalda</a>'
+      + ((window.NYA_ZAPIER_INFO && window.NYA_ZAPIER_INFO.BANKKNAPP_PA === true)
+        ? '    <button type="button" class="vz-cv-bankbtn" id="vz-cv-bankbtn" title="Ber banken om en ny avläsning av inbetalningar. Det brukar ta 5 till 10 minuter.">Hämta från banken nu</button><span class="vz-cv-bankmsg" id="vz-cv-bankmsg" role="status" aria-live="polite"></span>' : '')
       + '    <div class="vz-cv-date">'
       + '      <div class="label">Kursdatum</div>'
       + '      <div class="val">' + esc(course.datum || '–') + '</div>'
@@ -1117,7 +1119,7 @@
 
   /* ---------- expose ---------- */
   window.CourseView = {
-    render: render, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, applyBetalOppna: applyBetalOppna, applyBetalDetalj: applyBetalDetalj, applyBetalDetaljData: applyBetalDetaljData, betalCellTitle: betalCellTitle, stepCellTitle: stepCellTitle, avatarTitle: avatarTitle, progressTitle: progressTitle, betalEffInfo: betalEffInfo, betalTdHtml: betalTdHtml, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
+    render: render, topbarHtml: topbarHtml, region: region, DEMO_MODEL: DEMO_MODEL, applyDocStatus: applyDocStatus, applyBetalStatus: applyBetalStatus, applyBetalOppna: applyBetalOppna, applyBetalDetalj: applyBetalDetalj, applyBetalDetaljData: applyBetalDetaljData, betalCellTitle: betalCellTitle, stepCellTitle: stepCellTitle, avatarTitle: avatarTitle, progressTitle: progressTitle, betalEffInfo: betalEffInfo, betalTdHtml: betalTdHtml, betalCellInfo: betalCellInfo, betalHamtadText: betalHamtadText, betalGammal: betalGammal, betalBokfText: betalBokfText,
     setCellStatus: function (pkey, stepKey, sc) { if (setCellStatusRef) { setCellStatusRef(pkey, stepKey, sc); } },
   };
 

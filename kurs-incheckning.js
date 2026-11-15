@@ -178,7 +178,7 @@
       var v = escH(rad[f.key]);
       var falt = f.typ === 'area'
         ? '<textarea id="' + id + '" data-falt="' + f.key + '" maxlength="' + MAX + '" rows="3"' + las + '>' + v + '</textarea>'
-        : '<input id="' + id + '" data-falt="' + f.key + '" maxlength="' + MAX + '" type="' + (f.typ === 'tel' ? 'tel" inputmode="tel' : 'text') + '" value="' + v + '"' + las + '>';
+        : '<input id="' + id + '" data-falt="' + f.key + '" maxlength="' + MAX + '" type="' + (f.typ === 'tel' ? 'tel" inputmode="tel' : 'text') + '"' + (f.key === 'regnr' ? ' autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false"' : '') + ' value="' + v + '"' + las + '>';
       return '<label class="vz-ic-falt" for="' + id + '"><span>' + escH(f.etikett) + '</span>' + falt + '</label>';
     }).join('');
   }

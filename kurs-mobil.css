@@ -76,7 +76,12 @@ html.vz-lasande #root::before{
    Bara telefonbredd OCH tabelläge (knappen "Visa hela tabellen"). Datorn och Power-Upen berörs inte. ----
    Budget i 390 px: matrisen är ca 376 px. Namn 92 + (betalkolumner 2 x 28) + 14 steg a ca 16 px. */
 @media (max-width:680px){
-  html.vz-lasande.vz-visa-tabell .vz-cv-matrixwrap{padding-right:0;overflow-x:hidden}
+  /* k12 (iPhone-provet 14/11: tabellen blev bara ca 45 % av bredden och stegkolumnerna ca 2 px): bredden bygger inte längre på
+     procent av en innehållsstyrd förälder. Raden, regionen och matrisen är block med full bredd, och tabellen har ett golv
+     (namn 92 + betal 64 + 14 steg a 14 px = 352 px). Ryms den ändå inte rullar matrisen i sidled i stället för att trycka ihop sig. */
+  html.vz-lasande.vz-visa-tabell .vz-cv-row-region,
+  html.vz-lasande.vz-visa-tabell .vz-region-matrix{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+  html.vz-lasande.vz-visa-tabell .vz-cv-matrixwrap{padding-right:0;overflow-x:hidden;display:block;width:100%;max-width:100%;box-sizing:border-box}
   html.vz-lasande.vz-visa-tabell .vz-cv-table{table-layout:fixed;width:100%;max-width:none}
 
   /* Namnkolumnen: hela namnet, bryts på flera rader, ingen stapel (5/14 står kvar). */
@@ -104,7 +109,7 @@ html.vz-lasande #root::before{
   html.vz-lasande.vz-visa-tabell .vz-cv-phasehead[data-phase-key^="Slut"] .ph-name::before{content:"Slut";font-size:9px}
 
   /* Stegrubriker: lodräta, lästa nerifrån och upp, med stegnumret under. */
-  html.vz-lasande.vz-visa-tabell .vz-cv-stephead:not(.vz-cv-namehead):not(.vz-cv-collapsed-head){width:auto;min-width:0;max-width:none;height:150px;padding:0 0 4px}
+  html.vz-lasande.vz-visa-tabell .vz-cv-stephead:not(.vz-cv-namehead):not(.vz-cv-collapsed-head){width:auto;min-width:14px;max-width:none;height:150px;padding:0 0 4px}
   html.vz-lasande.vz-visa-tabell .vz-cv-stephead .stitle,
   html.vz-lasande.vz-visa-tabell .vz-cv-bethead .stitle{position:static;display:block;margin:0 auto 4px;transform:rotate(180deg);transform-origin:center;writing-mode:vertical-rl;font-size:10px;line-height:1.1;letter-spacing:0;white-space:nowrap}
   html.vz-lasande.vz-visa-tabell .vz-cv-stephead .sidx{width:15px;height:15px;font-size:9px}
@@ -115,7 +120,8 @@ html.vz-lasande #root::before{
   html.vz-lasande.vz-visa-tabell .vz-cv-dot svg{width:10px;height:10px}
   html.vz-lasande.vz-visa-tabell .vz-cv-dot .glyph{font-size:9px}
   html.vz-lasande.vz-visa-tabell .vz-cv-dot.d-gap{box-shadow:0 0 0 2px rgba(181,113,11,.16);animation:none}
-  html.vz-lasande.vz-visa-tabell .vz-cv-docpct{font-size:7px;letter-spacing:-.4px;padding:1px 0;border-radius:5px;width:100%;box-sizing:border-box}
+  html.vz-lasande.vz-visa-tabell .vz-cv-docpct{font-size:6px;letter-spacing:-.5px;padding:1px 0;border-radius:5px;width:100%;box-sizing:border-box;overflow:hidden;white-space:nowrap;text-overflow:clip;min-width:0}
+  html.vz-lasande.vz-visa-tabell td.vz-cv-cell{overflow:hidden;min-width:14px}
   html.vz-lasande.vz-visa-tabell .vz-cv-docpct .dp-img{display:none}
   html.vz-lasande.vz-visa-tabell .vz-cv-collapsed-head{min-width:0;width:auto}
 
@@ -128,6 +134,9 @@ html.vz-lasande #root::before{
   html.vz-lasande.vz-visa-tabell .vz-cv-table.has-betal td.vz-cv-betalcell[data-betal-roll="slut"]{width:32px;min-width:32px;max-width:32px;padding:2px 0;text-align:center;box-sizing:border-box}
   html.vz-lasande.vz-visa-tabell .vz-cv-bt{font-size:7px;line-height:1.15;padding:1px 0;border-radius:5px;width:100%;overflow-wrap:normal;word-break:keep-all;letter-spacing:-.02em}
   html.vz-lasande.vz-visa-tabell .vz-cv-bt.bt-none{font-size:7px;padding:1px 0}
+  html.vz-lasande.vz-visa-tabell .vz-cv-bt{max-width:100%;box-sizing:border-box;overflow:hidden}
+  /* Den fasta knappen "Glöm den här enheten" och versionsmärket ska inte täcka sista raden när man rullat till slutet. */
+  html.vz-lasande.vz-visa-tabell #root{padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}
 }
 
 /* ---- Deltagarlistan i telefonen (kurs-lasande.js). Ersätter tabellen under 680 px; tabellen nås via knappen.
@@ -240,3 +249,18 @@ html.vz-lasande #root::before{
    petrolfärg så att den vita texten syns. env() är 0 i datorn, där inget ändras. */
 html.vz-lasande body{box-sizing:border-box;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 html.vz-lasande::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:#08445c;z-index:60;pointer-events:none}
+
+/* ---- Mobilstandard 8 (k12): pekskärmsbeteende. Inget dubbeltryckszoom på knappar och bockar, ingen grå tryckfärg,
+   ingen oavsiktlig textmarkering på knappar, och iOS ska inte skala om texten vid rotation. ---- */
+html.vz-lasande{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html.vz-lasande button,
+html.vz-lasande a,
+html.vz-lasande summary,
+html.vz-lasande label,
+html.vz-lasande input[type="checkbox"],
+html.vz-lasande .vz-cv-betalcell,
+html.vz-lasande .vz-pd-act{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+html.vz-lasande button,
+html.vz-lasande .vz-uppdatera{-webkit-user-select:none;user-select:none}
+.vz-uppdatera{min-height:44px;min-width:44px;margin:4px 8px;padding:8px 14px;border:1px solid #cfe0e3;border-radius:10px;background:#fff;color:#08445c;font:600 14px/1.2 Calibri,system-ui,sans-serif;cursor:pointer}
+.vz-uppdatera:disabled{opacity:.6}

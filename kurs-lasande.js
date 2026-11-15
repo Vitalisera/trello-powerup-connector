@@ -89,6 +89,7 @@
   }
 
   function rita(rootEl, model) {
+    uppdateraKnapp();
     var host = rootEl && rootEl.querySelector ? rootEl.querySelector('.vz-region-matrix') : null;
     if (!host) { return; }
     var gammal = host.querySelector('#vz-mlista');
@@ -114,17 +115,52 @@
 
   // VISAS (k11): kunde deltagarlistan inte ritas är telefonvyn tom (tabellen är dold i telefonbredd). Då visas en rad
   // med skälet och "Försök igen" (ritar listan på nytt), och hela tabellen slås på så att kursen ändå går att se.
+  var tvingadTabell = false;   // true när ritaFel själv slog på tabellläget (och därför ska släppa det vid lyckad omritning)
+  var FEL_TEXT = 'Kunde inte visa deltagarlistan. Hela tabellen visas i stället.';
   function ritaFel(rootEl, model, e) {
-    try { document.documentElement.classList.add('vz-visa-tabell'); } catch (e2) { /* klassen är bara en förbättring */ }
+    try {
+      if (!document.documentElement.classList.contains('vz-visa-tabell')) { tvingadTabell = true; }
+      document.documentElement.classList.add('vz-visa-tabell');
+    } catch (e2) { /* klassen är bara en förbättring */ }
     var kod = (e && (e.name || e.message)) ? String(e.name || '') + (e.message ? ': ' + String(e.message).slice(0, 80) : '') : 'okänt fel';
     if (typeof window.VZ_VISA_FEL === 'function') {
-      window.VZ_VISA_FEL('Kunde inte visa deltagarlistan. Hela tabellen visas i stället.', 'lista ' + kod, function () {
-        try { rita(rootEl, model); var f = document.getElementById('vz-fel'); if (f) { f.hidden = true; } } catch (e3) { ritaFel(rootEl, model, e3); }
+      window.VZ_VISA_FEL(FEL_TEXT, 'lista ' + kod, function () {
+        try {
+          rita(rootEl, model);
+          // Dölj BARA vårt eget fel (annat fel, t.ex. nätfel, ska stå kvar), och släpp tabellläget bara om det var vi som tvingade fram det.
+          var f = document.getElementById('vz-fel');
+          if (f && String(f.textContent || '').indexOf(FEL_TEXT) !== -1) { f.hidden = true; }
+          if (tvingadTabell) { tvingadTabell = false; document.documentElement.classList.remove('vz-visa-tabell'); rita(rootEl, model); }
+        } catch (e3) { ritaFel(rootEl, model, e3); }
       });
     }
   }
 
-  window.VZ_MLISTA_PROV = { ritaFel: ritaFel, radHtml: radHtml, listaHtml: listaHtml, rita: rita, dokLankar: dokLankar };
+  /* Mobilstandard 2 (k12): "Uppdatera" och omhämtning när appen kommer tillbaka. Standalone-appen har ingen omladdningsknapp.
+   * Hämtar om kursen när fliken blir synlig igen eller nätet återvänder, men högst en gång per två minuter. */
+  var OMHAMTA_EFTER_MS = 120000;
+  function laddaOm() { try { return typeof window.VZ_LADDA_OM_KURS === 'function' ? window.VZ_LADDA_OM_KURS() : false; } catch (e) { return false; } }
+  function omhamtaOmGammal() {
+    var s = window.VZ_SENAST_LADDAD || 0;
+    if (s && Date.now() - s > OMHAMTA_EFTER_MS) { laddaOm(); }
+  }
+  function uppdateraKnapp() {
+    try {
+      if (document.getElementById('vz-uppdatera')) { return; }
+      var top = document.querySelector('.vz-cv-topbar');
+      if (!top) { return; }
+      var b = document.createElement('button');
+      b.type = 'button'; b.id = 'vz-uppdatera'; b.className = 'vz-uppdatera'; b.textContent = 'Uppdatera';
+      b.addEventListener('click', function () { b.disabled = true; b.textContent = 'Uppdaterar …'; laddaOm(); });   // ritningen byter ut knappen
+      top.appendChild(b);
+    } catch (e) { /* knappen är en förbättring */ }
+  }
+  try {
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { omhamtaOmGammal(); } });
+    window.addEventListener('online', omhamtaOmGammal);
+  } catch (e) { /* ingen DOM */ }
+
+  window.VZ_MLISTA_PROV = { omhamtaOmGammal: omhamtaOmGammal, uppdateraKnapp: uppdateraKnapp, laddaOm: laddaOm, ritaFel: ritaFel, radHtml: radHtml, listaHtml: listaHtml, rita: rita, dokLankar: dokLankar };
 
   // course.js anropar window.CourseView.render vid varje ritning; omslaget ritar listan efteråt.
   var cv = window.CourseView;

@@ -552,6 +552,18 @@ function courseLightbox(title, bodyHtml) {
  * GAS svarar alltid HTTP 200; fel signaleras i kroppens ok-fält. Klienten
  * skickar all Trello-data hit; GAS gör bara Google-sidan (Doc/Claude/Gmail).
  */
+/* Mobilstandard 1 (k12): ett nätanrop får aldrig hänga för alltid. Efter GAS_TIMEOUT_MS avbryts det med ett svenskt fel,
+ * så att "Sparar …" och "Hämtar …" alltid slutar. */
+var GAS_TIMEOUT_MS = 30000;
+function fetchMedTimeout_(url, opt) {
+  var ac = (typeof AbortController === 'function') ? new AbortController() : null;
+  var timer = null, avbrutet = false;
+  if (ac) { opt = Object.assign({}, opt, { signal: ac.signal }); timer = setTimeout(function () { avbrutet = true; try { ac.abort(); } catch (e) { /* inget att avbryta */ } }, GAS_TIMEOUT_MS); }
+  return fetch(url, opt).then(function (r) { if (timer) { clearTimeout(timer); } return r; }, function (e) {
+    if (timer) { clearTimeout(timer); }
+    throw (avbrutet ? new Error('Servern svarade inte inom ' + Math.round(GAS_TIMEOUT_MS / 1000) + ' sekunder. Försök igen.') : e);
+  });
+}
 function postToGas(action, payload) {
   var url = CFG.GAS_URL;
   if (!url || url.indexOf('REPLACE_WITH_DEPLOYMENT_ID') !== -1) {
@@ -560,7 +572,7 @@ function postToGas(action, payload) {
   // Behörighetsgrinden i GAS kräver Trello-token (body.token, utanför payload) för allt som skriver/delar/mejlar.
   return gasToken().then(function (tok) {
     var body = JSON.stringify({ action: action, payload: payload || {}, token: tok || undefined });
-    return fetch(url, {
+    return fetchMedTimeout_(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: body,
@@ -1745,6 +1757,58 @@ function loadDocStatus(courseName, cards) {
 
 /* Betalstatus (Task 11, READ-ONLY): två celler i kursöversikten ur GAS courseBetalstatus. Fel i hämtningen
  * (nät, ok:false, trasigt svar) ger inga celler alls: översikten ser ut och fungerar som förut. Kurs-guard som loadDocStatus. */
+/* "Hämta från banken nu" (k12). Knappen finns bara när NYA_ZAPIER_INFO.BANKKNAPP_PA === true (config.js, AV som standard).
+ * Servern (betalHamtaNu) skriver bara meta.begard; Actions-lib-jobbet hämtar banken inom ~5 minuter och sätter begardHanterad.
+ * Vi frågar courseBetalstatus ungefär en gång i minuten (högst 20 min) tills begardHanterad >= begard, och ritar då om statusen utan omladdning. */
+var BANK_POLL_MS = 60000, BANK_POLL_MAX = 20;
+var _bankBusy = false;
+function bankMsg_(text) { var el = document.getElementById('vz-cv-bankmsg'); if (el) { el.textContent = text || ''; } }
+function bankKnapp_(av) { var b = document.getElementById('vz-cv-bankbtn'); if (b) { b.disabled = !!av; } }
+function bankTid_(iso) { var I = window.NYA_ZAPIER_INFO; return (I && I.tidSv(iso)) || 'okänd tid'; }
+function bankKlar_() { _bankBusy = false; bankKnapp_(false); }
+function bankHamtaNu() {
+  if (_bankBusy) { return; }
+  _bankBusy = true; bankKnapp_(true);
+  bankMsg_('⏳ Hämtar från banken. Det brukar ta 5 till 10 minuter, du kan lämna sidan.');
+  postToGas('betalHamtaNu', {}).then(function (r) {
+    if (!r || r.ok !== true) { bankMsg_('Det gick inte att be om en hämtning. Försök igen senare eller säg till Robert.'); bankKlar_(); return; }
+    if (r.sparr) { bankMsg_('Banken lästes nyss och kan bara hämtas var 15:e minut. Försök igen efter ' + bankTid_(r.nastaTid) + '.'); bankKlar_(); return; }
+    if (r.pagar) { bankMsg_('⏳ En hämtning pågår redan. Statusen uppdateras här när den är klar.'); }
+    bankPoll_(String(r.begard || ''), 0);
+  }, function () { bankMsg_('Det gick inte att nå servern. Försök igen om en stund.'); bankKlar_(); });
+}
+/* Vad säger courseBetalstatus om begäran? HANTERAD GÅR FÖRE UPPGIVEN: jobbet kan lyckas på tredje försöket efter att det uppgetts,
+ * och begardUppgiven rensas aldrig. 'klart' | 'misslyckad' | 'vanta'. */
+function bankUtfall_(begard, d) {
+  var b = Date.parse(begard || ''), h = Date.parse((d && d.begardHanterad) || ''), u = Date.parse((d && d.begardUppgiven) || '');
+  if (!d || d.ok !== true || isNaN(b)) { return 'vanta'; }
+  if (!isNaN(h) && h >= b) { return 'klart'; }
+  if (!isNaN(u) && u >= b) { return 'misslyckad'; }
+  return 'vanta';
+}
+function bankPoll_(begard, n) {
+  var keys = Object.keys(COURSE_CARDS_BY_ID || {});
+  if (n >= BANK_POLL_MAX || !keys.length) { bankMsg_('Hämtningen har inte kommit fram än. Försök igen senare eller säg till Robert.'); bankKlar_(); return; }
+  setTimeout(function () {
+    postToGas('courseBetalstatus', { items: [{ key: keys[0] }] }).then(function (d) {
+      var ut = bankUtfall_(begard, d);
+      if (ut === 'klart') {
+        bankMsg_('Klart. Banken lästes ' + bankTid_(d.bankHamtad) + '.'); bankKlar_();
+        loadBetalStatus(COURSE_NAME, keys.map(function (k) { return COURSE_CARDS_BY_ID[k]; }));
+        setTimeout(function () { bankMsg_('Klart. Banken lästes ' + bankTid_(d.bankHamtad) + '.'); }, 2500);   // statusritningen kan ha ritat om toppraden
+        return;
+      }
+      if (ut === 'misslyckad') { bankMsg_('Hämtningen från banken misslyckades. Försök igen senare eller säg till Robert.'); bankKlar_(); return; }
+      bankPoll_(begard, n + 1);
+    }, function () { bankPoll_(begard, n + 1); });   // ett nätfel under väntan avbryter inte: nästa fråga om en minut
+  }, BANK_POLL_MS);
+}
+document.addEventListener('click', function (e) {
+  var b = e.target && e.target.closest ? e.target.closest('#vz-cv-bankbtn') : null;
+  if (b) { e.preventDefault(); bankHamtaNu(); }
+});
+window.VZ_BANK_PROV = { bankHamtaNu: bankHamtaNu, bankUtfall_: bankUtfall_ };
+
 function loadBetalStatus(courseName, cards) {
   function apply(d) { if (window.CourseView && CourseView.applyBetalStatus) { CourseView.applyBetalStatus(d); } }
   apply(null);   // nollställ föregående kurs
@@ -3980,8 +4044,10 @@ function fetchGroupLeaderAllergies() {
   }).catch(function () { return []; });
 }
 
+window.VZ_LADDA_OM_KURS = function () { if (COURSE_LISTID) { loadCourse(COURSE_LISTID, COURSE_NAME); return true; } return false; };   // "Uppdatera" i webbappen (k12)
 function loadCourse(listId, listName) {
   COURSE_LISTID = listId || COURSE_LISTID;
+  window.VZ_SENAST_LADDAD = Date.now();
   ROOT().innerHTML = msg('⏳ Hämtar deltagare och checklistor …');
   var tokLen = 0;
   t.getRestApi().getToken().then(function (token) {

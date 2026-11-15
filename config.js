@@ -392,6 +392,83 @@ window.NYA_ZAPIER_BOKF = (function () {
   return { rad: rad, GRANS_MS: GRANS_MS, tidIso: tidIso };
 })();
 
+/* ⓘ-knappar och bankens besked (k12, Robert 2026-11-15). EN källa för förklaringstexterna, flaggan för banknappen och noteringen för "Ej hittad".
+ * Knappen är en riktig <button> med minst 44 x 44 px träffyta (negativ marginal så raden inte växer) och fungerar med tummen: ett tryck
+ * visar texten, ett nytt tryck (eller tryck någon annanstans) stänger den. Ingen hover eller title behövs.
+ *   knapp(nyckel)            -> HTML för ⓘ-knappen (tom sträng om nyckeln saknas)
+ *   TEXT[nyckel]             -> förklaringen, ordagrant
+ *   bankNotering(nr, meta)   -> "Ingen inbetalning med fakturanummer 1664 i banken (läst 14 nov 04:50, läses varje natt). Bokföringen sträcker sig till 6 nov." */
+window.NYA_ZAPIER_INFO = (function () {
+  var TEXT = {
+    betald: 'Betalningen syns i banken eller i bokföringen med fakturanumret.',
+    ej_bekraftad: 'Varken banken eller bokföringen visar en betalning än. Banken hittar bara inbetalningar där fakturanumret står i texten. En betalning utan nummer syns först när bokföraren bokfört den.',
+    forfallen: 'Förfallodagen har passerat och bokföringen visar ingen betalning. En betalning utan fakturanummer syns först när bokföraren har bokfört den.',
+    slack: 'Släck döljer fakturan i listan och skriver en kommentar på kortet med skälet. Det går att ångra.',
+    dagar: 'Antal dagar sedan fakturan skulle ha varit betald.'
+  };
+  var BANKKNAPP_PA = false;   // "Hämta från banken nu" i Kursöversikten. AV tills Robert slår på den: med false ritas ingen knapp alls.
+  function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function knapp(nyckel) {
+    if (!Object.prototype.hasOwnProperty.call(TEXT, nyckel)) { return ''; }
+    return '<button type="button" class="vz-info" data-vz-info="' + esc(nyckel) + '" title="' + esc(TEXT[nyckel]) + '" aria-label="Förklaring" aria-expanded="false">ⓘ</button>';
+  }
+  function stang() {
+    var oppna = document.querySelectorAll('.vz-info[aria-expanded="true"]');
+    for (var i = 0; i < oppna.length; i++) {
+      oppna[i].setAttribute('aria-expanded', 'false');
+      var t = oppna[i].nextSibling;
+      if (t && t.className === 'vz-info-text') { t.parentNode.removeChild(t); }
+    }
+  }
+  function tryck(e) {
+    var b = e.target && e.target.closest ? e.target.closest('.vz-info') : null;
+    if (!b) { stang(); return; }
+    e.stopPropagation(); e.preventDefault();   // ⓘ i en klickbar rad ska inte öppna raden
+    var var_oppen = b.getAttribute('aria-expanded') === 'true';
+    stang();
+    if (var_oppen) { return; }
+    var t = document.createElement('span');
+    t.className = 'vz-info-text';
+    t.setAttribute('role', 'note');
+    t.textContent = TEXT[b.getAttribute('data-vz-info')] || '';
+    b.setAttribute('aria-expanded', 'true');
+    b.parentNode.insertBefore(t, b.nextSibling);
+  }
+  /* "14 nov 04:50" i svensk tid, och "6 nov" ur ett datum. */
+  var MAN = ['jan', 'feb', 'mars', 'apr', 'maj', 'juni', 'juli', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  function tidSv(iso) {
+    var ms = Date.parse(iso || '');
+    if (isNaN(ms)) { return ''; }
+    try {
+      var p = {};
+      new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .formatToParts(new Date(ms)).forEach(function (x) { p[x.type] = x.value; });
+      return parseInt(p.day, 10) + ' ' + MAN[parseInt(p.month, 10) - 1] + ' ' + p.hour + ':' + p.minute;
+    } catch (e) { return ''; }
+  }
+  function datumSv(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? (parseInt(m[3], 10) + ' ' + MAN[parseInt(m[2], 10) - 1]) : '';
+  }
+  function bankNotering(nr, meta) {
+    meta = meta || {};
+    var bank = tidSv(meta.bankHamtad), sie = datumSv(meta.sieSenast);
+    var s = 'Ingen inbetalning med ' + (nr ? 'fakturanummer ' + nr : 'fakturanumret') + ' i banken' + (bank ? ' (läst ' + bank + ', läses varje natt)' : '') + '.';
+    if (sie) { s += ' Bokföringen sträcker sig till ' + sie + '.'; }
+    return s;
+  }
+  var CSS = '.vz-info{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:-13px -10px -13px -8px;padding:0;border:0;background:none;color:#3f7f8f;font:600 16px/1 system-ui,sans-serif;cursor:pointer;vertical-align:middle;touch-action:manipulation;-webkit-tap-highlight-color:transparent}'
+    + '.vz-info[aria-expanded="true"]{color:#08445c}'
+    + '.vz-info-text{display:block;max-width:34em;margin:6px 0 8px;padding:8px 10px;border-radius:8px;background:#eef6f6;border:1px solid #cfe0e3;color:#0d2f3c;font:400 13px/1.4 Calibri,system-ui,sans-serif;white-space:normal;text-align:left;font-weight:400;text-transform:none;letter-spacing:0}';
+  try {
+    if (typeof document !== 'undefined' && document.head && !document.getElementById('vz-info-css')) {
+      var st = document.createElement('style'); st.id = 'vz-info-css'; st.textContent = CSS; document.head.appendChild(st);
+      document.addEventListener('click', tryck, true);
+    }
+  } catch (e) { /* ⓘ är en förbättring: utan DOM händer inget */ }
+  return { TEXT: TEXT, BANKKNAPP_PA: BANKKNAPP_PA, knapp: knapp, bankNotering: bankNotering, tidSv: tidSv, datumSv: datumSv, CSS: CSS };
+})();
+
 /* Fakturadetaljen under en betalcell (Kursöversikten) eller en fakturarad (Obetalda fakturor): EN delad renderare så att de två vyerna
  * inte glider isär (Robert 2026-11-10). Ren HTML-funktion + en laddare. Inga namn eller e-postadresser kommer från GAS:
  * e-postadressen läses ur kortbeskrivningen av vyn (användarens Trello-token). Allt som skrivs ut escapas här.
@@ -417,7 +494,7 @@ window.NYA_ZAPIER_BETALROLL = (function () {
 })();
 
 window.NYA_ZAPIER_BETALDET = (function () {
-  var STATUS = { betald: 'Betald', betald_avviker: 'Betald, men något avviker', obetald: 'Obetald', forfallen: 'Förfallen', ej_bekraftad: 'Ej bekräftad',
+  var STATUS = { betald: 'Betald', betald_avviker: 'Betald, men något avviker', obetald: 'Obetald', forfallen: 'Förfallen', ej_bekraftad: 'Ej hittad',
     delbetald: 'Delbetald', gammal: 'Obetald enligt äldre uppgifter', oklart: 'Oklart', kunde_inte_lasas: 'Kunde inte läsas', saknas: 'Saknas (uppgiften är okänd eller inaktuell)', ingen_faktura: 'Ingen faktura' };
   var TITEL = window.NYA_ZAPIER_BETALROLL.NAMN;
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -471,6 +548,12 @@ window.NYA_ZAPIER_BETALDET = (function () {
     }
     return '<dt>Fakturans PDF</dt><dd>' + v + '</dd>';
   }
+  /* Ej hittad börjar med bankens besked (k12). Övriga statusar behåller jobbets egen notering. */
+  function noteringFor(r, nr, meta) {
+    var n = String(r.notering || '');
+    if (r.status !== 'ej_bekraftad' || !window.NYA_ZAPIER_INFO) { return n; }
+    return window.NYA_ZAPIER_INFO.bankNotering(nr, meta) + (n ? ' ' + n : '');
+  }
   function tips() { return (window.NYA_ZAPIER_SLACK && window.NYA_ZAPIER_SLACK.TIPS) || { slack: '', angra: '' }; }
   function html(m) {
     m = m || {};
@@ -483,14 +566,15 @@ window.NYA_ZAPIER_BETALDET = (function () {
       var nr = r.fakturanr || '', sl = r.slack && r.slack.slackt ? r.slack : null;
       out += '<div class="vz-bd-item" data-bd-rad="' + esc(nr) + '"><div class="vz-bd-top"><b>' + esc(nr ? 'Faktura ' + nr : 'Faktura utan nummer') + '</b>'
         + '<span class="vz-bd-status vz-bd-s-' + esc(r.status) + '">' + esc(STATUS[r.status] || r.status || 'Okänd') + '</span>'
+        + ((window.NYA_ZAPIER_INFO && window.NYA_ZAPIER_INFO.TEXT[r.status]) ? window.NYA_ZAPIER_INFO.knapp(r.status) : '')
         + (sl ? '<span class="vz-bd-slackt">Släckt</span>' : '') + '</div>'
         + '<dl class="vz-bd-dl"><dt>Belopp</dt><dd>' + esc(belopp(r.belopp)) + '</dd>'
         + '<dt>Förfallodag</dt><dd>' + esc(dag(r.forfallodag) || '–') + '</dd>'
         + '<dt>Betald</dt><dd>' + esc(dag(r.betaldDatum) || '–') + '</dd>'
-        + (r.notering ? '<dt>Notering</dt><dd>' + esc(r.notering) + '</dd>' : '')
+        + (noteringFor(r, nr, meta) ? '<dt>Notering</dt><dd>' + esc(noteringFor(r, nr, meta)) + '</dd>' : '')
         + (sl ? '<dt>Släckt</dt><dd>' + esc(sl.skal || 'skäl okänt') + '. Av ' + esc(sl.av || 'okänd') + ', ' + esc(dag(sl.datum) || '–') + '</dd>' : '')
         + pdfRad(nr, m.bilagor) + '</dl>'
-        + (r.knapp === 'slack' ? '<button type="button" class="vz-bd-btn" data-bd-slack="' + esc(nr) + '" title="' + esc(tips().slack) + '">Släck</button>' : '')
+        + (r.knapp === 'slack' ? '<button type="button" class="vz-bd-btn" data-bd-slack="' + esc(nr) + '" title="' + esc(tips().slack) + '">Släck</button>' + (window.NYA_ZAPIER_INFO ? window.NYA_ZAPIER_INFO.knapp('slack') : '') : '')
         + (r.knapp === 'angra' ? '<button type="button" class="vz-bd-btn" data-bd-angra="' + esc(nr) + '" title="' + esc(tips().angra) + '">Ångra</button>' : '')
         + '</div>';
     });
