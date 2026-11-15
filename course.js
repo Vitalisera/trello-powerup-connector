@@ -1778,11 +1778,13 @@ function bankHamtaNu() {
   }, function () { bankMsg_('Det gick inte att nå servern. Försök igen om en stund.'); bankKlar_(); });
 }
 /* Vad säger courseBetalstatus om begäran? HANTERAD GÅR FÖRE UPPGIVEN: jobbet kan lyckas på tredje försöket efter att det uppgetts,
- * och begardUppgiven rensas aldrig. 'klart' | 'misslyckad' | 'vanta'. */
+ * och begardUppgiven rensas aldrig. 'klart' | 'tappad' | 'misslyckad' | 'vanta'. */
 function bankUtfall_(begard, d) {
   var b = Date.parse(begard || ''), h = Date.parse((d && d.begardHanterad) || ''), u = Date.parse((d && d.begardUppgiven) || '');
   if (!d || d.ok !== true || isNaN(b)) { return 'vanta'; }
   if (!isNaN(h) && h >= b) { return 'klart'; }
+  var d0 = Date.parse((d && d.begard) || '');
+  if (!isNaN(d0) && d0 < b) { return 'tappad'; }   // jobbet skrev över trycket med en äldre begard
   if (!isNaN(u) && u >= b) { return 'misslyckad'; }
   return 'vanta';
 }
@@ -1798,6 +1800,7 @@ function bankPoll_(begard, n) {
         setTimeout(function () { bankMsg_('Klart. Banken lästes ' + bankTid_(d.bankHamtad) + '.'); }, 2500);   // statusritningen kan ha ritat om toppraden
         return;
       }
+      if (ut === 'tappad') { bankMsg_('Begäran kom inte fram. Försök igen.'); bankKlar_(); return; }
       if (ut === 'misslyckad') { bankMsg_('Hämtningen från banken misslyckades. Försök igen senare eller säg till Robert.'); bankKlar_(); return; }
       bankPoll_(begard, n + 1);
     }, function () { bankPoll_(begard, n + 1); });   // ett nätfel under väntan avbryter inte: nästa fråga om en minut

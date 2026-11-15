@@ -406,7 +406,7 @@ window.NYA_ZAPIER_INFO = (function () {
     slack: 'Släck döljer fakturan i listan och skriver en kommentar på kortet med skälet. Det går att ångra.',
     dagar: 'Antal dagar sedan fakturan skulle ha varit betald.'
   };
-  var BANKKNAPP_PA = false;   // "Hämta från banken nu" i Kursöversikten. AV tills Robert slår på den: med false ritas ingen knapp alls.
+  var BANKKNAPP_PA = true;    // "Hämta från banken nu" i Kursöversikten. AV tills Robert slår på den: med false ritas ingen knapp alls.
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function knapp(nyckel) {
     if (!Object.prototype.hasOwnProperty.call(TEXT, nyckel)) { return ''; }
