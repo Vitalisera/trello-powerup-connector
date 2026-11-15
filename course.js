@@ -1762,8 +1762,11 @@ function loadDocStatus(courseName, cards) {
  * Vi frågar courseBetalstatus ungefär en gång i minuten (högst 20 min) tills begardHanterad >= begard, och ritar då om statusen utan omladdning. */
 var BANK_POLL_MS = 60000, BANK_POLL_MAX = 20;
 var _bankBusy = false;
-function bankMsg_(text) { var el = document.getElementById('vz-cv-bankmsg'); if (el) { el.textContent = text || ''; } }
-function bankKnapp_(av) { var b = document.getElementById('vz-cv-bankbtn'); if (b) { b.disabled = !!av; } }
+/* Beskedet och knappens läge sparas i window.VZ_BANK, och topbarHtml (course-view.js) ritar ut dem. Därför står beskedet kvar
+ * när omladdningen ritar om sidhuvudet, oavsett hur lång tid den tar (k14; k13 satte om det efter fasta 2,5 s och det räckte inte live). */
+window.VZ_BANK = window.VZ_BANK || { msg: '', busy: false };
+function bankMsg_(text) { window.VZ_BANK.msg = text || ''; var el = document.getElementById('vz-cv-bankmsg'); if (el) { el.textContent = window.VZ_BANK.msg; } }
+function bankKnapp_(av) { window.VZ_BANK.busy = !!av; var b = document.getElementById('vz-cv-bankbtn'); if (b) { b.disabled = !!av; } }
 function bankTid_(iso) { var I = window.NYA_ZAPIER_INFO; return (I && I.tidSv(iso)) || 'okänd tid'; }
 function bankKlar_() { _bankBusy = false; bankKnapp_(false); }
 function bankHamtaNu() {
@@ -1797,7 +1800,6 @@ function bankPoll_(begard, n) {
       if (ut === 'klart') {
         bankMsg_('Klart. Banken lästes ' + bankTid_(d.bankHamtad) + '.'); bankKlar_();
         loadBetalStatus(COURSE_NAME, keys.map(function (k) { return COURSE_CARDS_BY_ID[k]; }));
-        setTimeout(function () { bankMsg_('Klart. Banken lästes ' + bankTid_(d.bankHamtad) + '.'); }, 2500);   // statusritningen kan ha ritat om toppraden
         return;
       }
       if (ut === 'tappad') { bankMsg_('Begäran kom inte fram. Försök igen.'); bankKlar_(); return; }

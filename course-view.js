@@ -379,7 +379,7 @@
       + '  <div class="vz-cv-when">'
       + '    <a class="vz-cv-betalbtn" id="vz-cv-betalbtn" role="button" tabindex="0" title="Alla deltagare som inte har betalat enligt förväntan, över alla kurser">Visa obetalda</a>'
       + ((window.NYA_ZAPIER_INFO && window.NYA_ZAPIER_INFO.BANKKNAPP_PA === true)
-        ? '    <button type="button" class="vz-cv-bankbtn" id="vz-cv-bankbtn" title="Ber banken om en ny avläsning av inbetalningar. Det brukar ta 5 till 10 minuter.">Hämta från banken nu</button><span class="vz-cv-bankmsg" id="vz-cv-bankmsg" role="status" aria-live="polite"></span>' : '')
+        ? '    <button type="button" class="vz-cv-bankbtn" id="vz-cv-bankbtn" title="Ber banken om en ny avläsning av inbetalningar. Det brukar ta 5 till 10 minuter."' + ((window.VZ_BANK && window.VZ_BANK.busy) ? ' disabled' : '') + '>Hämta från banken nu</button><span class="vz-cv-bankmsg" id="vz-cv-bankmsg" role="status" aria-live="polite">' + esc((window.VZ_BANK && window.VZ_BANK.msg) || '') + '</span>' : '')
       + '    <div class="vz-cv-date">'
       + '      <div class="label">Kursdatum</div>'
       + '      <div class="val">' + esc(course.datum || '–') + '</div>'

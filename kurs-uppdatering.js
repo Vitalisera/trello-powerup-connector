@@ -27,11 +27,6 @@
     return window.VZ_KURS_V || '';
   }
 
-  // Ren funktion (provas): ska banderollen visas? lokal = versionen sidan kör med, ny = svaret ur kurs-version.json.
-  function skiljer(lokal, ny) {
-    return typeof ny === 'string' && /^[A-Za-z0-9._-]{1,20}$/.test(ny) && String(lokal || '') !== ny;
-  }
-
   // Ren funktion (provas): adressen "Ladda om" går till. Behåller övriga parametrar, sätter ?v=<ny> och en cachebrytare
   // så att den cachade kurs.html inte används igen. Hashen lämnas (den bär aldrig något efter inloggningen).
   function laddaOmUrl(nuvarande, ny, nu) {
